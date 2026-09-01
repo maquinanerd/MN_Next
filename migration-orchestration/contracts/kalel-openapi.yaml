@@ -1,0 +1,63 @@
+openapi: 3.1.0
+info:
+  title: Kal El Content API — Máquina Nerd boundary
+  version: 1.0.0
+  description: Contrato alvo. O adapter Next pode mapear a API Kal El existente para este modelo.
+servers:
+  - url: https://kalel.example.invalid/api/v1
+security:
+  - serviceBearer: []
+paths:
+  /content/home:
+    get:
+      operationId: getHome
+      responses: { '200': { description: Home content, content: { application/json: { schema: { $ref: '#/components/schemas/HomePage' } } } } }
+  /articles/{idOrSlug}:
+    get:
+      operationId: getArticle
+      parameters:
+        - { name: idOrSlug, in: path, required: true, schema: { type: string } }
+        - { name: preview, in: query, schema: { type: boolean } }
+      responses:
+        '200': { description: Article, content: { application/json: { schema: { $ref: '#/components/schemas/Article' } } } }
+        '404': { description: Not found }
+  /articles:
+    get:
+      operationId: listArticles
+      parameters:
+        - { name: category, in: query, schema: { type: string } }
+        - { name: author, in: query, schema: { type: string } }
+        - { name: tag, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+      responses: { '200': { description: Page, content: { application/json: { schema: { $ref: '#/components/schemas/ArticlePage' } } } } }
+  /content/sitemap:
+    get:
+      operationId: sitemap
+      parameters:
+        - { name: kind, in: query, required: true, schema: { enum: [articles, categories, authors, tags] } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses: { '200': { description: Sitemap page } }
+  /media:
+    post:
+      operationId: uploadMedia
+      requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [file], properties: { file: { type: string, format: binary }, alt: { type: string }, credit: { type: string }, sourceUrl: { type: string, format: uri } } } } } }
+      responses: { '201': { description: Media created, content: { application/json: { schema: { $ref: '#/components/schemas/Image' } } } } }
+  /webhooks/revalidate:
+    post:
+      operationId: publishEvent
+      security: []
+      parameters: [{ name: x-kalel-signature, in: header, required: true, schema: { type: string } }, { name: x-kalel-timestamp, in: header, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ContentEvent' } } } }
+      responses: { '204': { description: Revalidated }, '401': { description: Invalid signature }, '409': { description: Replay } }
+components:
+  securitySchemes: { serviceBearer: { type: http, scheme: bearer } }
+  schemas:
+    Image: { type: object, required: [url, width, height, alt], properties: { url: { type: string, format: uri }, width: { type: integer }, height: { type: integer }, alt: { type: string }, caption: { type: string }, credit: { type: string }, blurDataURL: { type: string } } }
+    Author: { type: object, required: [id, name, slug], properties: { id: { type: string }, name: { type: string }, slug: { type: string }, bio: { type: string } } }
+    Taxonomy: { type: object, required: [id, slug, name], properties: { id: { type: string }, slug: { type: string }, name: { type: string } } }
+    ContentBlock: { type: object, required: [type], properties: { type: { enum: [paragraph, heading, image, quote, list, callout, embed, specTable, comparison, buyBox, ad, whereToWatch] } }, additionalProperties: true }
+    Article: { type: object, required: [id, slug, title, excerpt, cover, body, author, category, tags, publishedAt, status, seo], properties: { id: { type: string }, slug: { type: string }, title: { type: string }, excerpt: { type: string }, template: { enum: [standard, longform, urgent, video, list] }, cover: { $ref: '#/components/schemas/Image' }, body: { type: array, items: { $ref: '#/components/schemas/ContentBlock' } }, author: { $ref: '#/components/schemas/Author' }, category: { $ref: '#/components/schemas/Taxonomy' }, tags: { type: array, items: { $ref: '#/components/schemas/Taxonomy' } }, publishedAt: { type: string, format: date-time }, updatedAt: { type: string, format: date-time }, status: { enum: [draft, scheduled, published, archived] }, seo: { type: object } } }
+    ArticlePage: { type: object, required: [items, page, totalPages], properties: { items: { type: array, items: { $ref: '#/components/schemas/Article' } }, page: { type: integer }, totalPages: { type: integer } } }
+    HomePage: { type: object, additionalProperties: true }
+    ContentEvent: { type: object, required: [event, entityId], properties: { event: { enum: [content.published, content.updated, content.deleted, taxonomy.updated, redirect.updated] }, entityId: { type: string }, categorySlug: { type: string }, occurredAt: { type: string, format: date-time } } }

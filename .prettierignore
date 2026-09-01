@@ -1,0 +1,10 @@
+node_modules
+.next
+pnpm-lock.yaml
+.migration-reference
+artifacts
+coverage
+playwright-report
+test-results
+migration-orchestration
+*.zip

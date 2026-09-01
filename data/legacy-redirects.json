@@ -1,0 +1,12 @@
+[
+  { "from": "/feed", "to": "/feed.xml", "status": 301 },
+  { "from": "/comments/feed", "to": "/feed.xml", "status": 301 },
+  { "from": "/categoria/series", "to": "/series", "status": 301 },
+  { "from": "/categoria/filmes", "to": "/filmes", "status": 301 },
+  { "from": "/categoria/quadrinhos", "to": "/quadrinhos", "status": 301 },
+  { "from": "/categoria/games", "to": "/games", "status": 301 },
+  { "from": "/categoria/animes", "to": "/animes", "status": 301 },
+  { "from": "/sobre-nos", "to": "/sobre", "status": 301 },
+  { "from": "/privacidade", "to": "/politica-de-privacidade", "status": 301 },
+  { "from": "/anuncie", "to": "/publicidade", "status": 301 }
+]

@@ -1,0 +1,21 @@
+{
+  "article": {
+    "id": "art_fixture_001",
+    "slug": "novo-filme-da-semana",
+    "template": "standard",
+    "title": "Novo filme da semana ganha data de estreia",
+    "excerpt": "Fixture pública para desenvolvimento e testes do Máquina Nerd.",
+    "cover": { "url": "https://images.example.invalid/cover.jpg", "width": 1200, "height": 675, "alt": "Imagem de capa de teste" },
+    "body": [
+      { "type": "paragraph", "html": "<p>Conteúdo editorial de fixture.</p>" },
+      { "type": "heading", "level": 2, "text": "Detalhes", "id": "detalhes" },
+      { "type": "ad", "slot": "in-article" }
+    ],
+    "author": { "id": "author_fixture", "name": "Redação Máquina Nerd", "slug": "redacao" },
+    "category": { "id": "cat_filmes", "slug": "filmes", "name": "Filmes" },
+    "tags": [{ "id": "tag_fixture", "slug": "cinema", "name": "Cinema" }],
+    "publishedAt": "2026-09-01T09:00:00-03:00",
+    "status": "published",
+    "seo": { "schemaType": "NewsArticle" }
+  }
+}

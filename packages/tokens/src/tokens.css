@@ -1,0 +1,192 @@
+/*
+ * Máquina Nerd — design tokens.
+ *
+ * Single source of truth for what the seven `*.dc.html` prototypes encode as two
+ * duplicated `THEMES` string constants. Two independent axes:
+ *
+ *   1. appearance — `data-theme="light" | "dark"` on <html>
+ *   2. brand      — `data-brand="mn" | "cinerie"` on <html>
+ *
+ * Shared UI must reference `--brand`, `--brand-ink` and `--brand-on-dark`, never the
+ * `--mn-red*` primitives. `#E30613` paints (background, border, focus ring); `#B00710`
+ * writes on light surfaces, `#FF3B3B` writes on dark. `#E30613` on white is ~4.0:1 and
+ * fails AA for text — that pairing is the easiest rule in the system to break.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ---- brand primitives (never referenced directly by shared UI) ---- */
+  --mn-red: #e30613;
+  --mn-red-ink: #b00710;
+  --mn-red-on-dark: #ff3b3b;
+  --mn-wine: #6e0404;
+  --cinerie-blue: #2a6ff0;
+  --cinerie-blue-ink: #1b52c0;
+  --cinerie-blue-on-dark: #8fb6ff;
+
+  /* ---- neutrals — light ---- */
+  --mn-bg: #ffffff;
+  --mn-surf: #f7f7f8;
+  --mn-surf2: #ececef;
+  --mn-line: #e9e9ec;
+  --mn-fg: #111214;
+  /**
+   * Secondary text.
+   *
+   * The prototypes and docs/02 specify #7C818A, and docs/09 claims it passes AA at 16px+.
+   * It does not: #7C818A is 3.91:1 on white and 3.66:1 on --mn-surf, and normal-size text
+   * needs 4.5:1. axe-core fails every page on it. Darkened to the nearest tone that
+   * clears the bar on both surfaces (4.99:1 and 4.65:1) — the smallest change that makes
+   * the approved palette actually accessible. Recorded in DECISIONS.md.
+   */
+  --mn-fg2: #6b7078;
+  /** Secondary text on the darkest light surface (--mn-surf2), where #6B7078 is 4.23:1. */
+  --mn-fg2-strong: #5f646c;
+  --mn-red-text: #b00710;
+  --mn-ink: #0b0b0c; /* UI black: header cartouche, overlays, footer. Only one black. */
+  --mn-on-ink: #f5f5f6;
+  --mn-line-on-ink: #292b31;
+  --mn-fg2-on-ink: #9aa0a9;
+  --mn-logo-light: block;
+  --mn-logo-dark: none;
+
+  /* ---- semantics ---- */
+  --mn-positive: #0e7a4a;
+  --mn-positive-hover: #0a5f39;
+  --mn-sponsored: #e8b33a;
+  --mn-sponsored-ink: #8a5b00;
+  --mn-sponsored-surf: #fef6e3;
+  --mn-live: #e30613;
+
+  /* ---- editorial desk accents (from the Design System prototype, section 02) ---- */
+  --desk-filmes: #c2110e;
+  --desk-series: #1d4ed8;
+  --desk-quadrinhos: #c77800;
+  --desk-games: #0e7a4a;
+  --desk-reviews: #6d28d9;
+  --desk-animes: #be185d;
+  --desk-especiais: #0b0b0c;
+
+  /* ---- Cinerie module surfaces (the sibling desk owns this block) ---- */
+  --cinerie-surf: #12151c;
+  --cinerie-line: #1e2430;
+  --cinerie-fg2: #7e8798;
+
+  /**
+   * Author avatar palette, assigned by a deterministic hash of the author id.
+   *
+   * These double as the editorial desk accents, but an avatar carries white initials at
+   * 11px bold, so every one of them has to clear 4.5:1 against white. The desk amber
+   * #C77800 is 3.43:1 and fails; the avatar variant is darkened to 5.87:1. The desk
+   * accent itself is unchanged — it is only ever used as a label colour on a light
+   * surface, never behind white text.
+   */
+  --mn-author-1: #b00710;
+  --mn-author-2: #8a5b00;
+  --mn-author-3: #1d4ed8;
+  --mn-author-4: #6d28d9;
+  --mn-author-5: #0b0b0c;
+
+  /* ---- typography ---- */
+  --font-sans: var(--font-figtree), 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --fs-display: clamp(34px, 5vw, 68px);
+  --fs-h1: clamp(30px, 4.2vw, 46px);
+  --fs-h1-cat: clamp(34px, 5vw, 54px);
+  --fs-h2: clamp(24px, 2.2vw, 27px);
+  --fs-h3: clamp(23px, 2vw, 28px);
+  --fs-h4: 17.5px;
+  --fs-h5: 15.5px;
+  --fs-body: 16px;
+  --fs-body-sm: 15px;
+  --fs-meta: 13px;
+  --fs-eyebrow: 13px;
+  --fs-label: 11.5px;
+  --fs-floor: 11px; /* nothing smaller, anywhere */
+  --lh-body: 1.78;
+  --lh-body-sm: 1.6;
+  --tracking-display: -0.045em;
+  --tracking-h1: -0.038em;
+  --tracking-h2: -0.03em;
+  --tracking-h4: -0.015em;
+  --tracking-eyebrow: 0.16em;
+  --tracking-label: 0.13em;
+  --measure-body: 68ch;
+  --measure-excerpt: 62ch;
+
+  /* ---- space, grid, shape ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+  --shell-max: 1440px;
+  --editorial-max: 1240px;
+  --dossier-max: 1100px;
+  --video-max: 1000px;
+  --reading-max: 720px;
+  --gutter: clamp(16px, 3vw, 40px);
+  --section-rhythm: 64px;
+  --grid-gutter: 24px;
+  --radius-badge: 3px;
+  --radius-button: 6px;
+  --radius-card: 8px;
+  --radius-block: 10px;
+  --radius-pill: 999px;
+  --border: 1px;
+
+  /* ---- motion ---- */
+  --dur-color: 160ms;
+  --dur-lift: 220ms;
+  --dur-zoom: 550ms;
+  --ease-zoom: cubic-bezier(0.2, 0.6, 0.2, 1);
+  --lift: translateY(-4px);
+  --zoom: scale(1.035);
+  --focus-ring: 2px solid var(--mn-red);
+  --focus-offset: 3px;
+
+  /* ---- ad slot reservations (see docs 07) ---- */
+  --ad-leaderboard-h: 90px;
+  --ad-sidebar-h: 600px;
+  --ad-in-article-h: 250px;
+  --ad-feed-h: 250px;
+  --ad-anchor-h: 50px;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --mn-bg: #0b0b0c;
+  --mn-surf: #15161a;
+  --mn-surf2: #1d1f24;
+  --mn-line: #292b31;
+  --mn-fg: #f5f5f6;
+  --mn-fg2: #9aa0a9;
+  --mn-fg2-strong: #9aa0a9;
+  --mn-red-text: #ff3b3b;
+  --mn-logo-light: none;
+  --mn-logo-dark: block;
+}
+
+/* ---- brand axis: only the accent family changes; neutrals are shared ---- */
+:root,
+:root[data-brand='mn'] {
+  --brand: var(--mn-red);
+  --brand-ink: var(--mn-red-ink);
+  --brand-on-dark: var(--mn-red-on-dark);
+  --brand-text: var(--mn-red-text);
+}
+
+:root[data-brand='cinerie'] {
+  --brand: var(--cinerie-blue);
+  --brand-ink: var(--cinerie-blue-ink);
+  --brand-on-dark: var(--cinerie-blue-on-dark);
+  --brand-text: var(--cinerie-blue-ink);
+}
+
+:root[data-brand='cinerie'][data-theme='dark'] {
+  --brand-text: var(--cinerie-blue-on-dark);
+}

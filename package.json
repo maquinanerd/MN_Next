@@ -1,0 +1,61 @@
+{
+  "name": "maquinanerd",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.15.1",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:contract": "vitest run tests/contract",
+    "test:security": "vitest run tests/security",
+    "test:a11y": "playwright test --grep @a11y",
+    "test:e2e": "playwright test --grep-invert \"@visual\"",
+    "test:visual": "playwright test --grep @visual",
+    "test:performance": "node scripts/performance-budget.mjs",
+    "wp:import": "tsx scripts/wp-import.ts",
+    "urls:verify": "tsx scripts/verify-urls.ts",
+    "redirects:build": "tsx scripts/build-redirects.ts",
+    "fixtures:media": "node scripts/generate-fixture-media.mjs"
+  },
+  "dependencies": {
+    "@mn/content": "workspace:*",
+    "@mn/seo": "workspace:*",
+    "@mn/tokens": "workspace:*",
+    "@mn/ui": "workspace:*",
+    "next": "15.5.4",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "server-only": "0.0.1",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.10.1",
+    "@eslint/js": "9.36.0",
+    "@next/eslint-plugin-next": "^16.3.3",
+    "@playwright/test": "1.55.0",
+    "@types/node": "22.18.1",
+    "@types/react": "19.1.13",
+    "@types/react-dom": "19.1.9",
+    "eslint": "9.36.0",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "5.2.0",
+    "globals": "15.15.0",
+    "prettier": "3.6.2",
+    "sharp": "^0.35.4",
+    "tsx": "4.20.5",
+    "typescript": "5.9.2",
+    "typescript-eslint": "8.44.0",
+    "vitest": "3.2.4"
+  }
+}

@@ -1,0 +1,191 @@
+@import '@mn/tokens/tokens.css';
+@import '@mn/ui/styles/ui.css';
+
+/*
+ * Application-level composition only. Anything reusable belongs in `@mn/ui`, so the
+ * shared package stays the single source of visual truth for both portals.
+ */
+
+.mn-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.mn-page > main {
+  flex: 1;
+}
+
+/* The byline avatar sits inline with the "por Autor" run. */
+.mn-byline__author {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.mn-header__searchlabel {
+  display: inline;
+}
+
+@media (max-width: 600px) {
+  .mn-header__searchlabel {
+    display: none;
+  }
+}
+
+/* Home: the lead story pairs a text column with its image. */
+.mn-home__leadtext {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.mn-home__leadtext h2 {
+  font-size: clamp(26px, 3.2vw, 36px);
+  font-weight: 900;
+  letter-spacing: var(--tracking-h2);
+  line-height: 1.08;
+}
+
+.mn-home__leadtext h2 a:hover {
+  color: var(--brand-text);
+}
+
+.mn-home__leadmedia {
+  position: relative;
+  display: block;
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  aspect-ratio: 576 / 324;
+  background: var(--mn-surf2);
+}
+
+.mn-home__leadmedia img {
+  object-fit: cover;
+}
+
+.mn-promo {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-height: clamp(260px, 34vw, 380px);
+  border-radius: var(--radius-block);
+  overflow: hidden;
+  color: var(--mn-on-ink);
+}
+
+.mn-promo img {
+  object-fit: cover;
+}
+
+.mn-promo__scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(11 11 12 / 10%) 30%, rgb(11 11 12 / 88%) 100%);
+}
+
+.mn-promo__body {
+  position: relative;
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.mn-promo__title {
+  font-size: clamp(28px, 4.4vw, 54px);
+  font-weight: 900;
+  letter-spacing: var(--tracking-display);
+  line-height: 0.98;
+  text-transform: uppercase;
+}
+
+.mn-promo__tags {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-size: var(--fs-floor);
+  font-weight: 800;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--mn-fg2-on-ink);
+}
+
+.mn-hero-editorial {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+  padding-block: var(--space-6);
+}
+
+@media (max-width: 860px) {
+  .mn-hero-editorial {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.mn-stat {
+  display: flex;
+  gap: var(--space-5);
+}
+
+.mn-stat__value {
+  font-size: var(--fs-h3);
+  font-weight: 900;
+  letter-spacing: var(--tracking-h2);
+  font-variant-numeric: tabular-nums;
+}
+
+.mn-stat__label {
+  font-size: var(--fs-floor);
+  font-weight: 800;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--mn-fg2);
+}
+
+.mn-dossier__chapters {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: var(--space-7);
+  align-items: start;
+  padding-block: var(--space-7);
+}
+
+@media (max-width: 900px) {
+  .mn-dossier__chapters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.mn-timeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  border-left: 2px solid var(--mn-line);
+  padding-left: var(--space-5);
+  margin: 0;
+  list-style: none;
+}
+
+.mn-landing__hero {
+  background: var(--mn-ink);
+  color: var(--mn-on-ink);
+  border-radius: var(--radius-block);
+  padding: var(--space-8) var(--space-6);
+  text-align: center;
+}
+
+.mn-landing__title {
+  font-size: var(--fs-display);
+  font-weight: 900;
+  letter-spacing: var(--tracking-display);
+  line-height: 0.98;
+  text-transform: uppercase;
+}
+
+.mn-landing__title em {
+  color: var(--brand-on-dark);
+  font-style: normal;
+}

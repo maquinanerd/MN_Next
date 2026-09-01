@@ -1,0 +1,51 @@
+# --- dependências ---
+node_modules/
+.pnpm-store/
+
+# --- build Next ---
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- ambiente / segredos ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- originais imutáveis e referências extraídas ---
+.migration-reference/
+*.zip
+
+# --- artefatos locais (nunca versionados) ---
+artifacts/
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+storybook-static/
+lighthouse/
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- mídia importada do WordPress ---
+/wp-import/
+/uploads/
+/media-cache/
+
+# --- SO / editores ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# --- Vercel / deploy ---
+.vercel
