@@ -101,11 +101,22 @@ export function listingMetadata(
     page?: number;
     noindex?: boolean;
     image?: Image | null;
+    /**
+     * How the route spells page 2.
+     *
+     * `segment` for `/series/page/2`, `query` for `/reviews?page=2`. Getting this wrong
+     * points the canonical at a URL that does not exist, which is worse than having no
+     * canonical at all — so the caller has to say, and the default matches the desk
+     * archives, which are the pages that carry the traffic.
+     */
+    pagination?: 'segment' | 'query';
   },
 ): Metadata {
   const page = opts.page ?? 1;
+  const shape = opts.pagination ?? 'segment';
   // Page 2 is canonical to page 2. Pointing it at page 1 is how an archive vanishes.
-  const canonical = page > 1 ? `${opts.path}/page/${page}` : opts.path;
+  const canonical =
+    page > 1 ? (shape === 'query' ? `${opts.path}?page=${page}` : `${opts.path}/page/${page}`) : opts.path;
   const title = page > 1 ? `${opts.title} — página ${page}` : opts.title;
   return {
     title,

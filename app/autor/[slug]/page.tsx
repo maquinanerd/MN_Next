@@ -37,6 +37,7 @@ export async function generateMetadata({
     description: result.author.bio ?? `Matérias assinadas por ${result.author.name} no Máquina Nerd.`,
     path: `/autor/${slug}`,
     page: Number(page ?? 1) || 1,
+    pagination: 'query',
   });
 }
 

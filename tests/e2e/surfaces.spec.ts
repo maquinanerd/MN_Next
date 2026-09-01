@@ -129,6 +129,24 @@ test.describe('category listing', () => {
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', /\/series\/page\/2$/);
   });
 
+  test('a query-paginated listing is canonical to its own URL shape', async ({ page }) => {
+    // The canonical builder used to emit /reviews/page/2 for a route that paginates with
+    // ?page=2 — a canonical pointing at a URL that does not exist is worse than none.
+    for (const [path, expected] of [
+      ['/reviews?page=2', /\/reviews\?page=2$/],
+      ['/ofertas?page=2', /\/ofertas\?page=2$/],
+      ['/autor/rafael-lima?page=2', /\/autor\/rafael-lima\?page=2$/],
+    ] as const) {
+      await page.goto(path);
+      await expect(page.locator('link[rel="canonical"]'), path).toHaveAttribute('href', expected);
+    }
+  });
+
+  test('page 1 of a query-paginated listing is canonical to the bare URL', async ({ page }) => {
+    await page.goto('/reviews');
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', /\/reviews$/);
+  });
+
   test('page 1 redirects to the unpaginated URL', async ({ page }) => {
     await page.goto('/series/page/1');
     expect(new URL(page.url()).pathname).toBe('/series');

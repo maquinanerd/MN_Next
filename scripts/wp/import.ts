@@ -41,10 +41,25 @@ const FLAGS = [
   { name: 'max-asset-mb', description: 'largest asset to transfer', type: 'number' as const, default: 25 },
 ];
 
+/**
+ * Everything a post refers to, keyed the way the post refers to it.
+ *
+ * A WordPress post carries **numeric ids** for its categories, tags and author. Keying
+ * these by slug instead was a real defect: every lookup missed, so every imported
+ * article arrived with no desk, no tags and no byline — and the portal drops articles
+ * with no desk from every listing and from the sitemap, so they would have been
+ * imported and then invisible.
+ *
+ * The slug map is kept as well, because the target is deduplicated by slug: two
+ * WordPress terms that slugify the same are one Kal El term.
+ */
 interface Indexes {
-  categoriesBySlug: Map<string, string>;
-  tagsBySlug: Map<string, string>;
-  authorsBySlug: Map<string, string>;
+  categoryByWpId: Map<number, string>;
+  tagByWpId: Map<number, string>;
+  authorByWpId: Map<number, string>;
+  categoryBySlug: Map<string, string>;
+  tagBySlug: Map<string, string>;
+  authorBySlug: Map<string, string>;
   /** WordPress media id -> Kal El media id. */
   mediaByWpId: Map<number, string>;
   /** Legacy asset URL -> Kal El image, for rewriting `<img src>` in bodies. */
@@ -53,9 +68,12 @@ interface Indexes {
 
 function emptyIndexes(): Indexes {
   return {
-    categoriesBySlug: new Map(),
-    tagsBySlug: new Map(),
-    authorsBySlug: new Map(),
+    categoryByWpId: new Map(),
+    tagByWpId: new Map(),
+    authorByWpId: new Map(),
+    categoryBySlug: new Map(),
+    tagBySlug: new Map(),
+    authorBySlug: new Map(),
     mediaByWpId: new Map(),
     imageByUrl: new Map(),
   };
@@ -99,67 +117,111 @@ async function main(): Promise<void> {
   console.log(apply ? '[wp:import] APPLYING — this writes to Kal El' : '[wp:import] dry run — nothing will be written');
 
   // ---------------------------------------------------------------- taxonomy
+  //
+  // Existing target terms are read first so a re-run reuses them instead of relying on
+  // the idempotency key alone — the key expires, the slug does not.
+  const existingBySlug = {
+    categories: new Map<string, string>(),
+    tags: new Map<string, string>(),
+    authors: new Map<string, string>(),
+  };
   if (target) {
-    for (const [resource, index] of [
-      ['categories', indexes.categoriesBySlug],
-      ['tags', indexes.tagsBySlug],
-      ['authors', indexes.authorsBySlug],
+    for (const [row, index] of [
+      [await target.listCategories(), existingBySlug.categories],
+      [await target.listTags(), existingBySlug.tags],
+      [await target.listAuthors(), existingBySlug.authors],
     ] as const) {
-      const existing =
-        resource === 'categories'
-          ? await target.listCategories()
-          : resource === 'tags'
-            ? await target.listTags()
-            : await target.listAuthors();
-      for (const row of existing.data ?? []) index.set(row.slug, row.id);
+      for (const entry of row.data ?? []) index.set(entry.slug, entry.id);
     }
+  }
+
+  /**
+   * Ensures one term exists and records it under both keys.
+   *
+   * A failure here is a failure of the run: an article that loses its desk is worse than
+   * an article that was not imported, because the first looks like success.
+   */
+  async function ensureTerm(
+    kind: 'category' | 'tag' | 'author',
+    wpId: number,
+    slug: string,
+    create: () => Promise<{ data: { id: string } | null; error: string | null }>,
+    byWpId: Map<number, string>,
+    bySlug: Map<string, string>,
+    existing: Map<string, string>,
+  ): Promise<void> {
+    const known = bySlug.get(slug) ?? existing.get(slug);
+    if (known) {
+      byWpId.set(wpId, known);
+      bySlug.set(slug, known);
+      return;
+    }
+    if (!target) {
+      const placeholder = `dry:${kind}:${slug}`;
+      byWpId.set(wpId, placeholder);
+      bySlug.set(slug, placeholder);
+      return;
+    }
+    const res = await create();
+    if (res.data?.id) {
+      byWpId.set(wpId, res.data.id);
+      bySlug.set(slug, res.data.id);
+      return;
+    }
+    summary.counts.inc('failed');
+    summary.failures.push({ id: `${kind}:${wpId}`, reason: res.error ?? 'unknown' });
   }
 
   for await (const batch of source.categories()) {
     for (const term of batch) {
       const slug = slugify(term.slug || term.name);
-      if (indexes.categoriesBySlug.has(slug)) continue;
-      if (!target) {
-        indexes.categoriesBySlug.set(slug, `dry:${slug}`);
-        continue;
-      }
-      const res = await target.createCategory(
-        { name: term.name, slug, description: term.description || null },
-        idempotencyKey('category', term.id),
+      await ensureTerm(
+        'category',
+        term.id,
+        slug,
+        () =>
+          target!.createCategory(
+            { name: term.name, slug, description: term.description || null },
+            idempotencyKey('category', term.id),
+          ),
+        indexes.categoryByWpId,
+        indexes.categoryBySlug,
+        existingBySlug.categories,
       );
-      if (res.data?.id) indexes.categoriesBySlug.set(slug, res.data.id);
-      else summary.failures.push({ id: `category:${term.id}`, reason: res.error ?? 'unknown' });
     }
   }
 
   for await (const batch of source.tags()) {
     for (const term of batch) {
       const slug = slugify(term.slug || term.name);
-      if (indexes.tagsBySlug.has(slug)) continue;
-      if (!target) {
-        indexes.tagsBySlug.set(slug, `dry:${slug}`);
-        continue;
-      }
-      const res = await target.createTag({ name: term.name, slug }, idempotencyKey('tag', term.id));
-      if (res.data?.id) indexes.tagsBySlug.set(slug, res.data.id);
-      else summary.failures.push({ id: `tag:${term.id}`, reason: res.error ?? 'unknown' });
+      await ensureTerm(
+        'tag',
+        term.id,
+        slug,
+        () => target!.createTag({ name: term.name, slug }, idempotencyKey('tag', term.id)),
+        indexes.tagByWpId,
+        indexes.tagBySlug,
+        existingBySlug.tags,
+      );
     }
   }
 
   for await (const batch of source.authors()) {
     for (const author of batch) {
       const slug = slugify(author.slug || author.name);
-      if (indexes.authorsBySlug.has(slug)) continue;
-      if (!target) {
-        indexes.authorsBySlug.set(slug, `dry:${slug}`);
-        continue;
-      }
-      const res = await target.createAuthor(
-        { name: author.name, slug, bio: author.description || null },
-        idempotencyKey('author', author.id),
+      await ensureTerm(
+        'author',
+        author.id,
+        slug,
+        () =>
+          target!.createAuthor(
+            { name: author.name, slug, bio: author.description || null },
+            idempotencyKey('author', author.id),
+          ),
+        indexes.authorByWpId,
+        indexes.authorBySlug,
+        existingBySlug.authors,
       );
-      if (res.data?.id) indexes.authorsBySlug.set(slug, res.data.id);
-      else summary.failures.push({ id: `author:${author.id}`, reason: res.error ?? 'unknown' });
     }
   }
 
@@ -203,6 +265,7 @@ async function main(): Promise<void> {
         // The source server writes the Content-Type; only the bytes are trusted.
         const detected = detectImageType(fetched.data);
         if (!detected) {
+          summary.counts.inc('failed');
           summary.failures.push({ id: externalKey, reason: 'bytes are not a recognised raster image' });
           continue;
         }
@@ -210,15 +273,22 @@ async function main(): Promise<void> {
         const filename = path.basename(new URL(url).pathname) || `${asset.slug}.jpg`;
         const uploaded = await target.uploadMedia(filename, fetched.data, detected, externalKey);
         if (!uploaded.id) {
+          summary.counts.inc('failed');
           summary.failures.push({ id: externalKey, reason: uploaded.error ?? 'upload failed' });
           continue;
         }
 
-        // Metadata is a second call: Kal El's upload endpoint takes the file only.
-        await target.updateMediaMetadata(uploaded.id, {
+        // Metadata is a second call: Kal El's upload endpoint takes the file only. Its
+        // result is checked — alt text and credit are a legal requirement for agency
+        // photography, not a nice-to-have, so losing them silently is not acceptable.
+        const meta = await target.updateMediaMetadata(uploaded.id, {
           altText: image.alt || null,
           caption: image.caption ?? null,
         });
+        if (!meta.data) {
+          summary.counts.inc('failed');
+          summary.failures.push({ id: externalKey, reason: `metadata not saved: ${meta.error ?? 'unknown'}` });
+        }
 
         state.mappings[mappingKey('media', asset.id)] = uploaded.id;
         indexes.mediaByWpId.set(asset.id, uploaded.id);
@@ -285,6 +355,8 @@ async function main(): Promise<void> {
 
   // A failure has to be visible to CI, but a dry run that found problems is a success:
   // finding them is what it is for.
+  // Any write failure — a term, an asset, a post — fails the run. A migration that
+  // exits 0 having lost a desk or a cover looks like success and is not.
   if (apply && summary.counts.get('failed') > 0) process.exit(1);
 }
 
@@ -337,10 +409,10 @@ async function importPost(post: WpPost, ctx: ImportContext): Promise<'created' |
     externalKey,
     status: 'published',
     publishedAt: new Date(`${post.date_gmt}Z`).toISOString(),
-    categories: post.categories
-      .map((id) => indexes.categoriesBySlug.get(String(id)))
-      .filter((v): v is string => Boolean(v)),
-    tags: post.tags.map((id) => indexes.tagsBySlug.get(String(id))).filter((v): v is string => Boolean(v)),
+    // Numeric WordPress ids, resolved through the id-keyed maps.
+    categories: post.categories.map((id) => indexes.categoryByWpId.get(id)).filter((v): v is string => Boolean(v)),
+    tags: post.tags.map((id) => indexes.tagByWpId.get(id)).filter((v): v is string => Boolean(v)),
+    authors: [indexes.authorByWpId.get(post.author)].filter((v): v is string => Boolean(v)),
     provenance: {
       system: 'wordpress',
       sources: [{ provider: 'wordpress', externalId: String(post.id), externalUrl: post.link }],
@@ -354,9 +426,27 @@ async function importPost(post: WpPost, ctx: ImportContext): Promise<'created' |
 
   const existing = await target.findArticleByExternalKey(externalKey);
   if (existing) {
+    /*
+     * Every field the migration owns is re-sent, not just the text.
+     *
+     * A partial update means a first run that got something wrong — a missing desk, a
+     * missing byline — can never be repaired by running again, which defeats the point
+     * of an idempotent importer. Status and publication date are deliberately excluded:
+     * those belong to the editorial workflow once the article lives in the CMS.
+     */
     const res = await target.updateArticle(
       existing.id,
-      { title: body.title, excerpt: body.excerpt, document, slug },
+      {
+        title: body.title,
+        excerpt: body.excerpt,
+        document,
+        slug,
+        categories: body.categories,
+        tags: body.tags,
+        authors: body.authors,
+        ...(body.featuredMediaId ? { featuredMediaId: body.featuredMediaId } : {}),
+        provenance: body.provenance,
+      },
       existing.version,
     );
     if (res.status === 409) {

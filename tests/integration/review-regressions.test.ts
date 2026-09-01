@@ -264,3 +264,72 @@ describe('relationsFor drives targeted invalidation', () => {
     expect(await repo.relationsFor('nao-existe')).toEqual({ categories: [], tags: [], authors: [] });
   });
 });
+
+describe('the news sitemap is not capped at one page', () => {
+  it('pages until it passes the cutoff', async () => {
+    // Kal El caps `limit` at 100. A single call could only ever return the hundred most
+    // recently updated articles, so a busy 48 hours silently lost everything after that.
+    const now = Date.now();
+    const recent = Array.from({ length: 250 }, (_, i) => ({
+      ...ARTICLE_SUMMARY,
+      id: `eee${String(i).padStart(5, '0')}-2222-4333-8444-555566667777`,
+      slug: `recente-${i}`,
+      publishedAt: new Date(now - i * 60_000).toISOString(),
+      updatedAt: new Date(now - i * 60_000).toISOString(),
+    }));
+    const old = Array.from({ length: 100 }, (_, i) => ({
+      ...ARTICLE_SUMMARY,
+      id: `fff${String(i).padStart(5, '0')}-2222-4333-8444-555566667777`,
+      slug: `antigo-${i}`,
+      publishedAt: new Date(now - 10 * 24 * 60 * 60 * 1000).toISOString(),
+      updatedAt: new Date(now - 10 * 24 * 60 * 60 * 1000).toISOString(),
+    }));
+    const corpus = [...recent, ...old];
+
+    const { repo } = repository((url) => {
+      const t = taxonomy(url);
+      if (t) return t;
+      if (url.pathname.endsWith('/articles')) {
+        const cursor = Number(url.searchParams.get('cursor') ?? 0);
+        const limit = Number(url.searchParams.get('limit') ?? 100);
+        const slice = corpus.slice(cursor, cursor + limit);
+        const next = cursor + limit < corpus.length ? String(cursor + limit) : null;
+        return json({ items: slice, nextCursor: next });
+      }
+      return new Response('', { status: 404 });
+    });
+
+    const since = new Date(now - 48 * 60 * 60 * 1000);
+    const news = await repo.listRecentNews(since, 1000);
+    expect(news.length).toBe(250);
+  });
+
+  it('stops once a whole page is older than the cutoff', async () => {
+    const now = Date.now();
+    const corpus = Array.from({ length: 400 }, (_, i) => ({
+      ...ARTICLE_SUMMARY,
+      id: `ddd${String(i).padStart(5, '0')}-2222-4333-8444-555566667777`,
+      slug: `item-${i}`,
+      publishedAt: new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      updatedAt: new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    }));
+    let pages = 0;
+
+    const { repo } = repository((url) => {
+      const t = taxonomy(url);
+      if (t) return t;
+      if (url.pathname.endsWith('/articles')) {
+        pages += 1;
+        const cursor = Number(url.searchParams.get('cursor') ?? 0);
+        const slice = corpus.slice(cursor, cursor + 100);
+        return json({ items: slice, nextCursor: cursor + 100 < corpus.length ? String(cursor + 100) : null });
+      }
+      return new Response('', { status: 404 });
+    });
+
+    const news = await repo.listRecentNews(new Date(now - 48 * 60 * 60 * 1000), 1000);
+    expect(news).toEqual([]);
+    // One page was enough to establish that everything is older; no reason to walk on.
+    expect(pages).toBe(1);
+  });
+});

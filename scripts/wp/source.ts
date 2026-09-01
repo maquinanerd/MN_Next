@@ -71,10 +71,69 @@ export type WpMedia = z.infer<typeof wpMediaSchema>;
 
 export interface SourceOptions {
   baseUrl: string;
+  /** Extra hosts assets may come from — a CDN in front of the media library. */
+  assetHosts?: string[];
   /** Application password, only needed for non-public content. Never logged. */
   auth?: string;
   requestsPerSecond?: number;
   fetchImpl?: typeof fetch;
+}
+
+/**
+ * Whether an asset URL may be fetched.
+ *
+ * A media record's `source_url` is data from the legacy system, not a constant. During a
+ * migration the importer runs with network access to whatever the operator's machine can
+ * reach, so an attacker-influenced media row is a request forgery primitive: it could
+ * point at a cloud metadata endpoint or an internal admin service and the importer would
+ * dutifully fetch it.
+ *
+ * Two rules close that: the host must be the WordPress origin itself (or one the
+ * operator allowed explicitly), and the address must not be private. Both are re-checked
+ * on every redirect hop, because the first response is free to point somewhere else.
+ */
+export function assetUrlAllowed(
+  raw: string,
+  allowedHosts: Set<string>,
+): { ok: true; url: URL } | { ok: false; reason: string } {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return { ok: false, reason: 'not a URL' };
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return { ok: false, reason: `scheme ${url.protocol}` };
+  // Credentials in a URL are how a fetch gets aimed at something that trusts them.
+  if (url.username !== '' || url.password !== '') return { ok: false, reason: 'credentials in URL' };
+  if (url.port !== '' && !['80', '443'].includes(url.port)) return { ok: false, reason: `port ${url.port}` };
+
+  const host = url.hostname.toLowerCase();
+  if (!allowedHosts.has(host)) return { ok: false, reason: `host ${host} is not the source origin` };
+  if (isPrivateAddress(host)) return { ok: false, reason: `host ${host} resolves to a private address` };
+  return { ok: true, url };
+}
+
+/**
+ * Literal private, loopback and link-local addresses.
+ *
+ * This is a syntactic check, not a DNS one: a hostname that *resolves* to a private
+ * address still passes here. The host allowlist is what actually carries the weight —
+ * this only stops the obvious case of a media row pointing straight at an IP.
+ */
+export function isPrivateAddress(host: string): boolean {
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.internal') || host.endsWith('.local')) {
+    return true;
+  }
+  if (host === '::1' || host.startsWith('[')) return true;
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (!v4) return false;
+  const [a, b] = [Number(v4[1]), Number(v4[2])];
+  if (a === 10 || a === 127 || a === 0) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  return false;
 }
 
 export class WordPressSource {
@@ -82,12 +141,15 @@ export class WordPressSource {
   private readonly auth: string | undefined;
   private readonly pace: () => Promise<void>;
   private readonly fetchImpl: typeof fetch;
+  /** Hosts an asset may legitimately come from: the source origin, plus any CDN. */
+  private readonly assetHosts: Set<string>;
 
   constructor(opts: SourceOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
     this.auth = opts.auth;
     this.pace = rateLimiter(opts.requestsPerSecond ?? 4);
     this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.assetHosts = new Set([new URL(this.baseUrl).hostname, ...(opts.assetHosts ?? [])].map((h) => h.toLowerCase()));
   }
 
   static fromEnv(overrides: Partial<SourceOptions> = {}): WordPressSource {
@@ -96,6 +158,13 @@ export class WordPressSource {
     return new WordPressSource({
       baseUrl,
       ...(process.env.WP_APPLICATION_PASSWORD ? { auth: process.env.WP_APPLICATION_PASSWORD } : {}),
+      ...(process.env.WP_ASSET_HOSTS
+        ? {
+            assetHosts: process.env.WP_ASSET_HOSTS.split(',')
+              .map((h) => h.trim())
+              .filter(Boolean),
+          }
+        : {}),
       ...overrides,
     });
   }
@@ -178,18 +247,43 @@ export class WordPressSource {
     return this.collection('media', wpMediaSchema, { orderby: 'id', order: 'asc' }, 100);
   }
 
-  /** Downloads one asset, bounded by size and content type. */
-  async fetchAsset(url: string, maxBytes: number): Promise<{ data: Buffer; mimeType: string } | null> {
-    await this.pace();
-    const res = await this.fetchImpl(url, { signal: AbortSignal.timeout(60_000) });
-    if (!res.ok) return null;
-    const mimeType = res.headers.get('content-type')?.split(';')[0]?.trim() ?? 'application/octet-stream';
-    const declared = Number(res.headers.get('content-length') ?? '0');
-    if (declared > maxBytes) return null;
-    const buffer = Buffer.from(await res.arrayBuffer());
-    // The declared length is a hint, not a promise; the real one is what counts.
-    if (buffer.byteLength > maxBytes) return null;
-    return { data: buffer, mimeType };
+  /**
+   * Downloads one asset, bounded by size, host and hop count.
+   *
+   * `redirect: 'manual'` is the point: following redirects automatically would let the
+   * first response — which the source system controls — send the fetch anywhere, and the
+   * allowlist would only ever have checked the first URL.
+   */
+  async fetchAsset(url: string, maxBytes: number, maxHops = 3): Promise<{ data: Buffer; mimeType: string } | null> {
+    let current = url;
+
+    for (let hop = 0; hop <= maxHops; hop += 1) {
+      const allowed = assetUrlAllowed(current, this.assetHosts);
+      if (!allowed.ok) return null;
+
+      await this.pace();
+      const res = await this.fetchImpl(allowed.url.toString(), {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(60_000),
+      });
+
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers.get('location');
+        if (!location) return null;
+        current = new URL(location, allowed.url).toString();
+        continue;
+      }
+      if (!res.ok) return null;
+
+      const mimeType = res.headers.get('content-type')?.split(';')[0]?.trim() ?? 'application/octet-stream';
+      const declared = Number(res.headers.get('content-length') ?? '0');
+      if (declared > maxBytes) return null;
+      const buffer = Buffer.from(await res.arrayBuffer());
+      // The declared length is a hint, not a promise; the real one is what counts.
+      if (buffer.byteLength > maxBytes) return null;
+      return { data: buffer, mimeType };
+    }
+    return null;
   }
 }
 

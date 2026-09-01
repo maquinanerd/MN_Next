@@ -131,6 +131,13 @@ export function embedProviderFor(url: string): EmbedProvider | null {
   return null;
 }
 
+/**
+ * `[name attrs]inner[/name]` or a self-closing `[name attrs]`.
+ *
+ * The backreference is what keeps a closing tag matched to its own opening tag, so a
+ * body containing two different shortcodes does not collapse into one match.
+ */
+const SHORTCODE_RE = /\[([a-z0-9_-]+)([^\]]*)\](?:([\s\S]*?)\[\/\1\])?/gi;
 export interface TransformOptions {
   postId: string | number;
   /** Maps a legacy media URL to an already-imported Kal El image. */
@@ -147,13 +154,65 @@ export interface TransformOptions {
 export function htmlToBlocks(rawHtml: string, options: TransformOptions): ContentBlock[] {
   const { postId, resolveImage, report } = options;
 
-  // WordPress shortcodes: convert the ones with an obvious block equivalent, count the rest.
-  const withShortcodes = rawHtml.replace(/\[([a-z0-9_-]+)([^\]]*)\](?:([\s\S]*?)\[\/\1\])?/gi, (full, name: string) => {
-    const kind = name.toLowerCase();
-    if (kind === 'caption' || kind === 'gallery' || kind === 'embed') return full;
-    note(report, `shortcode:${kind}`, postId, full);
-    return '';
-  });
+  /*
+   * WordPress shortcodes.
+   *
+   * The three with an obvious block equivalent are *rewritten into HTML* here rather
+   * than passed through: the block parser downstream only understands tags, so a
+   * shortcode left intact would either vanish between two paragraphs or survive as
+   * literal `[caption]` text in the body. Both are silent loss, which is the one failure
+   * this converter exists to prevent. Everything else is counted and removed.
+   */
+  const withShortcodes = rawHtml.replace(
+    SHORTCODE_RE,
+    (full: string, name: string, attrs: string, inner: string | undefined) => {
+      const kind = name.toLowerCase();
+
+      // [caption ...]<img …/> Legenda[/caption]
+      if (kind === 'caption') {
+        const body = inner ?? '';
+        const img = /<img\b[^>]*\/?>/i.exec(body)?.[0];
+        if (!img) {
+          note(report, 'shortcode:caption:no-image', postId, full);
+          return '';
+        }
+        const caption = toPlainText(body.replace(img, '')).trim();
+        return `<figure>${img}${caption ? `<figcaption>${caption}</figcaption>` : ''}</figure>`;
+      }
+
+      // [gallery ids="12,34"] — each id becomes an image the resolver looks up.
+      //
+      // The placeholder is a rooted path rather than a custom scheme: the sanitiser
+      // runs between here and the parser and drops any src it cannot recognise as a
+      // safe URL, which silently emptied every gallery.
+      if (kind === 'gallery') {
+        const ids = /ids\s*=\s*["']?([\d,\s]+)["']?/i.exec(attrs)?.[1];
+        if (!ids) {
+          note(report, 'shortcode:gallery:no-ids', postId, full);
+          return '';
+        }
+        return ids
+          .split(',')
+          .map((id) => id.trim())
+          .filter(Boolean)
+          .map((id) => `<img src="/wp-media-id/${id}" alt="" />`)
+          .join('');
+      }
+
+      // [embed]https://…[/embed] — a bare URL paragraph, which the parser auto-embeds.
+      if (kind === 'embed') {
+        const url = toPlainText(inner ?? '').trim();
+        if (!/^https?:\/\//i.test(url)) {
+          note(report, 'shortcode:embed:no-url', postId, full);
+          return '';
+        }
+        return `<p>${url}</p>`;
+      }
+
+      note(report, `shortcode:${kind}`, postId, full);
+      return '';
+    },
+  );
 
   const { html, report: sanitiseReport } = sanitizeHtml(withShortcodes);
   for (const [tag, count] of Object.entries(sanitiseReport.droppedTags)) {
@@ -260,6 +319,13 @@ export function htmlToBlocks(rawHtml: string, options: TransformOptions): Conten
       default:
         note(report, `block:${tag}`, postId, inner);
     }
+  }
+
+  // A shortcode that reached this point was neither converted nor stripped; it would
+  // otherwise sit in the body as literal text, which is the loss this file exists to
+  // make visible.
+  for (const leftover of html.matchAll(/\[([a-z0-9_-]+)[^\]]*\]/gi)) {
+    note(report, `shortcode:unconverted:${(leftover[1] ?? '').toLowerCase()}`, postId, leftover[0]);
   }
 
   if (blocks.length === 0 && toPlainText(html).trim() !== '') {

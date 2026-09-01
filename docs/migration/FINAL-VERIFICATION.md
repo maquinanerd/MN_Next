@@ -17,19 +17,19 @@ que não pôde ser verificado está na seção de pendências em vez de marcado 
 | Formatação              | `pnpm format:check`     | ✅ _All matched files use Prettier code style_               |
 | Lint                    | `pnpm lint`             | ✅ 0 problemas                                               |
 | Tipos                   | `pnpm typecheck`        | ✅ 0 erros (`strict`, `noUncheckedIndexedAccess`, sem `any`) |
-| Unit                    | `pnpm test:unit`        | ✅ **89 passed**                                             |
+| Unit                    | `pnpm test:unit`        | ✅ **108 passed**                                            |
 | Contrato                | `pnpm test:contract`    | ✅ **45 passed**                                             |
-| Integração              | `pnpm test:integration` | ✅ **33 passed**                                             |
+| Integração              | `pnpm test:integration` | ✅ **35 passed**                                             |
 | Segurança               | `pnpm test:security`    | ✅ **32 passed**                                             |
 | Build                   | `pnpm build`            | ✅ compila; home estática, artigo e editoria em SSG+ISR      |
-| E2E                     | `pnpm test:e2e`         | ✅ incluído nos 461 abaixo                                   |
-| Acessibilidade          | `pnpm test:a11y`        | ✅ incluído nos 461 abaixo                                   |
-| Visual                  | `pnpm test:visual`      | ✅ incluído nos 461 abaixo                                   |
-| Playwright (total)      | `npx playwright test`   | ✅ **461 passed** em 4 viewports                             |
+| E2E                     | `pnpm test:e2e`         | ✅ incluído nos 469 abaixo                                   |
+| Acessibilidade          | `pnpm test:a11y`        | ✅ incluído nos 469 abaixo                                   |
+| Visual                  | `pnpm test:visual`      | ✅ incluído nos 469 abaixo                                   |
+| Playwright (total)      | `npx playwright test`   | ✅ **469 passed** em 4 viewports                             |
 | Performance             | `pnpm test:performance` | ✅ JS 109 KB / 120 · CSS 14 KB / 25                          |
 | Ferramentas de migração | `--help` nas três       | ✅ exit 0                                                    |
 
-**Total: 199 testes Node + 461 de browser = 660 verificações.**
+**Total: 220 testes Node + 469 de browser = 689 verificações.**
 
 O orçamento de performance é medido sobre o bundle produzido, não por Lighthouse:
 tamanho de bundle é determinístico e é o número que regride em silêncio. Lighthouse
@@ -63,7 +63,7 @@ contra staging continua no checklist de pré-lançamento, onde um LCP real pode 
 | -------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | Scripts com help, dry-run, resume, relatório | ✅ dry run é o padrão; sem `--apply` o cliente de escrita nem é construído                |
 | Reexecução sem duplicar                      | ✅ por construção (`externalKey` + idempotency key). **Não executado contra dados reais** |
-| Parser sanitiza e contabiliza desconhecidos  | ✅ 39 testes; dois bugs reais encontrados por eles (ver §3)                               |
+| Parser sanitiza e contabiliza desconhecidos  | ✅ 58 testes; quatro bugs reais encontrados por eles (ver §3)                             |
 | Mapa de redirects e 410                      | ✅ permalinks, `?p=`, feeds, `wp-json`; sem open redirect (19 testes)                     |
 | Amostra de URLs com zero 404                 | ❌ **não verificável**: a amostra não existe — pendência 2                                |
 
@@ -89,34 +89,54 @@ contra staging continua no checklist de pré-lançamento, onde um LCP real pode 
 
 ## 3. O que a revisão encontrou
 
-O ciclo do `CLAUDE.md` — implementa, Codex revisa, corrige, revisa de novo — rodou uma vez
-por inteiro e uma vez pela metade.
+O ciclo do `CLAUDE.md` — implementa, Codex revisa, corrige, revisa de novo — rodou três
+rodadas.
 
-**Primeira revisão do Codex** (`artifacts/codex-reviews/wave-12-inicial.md`): 9 achados,
-5 de severidade alta. Todos corrigidos, cada um com teste de regressão que falha se a
-correção for revertida.
+**Rodada 1 — Codex** (`artifacts/codex-reviews/wave-12-inicial.md`): 9 achados, 5 de
+severidade alta. Todos corrigidos, cada um com teste de regressão que falha se a correção
+for revertida.
 
-**Segunda revisão:** o Codex **abortou por limite de cota** no meio da execução. O log
-está em `wave-12-final.log`. Conforme o `CLAUDE.md` manda nesse caso, foi feita a revisão
-equivalente internamente e registrada com o motivo em `wave-12-final.md`. Ela encontrou
-mais 12 problemas, entre eles:
+**Rodada 2 — auto-revisão.** O Codex abortou por limite de cota no meio da execução
+(`wave-12-final.log`). Conforme o `CLAUDE.md` manda nesse caso, a revisão equivalente foi
+feita internamente e registrada com o motivo em `wave-12-final.md`. Encontrou mais 12
+problemas, entre eles:
 
 - **soft-404 em todo o site** — um `loading.tsx` na raiz fazia `notFound()` e `redirect()`
-  devolverem HTTP 200. Medido: `/isto-nao-existe` → 200, `/series/page/1` → 200. Depois:
-  404 e 307;
+  devolverem HTTP 200. Medido: `/isto-nao-existe` → 200. Depois: 404;
 - **loop de redirect** em `/reviews/{slug}`, que redirecionava para si mesmo;
-- **contraste AA reprovado em todas as páginas** (`--mn-fg2` a 3,91:1);
-- texto a **1,04:1** em faixas escuras dentro do tema claro;
-- CTA de compra repintado de vermelho pela regra de link do corpo, a 1,35:1;
+- **contraste AA reprovado em todas as páginas**, e texto a **1,04:1** em faixas escuras;
 - overflow horizontal em 390px.
 
-Dois bugs adicionais no parser WordPress foram encontrados pelos próprios testes ao serem
-escritos: `<cite>` era removido pela sanitização antes de o parser lê-lo — **toda citação
-migrada perdia a atribuição** — e nomes de shortcode com dígito não eram reconhecidos,
-deixando a tag como texto no corpo.
+**Rodada 3 — Codex** (`artifacts/codex-reviews/wave-final.md`), com a cota restabelecida:
+**7 achados bloqueantes**, todos reais, todos corrigidos e cobertos por teste:
 
-> A segunda opinião do Codex sobre o estado final continua **pendente**. Não é uma
-> aprovação simulada e não deve ser tratada como uma.
+1. **A importação publicaria artigos sem editoria, sem tags e sem autor.** O post do
+   WordPress carrega **ids numéricos**, e o importador os procurava em mapas indexados por
+   _slug_ — toda busca falhava. Como o portal descarta artigos sem editoria das listagens e
+   do sitemap, os artigos teriam sido importados e ficado invisíveis. O autor nunca entrava
+   no payload.
+2. **A reexecução não reconciliava.** O update mandava só título, resumo, documento e slug,
+   então uma primeira execução defeituosa não podia ser reparada rodando de novo — o que
+   anula o propósito de um importador idempotente.
+3. **Falha de taxonomia ou de mídia terminava com exit 0** sob `--apply`. Uma migração que
+   perde uma capa e sai zero parece sucesso.
+4. **Shortcodes reconhecidos sumiam em silêncio.** `[caption]`, `[gallery]` e `[embed]`
+   eram preservados pelo stripper, mas o parser seguinte só lê tags HTML — então o
+   shortcode desaparecia entre dois parágrafos, sem sequer ser contado.
+5. **O news sitemap parava nos primeiros 100 itens.** A rota pede mil; o Kal El limita a
+   consulta a 100 por página e não havia paginação.
+6. **Canonicals de paginação apontavam para URLs inexistentes.** Reviews, autor e ofertas
+   paginam com `?page=`, mas o gerador emitia `/page/N`; `/ofertas` ignorava a página.
+7. **SSRF no importador de mídia.** `source_url` é dado do sistema legado e era buscado
+   sem restrição de host, seguindo redirects — um registro de mídia manipulado apontaria a
+   busca para a rede interna durante a migração.
+
+Além disso, escrever os testes do parser revelou dois defeitos por conta própria: `<cite>`
+era removido pela sanitização antes de o parser lê-lo — **toda citação migrada perdia a
+atribuição** — e nomes de shortcode com dígito não eram reconhecidos.
+
+> Nenhuma rodada foi simulada. Quando o revisor independente não pôde rodar, isso está
+> dito, e a revisão substituta está identificada como tal.
 
 ## 4. Mudança no Kal El
 

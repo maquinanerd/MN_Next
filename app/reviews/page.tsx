@@ -19,6 +19,7 @@ export async function generateMetadata({
     description: 'Análises de produtos, box, edições de colecionador e hardware pela redação do Máquina Nerd.',
     path: '/reviews',
     page: Number(page ?? 1) || 1,
+    pagination: 'query',
   });
 }
 

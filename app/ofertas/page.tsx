@@ -8,11 +8,18 @@ import { seoContext } from '../../lib/seo-context';
 /** Offers index. Every item here is commercial and says so. */
 export const revalidate = 300;
 
-export async function generateMetadata(): Promise<Metadata> {
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}): Promise<Metadata> {
+  const { page } = await searchParams;
   return listingMetadata(seoContext(), {
     title: 'Ofertas',
     description: 'Ofertas de quadrinhos, colecionáveis e hardware filtradas pela redação, com preço verificado.',
     path: '/ofertas',
+    page: Number(page ?? 1) || 1,
+    pagination: 'query',
   });
 }
 

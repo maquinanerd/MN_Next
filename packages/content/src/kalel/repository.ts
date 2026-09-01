@@ -79,6 +79,9 @@ import { SITEMAP_PAGE_SIZE } from '../sitemap-page-size';
 const INDEX_PAGE_SIZE = 100;
 const MAX_INDEX_PAGES = 500;
 
+/** How far back the news walk will page before giving up. 1000 articles is the cap. */
+const MAX_NEWS_PAGES = 10;
+
 /** Media pages by offset; Kal El caps `limit` at 200. */
 const MEDIA_PAGE_SIZE = 200;
 const MAX_MEDIA_PAGES = 200;
@@ -659,16 +662,41 @@ export class KalElContentRepository implements ContentRepository {
     return { entries, nextCursor: hasNext ? String(page + 1) : null };
   }
 
+  /**
+   * Recent articles, for the RSS feed and the Google News sitemap.
+   *
+   * Paginated: Kal El caps `limit` at 100, so a single call could only ever return the
+   * hundred most recently updated articles. The news sitemap asks for up to a thousand
+   * from the last 48 hours, and on a busy day that silently lost everything past the
+   * first page.
+   *
+   * The walk stops as soon as a page is entirely older than the cutoff. The list is
+   * ordered by `updatedAt`, not `publishedAt`, so it stops one page late rather than
+   * early — a re-edited old article can appear among recent ones.
+   */
   async listRecentNews(since: Date, limit: number): Promise<ArticleSummary[]> {
     const ctx = await this.context();
-    const res = await this.transport.read(kalelArticleListSchema, {
-      path: this.transport.sitePath('/articles'),
-      query: { status: 'published', limit: Math.min(100, Math.max(1, limit)) },
-      tags: [TAG.news],
-      revalidate: REVALIDATE.news,
-    });
-    const items = await this.summaries(res.items, ctx);
-    return items.filter((a) => a.publishedAt !== null && new Date(a.publishedAt) >= since).slice(0, limit);
+    const collected: ArticleSummary[] = [];
+    let cursor: string | undefined;
+
+    for (let page = 0; page < MAX_NEWS_PAGES && collected.length < limit; page += 1) {
+      const res = await this.transport.read(kalelArticleListSchema, {
+        path: this.transport.sitePath('/articles'),
+        query: { status: 'published', limit: INDEX_PAGE_SIZE, ...(cursor ? { cursor } : {}) },
+        tags: [TAG.news],
+        revalidate: REVALIDATE.news,
+      });
+
+      const items = await this.summaries(res.items, ctx);
+      collected.push(...items.filter((a) => a.publishedAt !== null && new Date(a.publishedAt) >= since));
+
+      const everythingOlder =
+        items.length > 0 && items.every((a) => a.publishedAt === null || new Date(a.publishedAt) < since);
+      if (everythingOlder || !res.nextCursor) break;
+      cursor = res.nextCursor;
+    }
+
+    return collected.slice(0, limit);
   }
 
   async listRedirects(): Promise<LegacyRedirect[]> {
