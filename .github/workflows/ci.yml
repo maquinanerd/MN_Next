@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'chore/**', 'feat/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # `APP_ENV=test` is what permits the fixture provider. Production refuses that
+  # combination outright (packages/content/src/env.ts), so CI cannot accidentally
+  # publish a build that serves fixtures to readers.
+  APP_ENV: test
+  CONTENT_SOURCE: fixture
+  NEXT_PUBLIC_SITE_URL: https://www.maquinanerd.test
+  # Placeholders, not secrets: they satisfy length validation so the webhook and preview
+  # suites can exercise signing. Nothing here reaches a real system.
+  KAL_EL_WEBHOOK_SECRET: ci-placeholder-webhook-secret-000000
+  KAL_EL_PREVIEW_SECRET: ci-placeholder-preview-secret-000000
+  LOG_LEVEL: warn
+
+jobs:
+  # Fast feedback: everything that needs neither a browser nor a build.
+  static:
+    name: Format, lint, types, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test:unit
+      - run: pnpm test:contract
+      - run: pnpm test:integration
+      - run: pnpm test:security
+
+  # The browser gates. Split from `static` so a lint failure does not cost a browser run,
+  # and split by suite so the report says which gate failed rather than "e2e".
+  browser:
+    name: ${{ matrix.gate }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: static
+    strategy:
+      fail-fast: false
+      matrix:
+        gate: [e2e, a11y, visual]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:${{ matrix.gate }}
+
+      # The evidence the Definition of Done asks for, kept whether the gate passed or not:
+      # a green run proves the baseline, a red one carries the diff.
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ matrix.gate }}
+          path: |
+            artifacts/playwright-report/
+            artifacts/playwright/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  build:
+    name: Production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test:performance
+
+  # A migration tool that only runs by hand rots. This proves each one at least starts,
+  # parses its flags and prints help — without touching WordPress or Kal El.
+  migration-tools:
+    name: Migration tools respond to --help
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm wp:import --help
+      - run: pnpm redirects:build --help
+      - run: pnpm urls:verify --help
+
+  # Nothing that must never be committed may enter the tree.
+  hygiene:
+    name: No secrets, archives or build output committed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse forbidden paths
+        run: |
+          set -euo pipefail
+          bad=$(git ls-files | grep -E '(^|/)\.env($|\.)|\.zip$|^\.next/|^artifacts/|^\.migration-reference/|^uploads/' || true)
+          if [ -n "$bad" ]; then
+            echo "These files must never be committed:"
+            echo "$bad"
+            exit 1
+          fi
+      - name: Refuse a hard-coded service token
+        run: |
+          set -euo pipefail
+          # `ke_st.` is the Kal El service-token prefix. Test fixtures use an obvious
+          # placeholder, which this pattern deliberately still catches — a token-shaped
+          # string does not belong in the tree either way.
+          if git grep -nE 'ke_st\.[A-Za-z0-9]{16,}' -- ':!tests' ':!docs' ; then
+            echo "A Kal El service token appears in source."
+            exit 1
+          fi

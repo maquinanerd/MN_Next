@@ -80,18 +80,45 @@ export const COMMON_FLAGS: FlagSpec[] = [
   { name: 'help', description: 'show this message', type: 'boolean', default: false },
 ];
 
+/**
+ * Tallies for the run summary.
+ *
+ * A plain `Record<string, number>` reads as `number | undefined` at every index under
+ * `noUncheckedIndexedAccess`, which turns each increment into a nullish dance that
+ * obscures what is being counted.
+ */
+export class Counter {
+  private readonly values = new Map<string, number>();
+
+  constructor(keys: string[] = []) {
+    for (const key of keys) this.values.set(key, 0);
+  }
+
+  inc(key: string, by = 1): void {
+    this.values.set(key, (this.values.get(key) ?? 0) + by);
+  }
+
+  get(key: string): number {
+    return this.values.get(key) ?? 0;
+  }
+
+  toJSON(): Record<string, number> {
+    return Object.fromEntries(this.values);
+  }
+}
+
 /** Structured summary every tool prints as its final line, for CI to parse. */
 export interface RunSummary {
   tool: string;
   runId: string;
   applied: boolean;
-  counts: Record<string, number>;
+  counts: Counter;
   failures: { id: string; reason: string }[];
   artefacts: string[];
 }
 
 export function printSummary(summary: RunSummary): void {
-  console.log(JSON.stringify({ summary }, null, 2));
+  console.log(JSON.stringify({ summary: { ...summary, counts: summary.counts.toJSON() } }, null, 2));
 }
 
 export function fail(message: string): never {

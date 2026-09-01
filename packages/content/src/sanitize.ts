@@ -86,6 +86,8 @@ const ALLOWED_TAGS = new Set([
   'ol',
   'li',
   'blockquote',
+  // Attribution inside a pull quote; without it every migrated quote loses its source.
+  'cite',
   'h2',
   'h3',
   'h4',

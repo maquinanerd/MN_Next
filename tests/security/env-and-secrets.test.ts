@@ -20,6 +20,7 @@ const PROD_BASE = {
   KAL_EL_WEBHOOK_SECRET: 'w'.repeat(48),
   KAL_EL_PREVIEW_SECRET: 'p'.repeat(48),
   MEDIA_ALLOWED_HOSTS: 'images.maquinanerd.com.br',
+  TRUST_PROXY: 'true',
 } as NodeJS.ProcessEnv;
 
 describe('production environment guards', () => {
@@ -65,6 +66,15 @@ describe('production environment guards', () => {
   it('applies production guards when APP_ENV is absent', () => {
     const { APP_ENV: _drop, ...withoutAppEnv } = PROD_BASE;
     expect(() => validateEnv({ ...withoutAppEnv, CONTENT_SOURCE: 'fixture' })).toThrow(EnvError);
+  });
+
+  it('makes the operator answer the proxy question rather than defaulting', () => {
+    // Both defaults are wrong in different ways: trusting x-forwarded-for without a
+    // proxy lets any caller mint a private rate-limit bucket, and ignoring a real proxy
+    // collapses every visitor into one bucket. Neither may be reached by omission.
+    const { TRUST_PROXY: _drop, ...withoutProxy } = PROD_BASE;
+    expect(() => validateEnv(withoutProxy)).toThrow(EnvError);
+    expect(() => validateEnv({ ...withoutProxy, TRUST_PROXY: 'false' })).not.toThrow();
   });
 
   it('requires Kal El credentials whenever CONTENT_SOURCE is kalel', () => {

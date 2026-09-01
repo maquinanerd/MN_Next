@@ -148,7 +148,7 @@ export function htmlToBlocks(rawHtml: string, options: TransformOptions): Conten
   const { postId, resolveImage, report } = options;
 
   // WordPress shortcodes: convert the ones with an obvious block equivalent, count the rest.
-  const withShortcodes = rawHtml.replace(/\[([a-z_-]+)([^\]]*)\](?:([\s\S]*?)\[\/\1\])?/gi, (full, name: string) => {
+  const withShortcodes = rawHtml.replace(/\[([a-z0-9_-]+)([^\]]*)\](?:([\s\S]*?)\[\/\1\])?/gi, (full, name: string) => {
     const kind = name.toLowerCase();
     if (kind === 'caption' || kind === 'gallery' || kind === 'embed') return full;
     note(report, `shortcode:${kind}`, postId, full);
