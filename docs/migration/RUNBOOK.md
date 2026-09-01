@@ -145,6 +145,25 @@ a segunda deve reportar `created: 0`.
 Um artigo editado no CMS após a importação responde 409 e é deixado intacto: sobrescrever
 uma mudança editorial com uma reimportação é pior que pular e reportar.
 
+Uma falha de download ou de metadados **conta como falha da execução** — `--apply`
+termina com código 1. Alt text que não chegou a ser gravado fica registrado em
+`pendingMediaMeta` no state file e é reescrito na execução seguinte, mesmo que o arquivo
+em si já esteja no Kal El. Perder alt text em silêncio seria permanente.
+
+#### Rede durante a importação
+
+O importador só busca assets nos hosts declarados (`WP_BASE_URL` mais
+`WP_ASSET_HOSTS`), rejeita qualquer resposta cujo hostname resolva para faixa privada,
+loopback ou link-local, revalida isso a cada redirect e corta a leitura do corpo ao
+ultrapassar `--max-asset-mb`.
+
+> **Limitação conhecida:** a validação resolve o nome, mas não fixa o endereço usado pelo
+> socket. Um nome que mude de resposta entre a resolução e a conexão (DNS rebinding)
+> continua teoricamente possível; fechar isso exige um dispatcher com endereço fixado.
+> Enquanto isso, o controle real é o allowlist: **não inclua em `WP_ASSET_HOSTS` nenhum
+> host cujo DNS você não controle**, e rode a importação de uma máquina sem acesso a
+> serviços internos sensíveis.
+
 ### 4.3 Redirects
 
 ```bash

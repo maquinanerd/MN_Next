@@ -5,11 +5,20 @@ import path from 'node:path';
 import type { ContentBlock, Image } from '@mn/content';
 import { slugify, toPlainText } from '@mn/content';
 
-import { COMMON_FLAGS, CliError, Counter, parseArgs, printHelp, printSummary, type RunSummary } from './cli';
+import {
+  COMMON_FLAGS,
+  CliError,
+  Counter,
+  parseArgs,
+  printHelp,
+  printSummary,
+  runAsScript,
+  type RunSummary,
+} from './cli';
 import { idempotencyKey, loadState, mappingKey, saveState, type RunState } from './state';
 import { ALLOWED_ASSET_TYPES, WordPressSource, detectImageType, type WpMedia, type WpPost } from './source';
 import { KalElTarget } from './target';
-import { emptyReport, htmlToBlocks, type TransformReport } from './transform';
+import { emptyReport, htmlToBlocks, shortcodeAssetRef, type TransformReport } from './transform';
 
 /**
  * WordPress → Kal El.
@@ -53,7 +62,7 @@ const FLAGS = [
  * The slug map is kept as well, because the target is deduplicated by slug: two
  * WordPress terms that slugify the same are one Kal El term.
  */
-interface Indexes {
+export interface Indexes {
   categoryByWpId: Map<number, string>;
   tagByWpId: Map<number, string>;
   authorByWpId: Map<number, string>;
@@ -66,7 +75,7 @@ interface Indexes {
   imageByUrl: Map<string, Image>;
 }
 
-function emptyIndexes(): Indexes {
+export function emptyIndexes(): Indexes {
   return {
     categoryByWpId: new Map(),
     tagByWpId: new Map(),
@@ -228,73 +237,10 @@ async function main(): Promise<void> {
   // ------------------------------------------------------------------- media
   if (values['skip-media'] !== true) {
     const alreadyImported = target ? await target.mediaIndexByExternalKey() : new Map<string, string>();
+    const deps: AssetImportDeps = { source, target, indexes, state, summary, report, alreadyImported, maxAssetBytes };
 
     for await (const batch of source.media()) {
-      for (const asset of batch) {
-        const externalKey = `wp:media:${asset.id}`;
-        const url = canonicalAssetUrl(asset.source_url);
-        const image = describeAsset(asset, url);
-
-        const reused = alreadyImported.get(externalKey) ?? state.mappings[mappingKey('media', asset.id)];
-        if (reused) {
-          indexes.mediaByWpId.set(asset.id, reused);
-          indexes.imageByUrl.set(url, { ...image, url: `/media/${reused}` });
-          summary.counts.inc('mediaReused');
-          continue;
-        }
-
-        if (!ALLOWED_ASSET_TYPES.has(asset.mime_type)) {
-          report.unknown[`media:${asset.mime_type}`] = (report.unknown[`media:${asset.mime_type}`] ?? 0) + 1;
-          continue;
-        }
-        if (image.alt.trim() === '') report.imagesMissingAlt += 1;
-
-        if (!target) {
-          indexes.imageByUrl.set(url, { ...image, url: `dry:/media/${asset.id}` });
-          continue;
-        }
-
-        const fetched = await source.fetchAsset(asset.source_url, maxAssetBytes);
-        if (!fetched) {
-          summary.failures.push({
-            id: externalKey,
-            reason: 'asset could not be downloaded or exceeded the size limit',
-          });
-          continue;
-        }
-        // The source server writes the Content-Type; only the bytes are trusted.
-        const detected = detectImageType(fetched.data);
-        if (!detected) {
-          summary.counts.inc('failed');
-          summary.failures.push({ id: externalKey, reason: 'bytes are not a recognised raster image' });
-          continue;
-        }
-
-        const filename = path.basename(new URL(url).pathname) || `${asset.slug}.jpg`;
-        const uploaded = await target.uploadMedia(filename, fetched.data, detected, externalKey);
-        if (!uploaded.id) {
-          summary.counts.inc('failed');
-          summary.failures.push({ id: externalKey, reason: uploaded.error ?? 'upload failed' });
-          continue;
-        }
-
-        // Metadata is a second call: Kal El's upload endpoint takes the file only. Its
-        // result is checked — alt text and credit are a legal requirement for agency
-        // photography, not a nice-to-have, so losing them silently is not acceptable.
-        const meta = await target.updateMediaMetadata(uploaded.id, {
-          altText: image.alt || null,
-          caption: image.caption ?? null,
-        });
-        if (!meta.data) {
-          summary.counts.inc('failed');
-          summary.failures.push({ id: externalKey, reason: `metadata not saved: ${meta.error ?? 'unknown'}` });
-        }
-
-        state.mappings[mappingKey('media', asset.id)] = uploaded.id;
-        indexes.mediaByWpId.set(asset.id, uploaded.id);
-        indexes.imageByUrl.set(url, { ...image, url: `/media/${uploaded.id}` });
-        summary.counts.inc('mediaTransferred');
-      }
+      for (const asset of batch) await importAsset(asset, deps);
       await saveState(statePath, state);
     }
   }
@@ -353,11 +299,171 @@ async function main(): Promise<void> {
   summary.artefacts = [reportPath, unknownPath, statePath];
   printSummary(summary);
 
-  // A failure has to be visible to CI, but a dry run that found problems is a success:
-  // finding them is what it is for.
-  // Any write failure — a term, an asset, a post — fails the run. A migration that
-  // exits 0 having lost a desk or a cover looks like success and is not.
-  if (apply && summary.counts.get('failed') > 0) process.exit(1);
+  if (exitCodeFor(apply, summary) === 1) process.exit(1);
+}
+
+/**
+ * Turns whatever a body says about an image into the image Kal El now holds.
+ *
+ * Exported so it can be exercised end-to-end with the indexes `importAsset` actually
+ * builds: this resolver and that indexing step are one contract, and a test that
+ * reimplements either half proves nothing about the pair.
+ */
+/**
+ * The run's exit code.
+ *
+ * A dry run that found problems is a success — finding them is what it is for. A run
+ * that wrote is different: any failed term, asset or post has to reach CI, because an
+ * import that exits 0 having lost every cover looks exactly like one that worked.
+ */
+export function exitCodeFor(apply: boolean, summary: RunSummary): 0 | 1 {
+  return apply && summary.counts.get('failed') > 0 ? 1 : 0;
+}
+
+export function imageResolver(indexes: Indexes): (src: string) => Image | null {
+  return (src) => indexes.imageByUrl.get(canonicalAssetUrl(src)) ?? null;
+}
+
+export interface AssetImportDeps {
+  source: Pick<WordPressSource, 'fetchAsset'>;
+  target: Pick<KalElTarget, 'uploadMedia' | 'updateMediaMetadata'> | null;
+  indexes: Indexes;
+  state: RunState;
+  summary: RunSummary;
+  report: TransformReport;
+  /** Media already in Kal El under this run's external keys, from an earlier run. */
+  alreadyImported: Map<string, string>;
+  maxAssetBytes: number;
+}
+
+/**
+ * Transfers one asset and records every way a body can refer to it.
+ *
+ * Two keys, not one. A body written in HTML points at the legacy URL; a body that used
+ * `[gallery ids="12,34"]` names the media *id*, and the shortcode expansion emits
+ * `shortcodeAssetRef(12)` because the Kal El id is not knowable at parse time. Indexing
+ * only the URL is why every gallery image resolved to nothing and dropped out of the
+ * article — silently, because an image the resolver cannot place is simply not emitted.
+ */
+export async function importAsset(asset: WpMedia, deps: AssetImportDeps): Promise<void> {
+  const { source, target, indexes, state, summary, report, alreadyImported, maxAssetBytes } = deps;
+  const externalKey = `wp:media:${asset.id}`;
+  const url = canonicalAssetUrl(asset.source_url);
+  const image = describeAsset(asset, url);
+
+  /** Both references an article body can carry for this asset. */
+  const register = (kalElUrl: string): void => {
+    indexes.imageByUrl.set(url, { ...image, url: kalElUrl });
+    indexes.imageByUrl.set(shortcodeAssetRef(asset.id), { ...image, url: kalElUrl });
+  };
+
+  const finished = state.mappings[mappingKey('media', asset.id)];
+  const reused = alreadyImported.get(externalKey) ?? finished;
+  if (reused) {
+    indexes.mediaByWpId.set(asset.id, reused);
+    register(`/media/${reused}`);
+    summary.counts.inc('mediaReused');
+
+    // This is the only moment the asset is looked at again, so it is the only chance to
+    // pay back metadata an earlier run failed to write. Two ways to owe it: the debt was
+    // recorded, or there is no local record of ever having finished this asset — the
+    // file is in Kal El, so a previous run got that far and then stopped, and whether
+    // the second call landed is exactly what nobody knows.
+    if (target && (state.pendingMediaMeta.includes(asset.id) || finished === undefined)) {
+      // Recording it closes the debt for good. Without this the asset would have no
+      // mapping, so every later run would read it as unfinished and PATCH it again.
+      if (await saveMediaMetadata(target, reused, asset, image, externalKey, state, summary)) {
+        state.mappings[mappingKey('media', asset.id)] = reused;
+      }
+    }
+    return;
+  }
+
+  if (!ALLOWED_ASSET_TYPES.has(asset.mime_type)) {
+    report.unknown[`media:${asset.mime_type}`] = (report.unknown[`media:${asset.mime_type}`] ?? 0) + 1;
+    return;
+  }
+  if (image.alt.trim() === '') report.imagesMissingAlt += 1;
+
+  if (!target) {
+    register(`dry:/media/${asset.id}`);
+    return;
+  }
+
+  const fetched = await source.fetchAsset(asset.source_url, maxAssetBytes);
+  if (!fetched) {
+    // Counted, not just listed: the exit code reads the counter, and an import that
+    // lost every cover to a network fault must not report success.
+    summary.counts.inc('failed');
+    summary.failures.push({ id: externalKey, reason: 'asset could not be downloaded or exceeded the size limit' });
+    return;
+  }
+  // The source server writes the Content-Type; only the bytes are trusted.
+  const detected = detectImageType(fetched.data);
+  if (!detected) {
+    summary.counts.inc('failed');
+    summary.failures.push({ id: externalKey, reason: 'bytes are not a recognised raster image' });
+    return;
+  }
+
+  const filename = path.basename(new URL(url).pathname) || `${asset.slug}.jpg`;
+  const uploaded = await target.uploadMedia(filename, fetched.data, detected, externalKey);
+  if (!uploaded.id) {
+    summary.counts.inc('failed');
+    summary.failures.push({ id: externalKey, reason: uploaded.error ?? 'upload failed' });
+    return;
+  }
+
+  indexes.mediaByWpId.set(asset.id, uploaded.id);
+  register(`/media/${uploaded.id}`);
+  summary.counts.inc('mediaTransferred');
+
+  // Written only once the metadata is on the record too: the mapping is what a later run
+  // reads as "this asset is done", and an asset whose second call never landed is not.
+  if (await saveMediaMetadata(target, uploaded.id, asset, image, externalKey, state, summary)) {
+    state.mappings[mappingKey('media', asset.id)] = uploaded.id;
+  }
+}
+
+/**
+ * Writes alt text and caption, reporting whether it landed and remembering it if not.
+ *
+ * Metadata is a second call: Kal El's upload endpoint takes the file only. Alt text is
+ * an accessibility and licensing requirement, so a failure here is a failed asset — and
+ * it is recorded in the checkpoint, because the next run reuses the uploaded file and
+ * would otherwise never come back to it.
+ */
+async function saveMediaMetadata(
+  target: Pick<KalElTarget, 'updateMediaMetadata'>,
+  mediaId: string,
+  asset: WpMedia,
+  image: Image,
+  externalKey: string,
+  state: RunState,
+  summary: RunSummary,
+): Promise<boolean> {
+  // A rejected request is the same outcome as a rejected response, and has to be
+  // recorded the same way: letting it escape would kill the run before the checkpoint
+  // that remembers the debt is written, and the next run would find the file already
+  // uploaded and never come back to it.
+  const meta = await target
+    .updateMediaMetadata(mediaId, { altText: image.alt || null, caption: image.caption ?? null })
+    .catch((err: unknown) => ({
+      status: 0,
+      data: null,
+      error: err instanceof Error ? err.message : String(err),
+    }));
+
+  const pending = new Set(state.pendingMediaMeta);
+  if (meta.data) {
+    pending.delete(asset.id);
+  } else {
+    pending.add(asset.id);
+    summary.counts.inc('failed');
+    summary.failures.push({ id: externalKey, reason: `metadata not saved: ${meta.error ?? 'unknown'}` });
+  }
+  state.pendingMediaMeta = [...pending];
+  return meta.data !== null;
 }
 
 function describeAsset(asset: WpMedia, url: string): Image {
@@ -392,7 +498,7 @@ async function importPost(post: WpPost, ctx: ImportContext): Promise<'created' |
   const blocks: ContentBlock[] = htmlToBlocks(post.content, {
     postId: post.id,
     report,
-    resolveImage: (src) => indexes.imageByUrl.get(canonicalAssetUrl(src)) ?? null,
+    resolveImage: imageResolver(indexes),
   });
 
   const document = {
@@ -569,7 +675,4 @@ function blocksToKalElNodes(blocks: ContentBlock[], indexes: Indexes): Record<st
   return nodes;
 }
 
-main().catch((err) => {
-  console.error(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
-  process.exit(1);
-});
+runAsScript(import.meta.url, main);

@@ -2,7 +2,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { COMMON_FLAGS, Counter, parseArgs, printHelp, printSummary, type RunSummary } from './cli';
+import { COMMON_FLAGS, Counter, parseArgs, printHelp, printSummary, runAsScript, type RunSummary } from './cli';
 import { safeInternalPath, normalise } from '../../lib/redirects';
 import { WordPressSource } from './source';
 import { KalElTarget } from './target';
@@ -225,7 +225,4 @@ async function main(): Promise<void> {
   printSummary(summary);
 }
 
-main().catch((err) => {
-  console.error(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
-  process.exit(1);
-});
+runAsScript(import.meta.url, main);

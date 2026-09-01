@@ -1,3 +1,6 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 /**
  * Shared CLI plumbing for the WordPress migration tools.
  *
@@ -137,4 +140,25 @@ export function rateLimiter(perSecond: number): () => Promise<void> {
     next = Math.max(now, next) + interval;
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   };
+}
+
+/**
+ * Runs `main` only when this module is the command actually being run.
+ *
+ * Without it, importing a script to exercise one of its functions runs the whole
+ * pipeline against whatever argv the test runner happens to carry — which for an
+ * importer means a real run with default flags.
+ */
+export function runAsScript(moduleUrl: string, main: () => Promise<void>): void {
+  const entry = process.argv[1];
+  if (!entry) return;
+  const normalise = (p: string): string => {
+    const abs = path.resolve(p);
+    return process.platform === 'win32' ? abs.toLowerCase() : abs;
+  };
+  if (normalise(entry) !== normalise(fileURLToPath(moduleUrl))) return;
+  main().catch((err) => {
+    console.error(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+    process.exit(1);
+  });
 }

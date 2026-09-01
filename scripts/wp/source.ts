@@ -1,3 +1,5 @@
+import { lookup as dnsLookup } from 'node:dns/promises';
+
 import { z } from 'zod';
 
 import { CliError, rateLimiter } from './cli';
@@ -77,6 +79,8 @@ export interface SourceOptions {
   auth?: string;
   requestsPerSecond?: number;
   fetchImpl?: typeof fetch;
+  /** Name resolution, injectable so the SSRF guard is testable without a resolver. */
+  lookupImpl?: (host: string) => Promise<string[]>;
 }
 
 /**
@@ -116,15 +120,16 @@ export function assetUrlAllowed(
 /**
  * Literal private, loopback and link-local addresses.
  *
- * This is a syntactic check, not a DNS one: a hostname that *resolves* to a private
- * address still passes here. The host allowlist is what actually carries the weight —
- * this only stops the obvious case of a media row pointing straight at an IP.
+ * Syntactic only — it judges an address, not a name. `WordPressSource` resolves the
+ * hostname first and passes every address it gets back through here, which is what
+ * closes the case of an allowlisted name pointing at 169.254.169.254.
  */
 export function isPrivateAddress(host: string): boolean {
   if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.internal') || host.endsWith('.local')) {
     return true;
   }
-  if (host === '::1' || host.startsWith('[')) return true;
+  const bare = host.replace(/^\[|\]$/g, '').replace(/%.*$/, '');
+  if (bare.includes(':')) return isPrivateIpv6(bare);
   const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
   if (!v4) return false;
   const [a, b] = [Number(v4[1]), Number(v4[2])];
@@ -136,6 +141,81 @@ export function isPrivateAddress(host: string): boolean {
   return false;
 }
 
+/** Every address a name resolves to — all of them, since any one would be used. */
+async function defaultLookup(host: string): Promise<string[]> {
+  const records = await dnsLookup(host, { all: true });
+  return records.map((r) => r.address);
+}
+
+/**
+ * Whether an IPv6 address is one the importer must not reach.
+ *
+ * Parsed, not pattern-matched. \`::ffff:10.0.0.1\` and \`::ffff:a00:1\` are the same
+ * address written two ways, and a check that only recognises the dotted spelling reads
+ * the hex one as a public address — which is precisely how an internal service gets
+ * reached through a guard that looks like it works.
+ */
+function isPrivateIpv6(address: string): boolean {
+  const parts = expandIpv6(address);
+  if (!parts) return true; // unparseable is not a thing to connect to
+
+  const [h0 = 0] = parts;
+  // Every /96 that carries an IPv4 address in its last two groups. Each is a different
+  // spelling of the same destination, so all of them have to be judged as IPv4.
+  const embedsV4 = [
+    [0, 0, 0, 0, 0, 0xffff], // ::ffff:a.b.c.d     IPv4-mapped
+    [0, 0, 0, 0, 0xffff, 0], // ::ffff:0:a.b.c.d   IPv4-translated (RFC 6145)
+    [0, 0, 0, 0, 0, 0], //      ::a.b.c.d          IPv4-compatible, deprecated
+    [0x64, 0xff9b, 0, 0, 0, 0], // 64:ff9b::/96    NAT64 well-known prefix
+  ].some((prefix) => prefix.every((group, i) => parts[i] === group));
+  if (embedsV4) {
+    const [, , , , , , g = 0, h = 0] = parts;
+    if (g === 0 && h === 0) return true; // ::
+    if (g === 0 && h === 1) return true; // ::1
+    return isPrivateAddress([g >> 8, g & 0xff, h >> 8, h & 0xff].join('.'));
+  }
+
+  if ((h0 & 0xfe00) === 0xfc00) return true; // fc00::/7  unique local
+  if ((h0 & 0xffc0) === 0xfe80) return true; // fe80::/10 link local
+  if ((h0 & 0xffc0) === 0xfec0) return true; // fec0::/10 site local, deprecated
+  return false;
+}
+
+/** An IPv6 address as its eight 16-bit groups, or null if it is not one. */
+function expandIpv6(address: string): number[] | null {
+  let text = address.toLowerCase();
+
+  // A trailing dotted quad is four more hex digits.
+  const dotted = /(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(text);
+  if (dotted?.[1]) {
+    const octets = dotted[1].split('.').map(Number);
+    if (octets.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) return null;
+    const [a = 0, b = 0, c = 0, d = 0] = octets;
+    text = text.slice(0, dotted.index) + ((a << 8) | b).toString(16) + ':' + ((c << 8) | d).toString(16);
+  }
+
+  const halves = text.split('::');
+  if (halves.length > 2) return null;
+  const toGroups = (part: string): number[] | null => {
+    if (part === '') return [];
+    const groups: number[] = [];
+    for (const group of part.split(':')) {
+      if (!/^[0-9a-f]{1,4}$/.test(group)) return null;
+      groups.push(parseInt(group, 16));
+    }
+    return groups;
+  };
+
+  const head = toGroups(halves[0] ?? '');
+  const tail = halves.length === 2 ? toGroups(halves[1] ?? '') : [];
+  if (!head || !tail) return null;
+
+  if (halves.length === 1) return head.length === 8 ? head : null;
+  const gap = 8 - head.length - tail.length;
+  if (gap < 1) return null;
+  return [...head, ...Array<number>(gap).fill(0), ...tail];
+}
+
 export class WordPressSource {
   private readonly baseUrl: string;
   private readonly auth: string | undefined;
@@ -143,6 +223,7 @@ export class WordPressSource {
   private readonly fetchImpl: typeof fetch;
   /** Hosts an asset may legitimately come from: the source origin, plus any CDN. */
   private readonly assetHosts: Set<string>;
+  private readonly lookupImpl: (host: string) => Promise<string[]>;
 
   constructor(opts: SourceOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
@@ -150,6 +231,7 @@ export class WordPressSource {
     this.pace = rateLimiter(opts.requestsPerSecond ?? 4);
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.assetHosts = new Set([new URL(this.baseUrl).hostname, ...(opts.assetHosts ?? [])].map((h) => h.toLowerCase()));
+    this.lookupImpl = opts.lookupImpl ?? defaultLookup;
   }
 
   static fromEnv(overrides: Partial<SourceOptions> = {}): WordPressSource {
@@ -248,6 +330,32 @@ export class WordPressSource {
   }
 
   /**
+   * Whether a hostname resolves only to addresses outside the private ranges.
+   *
+   * The allowlist alone is not enough. A name the operator allowed — a CDN, a legacy
+   * hostname still in someone else's DNS — can be pointed at 169.254.169.254 or at an
+   * internal admin service, and the fetch would be made from inside the network with
+   * whatever the operator's machine can reach.
+   *
+   * Resolving here and rejecting on any private answer closes that. It does not pin the
+   * address the socket finally connects to, so a name that changes its answer between
+   * this lookup and the connection is still theoretically possible; closing that last
+   * gap needs a connection-level dispatcher, and is recorded as such in the runbook.
+   */
+  private async resolvesPublicly(host: string): Promise<boolean> {
+    if (isPrivateAddress(host)) return false;
+    // A literal IP has already been judged; resolving it again proves nothing.
+    if (/^[d.]+$/.test(host) || host.includes(':')) return true;
+    try {
+      const addresses = await this.lookupImpl(host);
+      return addresses.length > 0 && addresses.every((a) => !isPrivateAddress(a.toLowerCase()));
+    } catch {
+      // A name that will not resolve is not a name worth fetching from.
+      return false;
+    }
+  }
+
+  /**
    * Downloads one asset, bounded by size, host and hop count.
    *
    * `redirect: 'manual'` is the point: following redirects automatically would let the
@@ -260,6 +368,7 @@ export class WordPressSource {
     for (let hop = 0; hop <= maxHops; hop += 1) {
       const allowed = assetUrlAllowed(current, this.assetHosts);
       if (!allowed.ok) return null;
+      if (!(await this.resolvesPublicly(allowed.url.hostname))) return null;
 
       await this.pace();
       const res = await this.fetchImpl(allowed.url.toString(), {
@@ -268,23 +377,54 @@ export class WordPressSource {
       });
 
       if (res.status >= 300 && res.status < 400) {
+        // Nothing here reads the redirect's body, and an unread body holds the
+        // connection open for the rest of the run.
+        await res.body?.cancel().catch(() => undefined);
         const location = res.headers.get('location');
         if (!location) return null;
         current = new URL(location, allowed.url).toString();
         continue;
       }
-      if (!res.ok) return null;
+      if (!res.ok) {
+        await res.body?.cancel().catch(() => undefined);
+        return null;
+      }
 
       const mimeType = res.headers.get('content-type')?.split(';')[0]?.trim() ?? 'application/octet-stream';
       const declared = Number(res.headers.get('content-length') ?? '0');
       if (declared > maxBytes) return null;
-      const buffer = Buffer.from(await res.arrayBuffer());
-      // The declared length is a hint, not a promise; the real one is what counts.
-      if (buffer.byteLength > maxBytes) return null;
-      return { data: buffer, mimeType };
+      const data = await readCapped(res, maxBytes);
+      return data ? { data, mimeType } : null;
     }
     return null;
   }
+}
+
+/**
+ * Reads a body without ever holding more than `maxBytes` of it.
+ *
+ * `Content-Length` is written by the source server, so checking it and then calling
+ * `arrayBuffer()` lets that server decide how much memory the importer allocates: it can
+ * declare 4 KB and send 4 GB. Reading incrementally and cancelling at the limit means
+ * the lie costs one chunk, and cancelling ends the transfer rather than draining it.
+ */
+async function readCapped(res: Response, maxBytes: number): Promise<Buffer | null> {
+  if (!res.body) return null;
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
 }
 
 /** Raster formats only. An SVG from a ten-year archive is active content, not an image. */

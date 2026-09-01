@@ -25,6 +25,21 @@ export interface TransformReport {
   imagesMissingAlt: number;
 }
 
+/**
+ * How a gallery image is referred to before its Kal El id is known.
+ *
+ * `[gallery ids="12,34"]` names WordPress media ids, and the importer only learns the
+ * corresponding Kal El ids later, while transferring assets. This placeholder is the
+ * handshake between the two halves, so it is defined once: when it was written out
+ * literally on both sides they drifted, and every gallery image resolved to nothing.
+ *
+ * A rooted path, not a custom scheme — the sanitiser runs in between and drops any src
+ * it cannot recognise as a safe URL.
+ */
+export function shortcodeAssetRef(wpMediaId: number | string): string {
+  return `/wp-media-id/${wpMediaId}`;
+}
+
 export function emptyReport(): TransformReport {
   return { unknown: {}, samples: [], droppedTags: {}, droppedAttributes: {}, imagesMissingAlt: 0 };
 }
@@ -195,7 +210,7 @@ export function htmlToBlocks(rawHtml: string, options: TransformOptions): Conten
           .split(',')
           .map((id) => id.trim())
           .filter(Boolean)
-          .map((id) => `<img src="/wp-media-id/${id}" alt="" />`)
+          .map((id) => `<img src="${shortcodeAssetRef(id)}" alt="" />`)
           .join('');
       }
 

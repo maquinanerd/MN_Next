@@ -17,9 +17,9 @@ que não pôde ser verificado está na seção de pendências em vez de marcado 
 | Formatação              | `pnpm format:check`     | ✅ _All matched files use Prettier code style_               |
 | Lint                    | `pnpm lint`             | ✅ 0 problemas                                               |
 | Tipos                   | `pnpm typecheck`        | ✅ 0 erros (`strict`, `noUncheckedIndexedAccess`, sem `any`) |
-| Unit                    | `pnpm test:unit`        | ✅ **108 passed**                                            |
+| Unit                    | `pnpm test:unit`        | ✅ **113 passed**                                            |
 | Contrato                | `pnpm test:contract`    | ✅ **45 passed**                                             |
-| Integração              | `pnpm test:integration` | ✅ **35 passed**                                             |
+| Integração              | `pnpm test:integration` | ✅ **46 passed**                                             |
 | Segurança               | `pnpm test:security`    | ✅ **32 passed**                                             |
 | Build                   | `pnpm build`            | ✅ compila; home estática, artigo e editoria em SSG+ISR      |
 | E2E                     | `pnpm test:e2e`         | ✅ incluído nos 469 abaixo                                   |
@@ -29,7 +29,7 @@ que não pôde ser verificado está na seção de pendências em vez de marcado 
 | Performance             | `pnpm test:performance` | ✅ JS 109 KB / 120 · CSS 14 KB / 25                          |
 | Ferramentas de migração | `--help` nas três       | ✅ exit 0                                                    |
 
-**Total: 220 testes Node + 469 de browser = 689 verificações.**
+**Total: 236 testes Node + 469 de browser = 705 verificações.**
 
 O orçamento de performance é medido sobre o bundle produzido, não por Lighthouse:
 tamanho de bundle é determinístico e é o número que regride em silêncio. Lighthouse
@@ -89,8 +89,8 @@ contra staging continua no checklist de pré-lançamento, onde um LCP real pode 
 
 ## 3. O que a revisão encontrou
 
-O ciclo do `CLAUDE.md` — implementa, Codex revisa, corrige, revisa de novo — rodou três
-rodadas.
+O ciclo do `CLAUDE.md` — implementa, Codex revisa, corrige, revisa de novo — rodou
+seis rodadas, e fechou.
 
 **Rodada 1 — Codex** (`artifacts/codex-reviews/wave-12-inicial.md`): 9 achados, 5 de
 severidade alta. Todos corrigidos, cada um com teste de regressão que falha se a correção
@@ -135,6 +135,65 @@ Além disso, escrever os testes do parser revelou dois defeitos por conta própr
 era removido pela sanitização antes de o parser lê-lo — **toda citação migrada perdia a
 atribuição** — e nomes de shortcode com dígito não eram reconhecidos.
 
+**Rodada 4 — Codex** (`artifacts/codex-reviews/wave-final-2.md`), sobre as correções da
+rodada 3: **5 achados bloqueantes**, todos reais, todos corrigidos e cobertos por teste.
+Quatro deles são o mesmo tipo de erro — uma falha que não vira falha:
+
+1. **Download de asset perdido não contava como falha.** As três falhas vizinhas
+   incrementavam o contador; essa só escrevia na lista. Como o exit code lê o contador,
+   um `--apply` que perdesse **todas** as capas por falha de rede saía com código 0.
+2. **Alt text perdido era perdido para sempre.** Se o PATCH de metadados falhasse, o
+   mapeamento era gravado assim mesmo; a execução seguinte reusava a mídia e nunca mais
+   voltava a ela. Agora o débito fica em `pendingMediaMeta` no state file e é pago na
+   próxima execução — sem custar um PATCH por asset quando não há nada devendo.
+3. **Nenhuma imagem de galeria chegava ao artigo.** O parser emite `/wp-media-id/12`, mas
+   o importador indexava a mídia **só** pela URL legada, então o resolvedor não achava
+   nada e a imagem simplesmente não era emitida. O teste anterior passava porque construía
+   o próprio resolvedor e lhe entregava os placeholders na mão — concordava consigo mesmo.
+   O formato do placeholder agora existe em um lugar só (`shortcodeAssetRef`), e o teste
+   novo atravessa `importAsset` → `imageResolver` → `htmlToBlocks` reais.
+4. **O corpo da resposta era lido inteiro antes de checar o tamanho.** Um host permitido
+   podia declarar 512 bytes e enviar gigabytes: quem decidia a memória do importador era
+   ele. A leitura agora é incremental e cancela no limite.
+5. **A defesa de SSRF não resolvia nomes.** O allowlist julga um _nome_; um nome permitido
+   que responda `169.254.169.254` passava. Agora todo hostname é resolvido a cada hop e
+   qualquer resposta em faixa privada, loopback ou link-local reprova — IPv6 incluído.
+   O que **não** está fechado está dito abaixo, nas limitações.
+
+**Rodada 5 — Codex** (`artifacts/codex-reviews/wave-final-3.md`), sobre as correções da
+rodada 4: **2 achados bloqueantes**, ambos reais, ambos corrigidos.
+
+1. **O débito de alt text não sobrevivia a uma exceção.** `updateMediaMetadata()` pode
+   _rejeitar_ — timeout, conexão derrubada — e não só responder com erro. A rejeição
+   escapava, matava a execução antes do checkpoint que registra o débito, e a execução
+   seguinte encontrava o arquivo já enviado e nunca voltava a ele. A correção foi maior
+   que o achado: o mapeamento local passou a significar **"asset concluído"** e só é
+   gravado quando o PATCH landa, então uma queda em qualquer ponto entre o upload e o
+   checkpoint deixa a próxima execução capaz de perceber que ainda se deve algo.
+2. **A defesa de IPv6 era textual, não semântica.** `::ffff:10.0.0.1` era reconhecido;
+   `::ffff:7f00:1`, o **mesmo endereço** em hexadecimal, passava como público. Agora o
+   endereço é expandido e classificado de verdade, cobrindo IPv4-mapped, IPv4-translated
+   (RFC 6145), IPv4-compatible, o prefixo NAT64 `64:ff9b::/96`, `fc00::/7`, `fe80::/10`
+   e `fec0::/10` — e um endereço que não faz sentido reprova em vez de passar.
+
+**Rodada 6 — Codex** (`artifacts/codex-reviews/wave-final-4.md`): **"SEM ACHADO
+BLOQUEANTE"**, textualmente, na primeira linha. É o critério do `CLAUDE.md` para fechar o
+ciclo. Restou um achado **médio**, também corrigido: no caminho de reuso, um PATCH que
+finalmente landasse não gravava o mapeamento, então o asset continuaria sem registro de
+conclusão e receberia PATCH em toda reexecução — idempotente, mas caro para sempre.
+
+Duas rodadas do revisor terminaram sem relatório antes disso (`wave-final-3-tentativa-1`
+e `-2.log`): a primeira esgotou o contexto explorando o repositório, a segunda tentou
+rodar o vitest e bateu no sandbox `read-only`. A terceira tentativa, restrita a leitura e
+apontada ao diff, produziu os dois achados acima. As tentativas frustradas estão no
+diretório, não descartadas. A rodada 6 precisou do mesmo cuidado: o diff acumulado
+esgotava o contexto do revisor, então o recorte revisado foi entregue por stdin
+(`round6-focus.md`).
+
+Fechar o ciclo exigiu também um ajuste estrutural: os três scripts de migração chamavam
+`main()` no topo do módulo, então importar um deles para testar uma função executava a
+migração com o argv do test runner. Agora usam `runAsScript(import.meta.url, main)`.
+
 > Nenhuma rodada foi simulada. Quando o revisor independente não pôde rodar, isso está
 > dito, e a revisão substituta está identificada como tal.
 
@@ -159,16 +218,14 @@ Nenhuma é contornável por código.
 
 | #   | Pendência                             | O que bloqueia                                          | Como resolver                                                                                                 |
 | --- | ------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| 1   | Remoto GitHub não configurado         | push, CI                                                | `git remote add origin …` e push da branch                                                                    |
-| 2   | Amostra de URLs de maior tráfego      | o critério **zero 404**, que é bloqueante de lançamento | exportar do Search Console para `data/import/top-urls.txt` e rodar `pnpm urls:verify`                         |
-| 3   | Padrão real de permalink do WordPress | tamanho do mapa de redirects                            | confirmar em Configurações → Links permanentes                                                                |
-| 4   | Modelo comercial no Kal El            | BuyBox e nota de review com conteúdo do CMS             | aceitar a proposta em [KAL-EL-DISCOVERY.md](./KAL-EL-DISCOVERY.md)                                            |
-| 5   | Credenciais do Kal El                 | rodar contra o CMS real                                 | `KAL_EL_BASE_URL`, `KAL_EL_SITE_ID`, `KAL_EL_SERVICE_TOKEN`, `KAL_EL_WEBHOOK_SECRET`, `KAL_EL_PREVIEW_SECRET` |
-| 6   | Endpoint interno do Cinerie           | "Onde assistir" com dado real                           | `CINERIE_INTERNAL_URL`, `CINERIE_SERVICE_TOKEN`                                                               |
-| 7   | Provedor de newsletter                | inscrição real (hoje responde 501)                      | `NEWSLETTER_PROVIDER_URL`                                                                                     |
-| 8   | Network code do GAM                   | anúncios reais                                          | reserva de espaço já implementada                                                                             |
-| 9   | CMP LGPD                              | se um CMP for exigido                                   | o banner próprio atende enquanto não houver                                                                   |
-| 10  | Segunda revisão do Codex              | fechar o ciclo do `CLAUDE.md`                           | reexecutar quando a cota voltar                                                                               |
+| 1   | Amostra de URLs de maior tráfego      | o critério **zero 404**, que é bloqueante de lançamento | exportar do Search Console para `data/import/top-urls.txt` e rodar `pnpm urls:verify`                         |
+| 2   | Padrão real de permalink do WordPress | tamanho do mapa de redirects                            | confirmar em Configurações → Links permanentes                                                                |
+| 3   | Modelo comercial no Kal El            | BuyBox e nota de review com conteúdo do CMS             | aceitar a proposta em [KAL-EL-DISCOVERY.md](./KAL-EL-DISCOVERY.md)                                            |
+| 4   | Credenciais do Kal El                 | rodar contra o CMS real                                 | `KAL_EL_BASE_URL`, `KAL_EL_SITE_ID`, `KAL_EL_SERVICE_TOKEN`, `KAL_EL_WEBHOOK_SECRET`, `KAL_EL_PREVIEW_SECRET` |
+| 5   | Endpoint interno do Cinerie           | "Onde assistir" com dado real                           | `CINERIE_INTERNAL_URL`, `CINERIE_SERVICE_TOKEN`                                                               |
+| 6   | Provedor de newsletter                | inscrição real (hoje responde 501)                      | `NEWSLETTER_PROVIDER_URL`                                                                                     |
+| 7   | Network code do GAM                   | anúncios reais                                          | reserva de espaço já implementada                                                                             |
+| 8   | CMP LGPD                              | se um CMP for exigido                                   | o banner próprio atende enquanto não houver                                                                   |
 
 ## 6. Limitações declaradas
 
@@ -180,6 +237,12 @@ Nenhuma é contornável por código.
 - **Nonce de webhook em processo.** Em N instâncias, até N purgas redundantes — nunca um
   efeito duplicado. Troca por Redis é de um arquivo.
 - **Rate limit por instância.** Não é uma cota distribuída; o teto real fica no edge/WAF.
+- **A validação de SSRF resolve o nome, não fixa o endereço.** O importador rejeita
+  qualquer hostname que resolva para faixa privada, a cada redirect, mas o socket faz a
+  própria resolução depois — um nome que mude de resposta nesse intervalo (DNS rebinding)
+  continua teoricamente possível. Fechar isso exige um dispatcher com endereço fixado. O
+  controle efetivo enquanto isso é o allowlist, e o [RUNBOOK](./RUNBOOK.md) diz o que ele
+  exige do operador: não declarar host cujo DNS não seja seu.
 
 **Não verificáveis aqui:**
 

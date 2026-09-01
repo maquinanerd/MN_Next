@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Image } from '@mn/content';
-import { emptyReport, htmlToBlocks } from '../../scripts/wp/transform';
+import { emptyReport, htmlToBlocks, shortcodeAssetRef } from '../../scripts/wp/transform';
 import { assetUrlAllowed, isPrivateAddress, WordPressSource } from '../../scripts/wp/source';
 
 /**
@@ -32,10 +32,14 @@ describe('shortcodes are converted, not lost between blocks', () => {
     expect(blocks.filter((b) => b.type === 'paragraph')).toHaveLength(2);
   });
 
-  it('turns [gallery ids] into one image per id', () => {
+  it('turns [gallery ids] into one placeholder per id', () => {
+    // Only the shape is asserted here. That the placeholder actually resolves to the
+    // uploaded media is the importer's half of the contract, and is tested against the
+    // real indexing step in tests/integration/wp-media-pipeline.test.ts — a resolver
+    // written by hand here would agree with itself and prove nothing.
     const resolved: Record<string, Image> = {
-      '/wp-media-id/12': { ...IMAGE, url: '/media/doze' },
-      '/wp-media-id/34': { ...IMAGE, url: '/media/trinta' },
+      [shortcodeAssetRef(12)]: { ...IMAGE, url: '/media/doze' },
+      [shortcodeAssetRef(34)]: { ...IMAGE, url: '/media/trinta' },
     };
     const { blocks } = convert('<p>a</p>[gallery ids="12,34"]<p>b</p>', (src) => resolved[src] ?? null);
     const urls = blocks.filter((b) => b.type === 'image').map((b) => (b.type === 'image' ? b.image.url : ''));
@@ -71,6 +75,8 @@ describe('shortcodes are converted, not lost between blocks', () => {
 
 describe('asset fetching cannot be aimed at an internal address', () => {
   const allowed = new Set(['old.example.com']);
+  /** A resolver that answers with a routable address, so DNS is not the thing under test. */
+  const publicLookup = async () => ['203.0.113.10'];
 
   it('accepts an asset from the source origin', () => {
     expect(assetUrlAllowed('https://old.example.com/wp-content/a.jpg', allowed).ok).toBe(true);
@@ -89,6 +95,91 @@ describe('asset fetching cannot be aimed at an internal address', () => {
     expect(assetUrlAllowed(url, allowed).ok).toBe(false);
   });
 
+  it('refuses an allowlisted host that resolves to an internal address', async () => {
+    // The allowlist judges a *name*. A name the operator allowed — a CDN, a legacy
+    // hostname whose DNS someone else now controls — can answer with the cloud metadata
+    // address, and the importer would fetch it from inside the network.
+    const attempted: string[] = [];
+    const source = new WordPressSource({
+      baseUrl: 'https://old.example.com',
+      requestsPerSecond: 0,
+      lookupImpl: async () => ['169.254.169.254'],
+      fetchImpl: (async (input: string) => {
+        attempted.push(String(input));
+        return new Response(null, { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+
+    expect(await source.fetchAsset('https://old.example.com/a.jpg', 1024)).toBeNull();
+    expect(attempted).toEqual([]);
+  });
+
+  it('refuses a host whose answers are only partly public', async () => {
+    const source = new WordPressSource({
+      baseUrl: 'https://old.example.com',
+      requestsPerSecond: 0,
+      lookupImpl: async () => ['203.0.113.10', '127.0.0.1'],
+      fetchImpl: (async () => new Response(null, { status: 200 })) as unknown as typeof fetch,
+    });
+    expect(await source.fetchAsset('https://old.example.com/a.jpg', 1024)).toBeNull();
+  });
+
+  it('refuses a host that does not resolve at all', async () => {
+    const source = new WordPressSource({
+      baseUrl: 'https://old.example.com',
+      requestsPerSecond: 0,
+      lookupImpl: async () => [],
+      fetchImpl: (async () => new Response(null, { status: 200 })) as unknown as typeof fetch,
+    });
+    expect(await source.fetchAsset('https://old.example.com/a.jpg', 1024)).toBeNull();
+  });
+
+  it('stops reading a body that outruns the limit instead of buffering it', async () => {
+    // A permitted host can declare 512 bytes and then send gigabytes. Reading the whole
+    // body before checking its size hands that host control of the importer's memory.
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        if (pulled > 5000) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(new Uint8Array(1024));
+      },
+    });
+    const source = new WordPressSource({
+      baseUrl: 'https://old.example.com',
+      requestsPerSecond: 0,
+      lookupImpl: publicLookup,
+      fetchImpl: (async () =>
+        new Response(body, {
+          status: 200,
+          headers: { 'content-type': 'image/jpeg', 'content-length': '512' },
+        })) as unknown as typeof fetch,
+    });
+
+    expect(await source.fetchAsset('https://old.example.com/a.jpg', 4096)).toBeNull();
+    // Five chunks cross the limit; the transfer is cancelled there, not drained.
+    expect(pulled).toBeLessThan(10);
+  });
+
+  it('refuses a host resolving to a private address written in hex', async () => {
+    const attempted: string[] = [];
+    const source = new WordPressSource({
+      baseUrl: 'https://old.example.com',
+      requestsPerSecond: 0,
+      lookupImpl: async () => ['::ffff:7f00:1'],
+      fetchImpl: (async (input: string) => {
+        attempted.push(String(input));
+        return new Response(null, { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+
+    expect(await source.fetchAsset('https://old.example.com/a.jpg', 1024)).toBeNull();
+    expect(attempted).toEqual([]);
+  });
+
   it('recognises the private ranges', () => {
     for (const host of [
       '10.1.2.3',
@@ -101,7 +192,38 @@ describe('asset fetching cannot be aimed at an internal address', () => {
     ]) {
       expect(isPrivateAddress(host), host).toBe(true);
     }
-    for (const host of ['8.8.8.8', '172.32.0.1', '192.169.1.1', 'old.example.com']) {
+    for (const host of [
+      '::1',
+      '::',
+      'fd00::1',
+      'fc00::abcd',
+      'fe80::1',
+      'fe80::1%eth0',
+      'fec0::1',
+      '[::1]',
+      // The same private addresses spelled in hex. A guard that only knows the dotted
+      // form reads these as public, which is how the guard gets walked past.
+      '::ffff:10.0.0.1',
+      '::ffff:7f00:1',
+      '::ffff:c0a8:1',
+      '::ffff:a9fe:a9fe',
+      '::ffff:0:7f00:1',
+      '::7f00:1',
+      '64:ff9b::7f00:1',
+      'nao-e-um-endereco::x',
+    ]) {
+      expect(isPrivateAddress(host), host).toBe(true);
+    }
+    for (const host of [
+      '8.8.8.8',
+      '172.32.0.1',
+      '192.169.1.1',
+      'old.example.com',
+      '2001:4860:4860::8888',
+      '2606:4700:4700::1111',
+      '::ffff:8.8.8.8',
+      '::ffff:808:808',
+    ]) {
       expect(isPrivateAddress(host), host).toBe(false);
     }
   });
@@ -111,6 +233,7 @@ describe('asset fetching cannot be aimed at an internal address', () => {
     const source = new WordPressSource({
       baseUrl: 'https://old.example.com',
       requestsPerSecond: 0,
+      lookupImpl: publicLookup,
       fetchImpl: (async (input: string) => {
         seen.push(String(input));
         // The source-controlled response tries to bounce the fetch inside the network.
@@ -130,6 +253,7 @@ describe('asset fetching cannot be aimed at an internal address', () => {
     const source = new WordPressSource({
       baseUrl: 'https://old.example.com',
       requestsPerSecond: 0,
+      lookupImpl: publicLookup,
       fetchImpl: (async () =>
         new Response(new Uint8Array(big), {
           status: 200,
@@ -144,6 +268,7 @@ describe('asset fetching cannot be aimed at an internal address', () => {
       baseUrl: 'https://old.example.com',
       assetHosts: ['cdn.example.net'],
       requestsPerSecond: 0,
+      lookupImpl: publicLookup,
       fetchImpl: (async () =>
         new Response(new Uint8Array(Buffer.from([0xff, 0xd8, 0xff])), {
           status: 200,

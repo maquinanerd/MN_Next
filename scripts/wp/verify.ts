@@ -2,7 +2,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { COMMON_FLAGS, Counter, parseArgs, printHelp, printSummary, type RunSummary } from './cli';
+import { COMMON_FLAGS, Counter, parseArgs, printHelp, printSummary, runAsScript, type RunSummary } from './cli';
 
 /**
  * Checks a list of legacy URLs against the running site.
@@ -159,7 +159,4 @@ async function main(): Promise<void> {
   if (failures.length > 0) process.exit(1);
 }
 
-main().catch((err) => {
-  console.error(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
-  process.exit(1);
-});
+runAsScript(import.meta.url, main);

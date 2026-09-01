@@ -20,6 +20,15 @@ export interface RunState {
   counts: { read: number; created: number; updated: number; skipped: number; failed: number };
   /** `wpPostId:123` -> Kal El uuid, `wpMedia:45` -> Kal El media uuid, and so on. */
   mappings: Record<string, string>;
+  /**
+   * WordPress media ids whose file uploaded but whose metadata PATCH did not land.
+   *
+   * Without this the loss is permanent: the mapping is recorded, so the next run reuses
+   * the asset and never revisits it, and the alt text stays empty forever. Alt text is
+   * an accessibility requirement, not a detail, so a transient 5xx on the second call
+   * has to survive into the next run as work still owed.
+   */
+  pendingMediaMeta: number[];
   failures: { id: string; reason: string }[];
 }
 
@@ -32,6 +41,7 @@ export function emptyState(now: string, runId = randomUUID()): RunState {
     cursor: 0,
     counts: { read: 0, created: 0, updated: 0, skipped: 0, failed: 0 },
     mappings: {},
+    pendingMediaMeta: [],
     failures: [],
   };
 }
@@ -40,7 +50,9 @@ export async function loadState(file: string, now: string, resume: boolean): Pro
   if (!resume) return emptyState(now);
   try {
     const raw = await readFile(file, 'utf8');
-    return JSON.parse(raw) as RunState;
+    const parsed = JSON.parse(raw) as RunState;
+    // A checkpoint written before this field existed is still a valid checkpoint.
+    return { ...parsed, pendingMediaMeta: parsed.pendingMediaMeta ?? [] };
   } catch {
     // A missing checkpoint on `--resume` starts a fresh run rather than failing: the
     // pipeline is idempotent, so re-reading from the beginning is always safe.
