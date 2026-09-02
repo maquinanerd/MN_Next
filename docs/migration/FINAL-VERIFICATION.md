@@ -17,10 +17,11 @@ que não pôde ser verificado está na seção de pendências em vez de marcado 
 | Formatação              | `pnpm format:check`     | ✅ _All matched files use Prettier code style_               |
 | Lint                    | `pnpm lint`             | ✅ 0 problemas                                               |
 | Tipos                   | `pnpm typecheck`        | ✅ 0 erros (`strict`, `noUncheckedIndexedAccess`, sem `any`) |
-| Unit                    | `pnpm test:unit`        | ✅ **113 passed**                                            |
-| Contrato                | `pnpm test:contract`    | ✅ **45 passed**                                             |
-| Integração              | `pnpm test:integration` | ✅ **46 passed**                                             |
-| Segurança               | `pnpm test:security`    | ✅ **32 passed**                                             |
+| Unit                    | `pnpm test:unit`        | ✅ **115 passed**                                            |
+| Contrato                | `pnpm test:contract`    | ✅ **56 passed**                                             |
+| Integração              | `pnpm test:integration` | ✅ **56 passed**                                             |
+| Segurança               | `pnpm test:security`    | ✅ **42 passed**                                             |
+| **Entrega Kal El**      | `pnpm test:kalel`       | ✅ **26 passed** — a app em `CONTENT_SOURCE=kalel`           |
 | Build                   | `pnpm build`            | ✅ compila; home estática, artigo e editoria em SSG+ISR      |
 | E2E                     | `pnpm test:e2e`         | ✅ incluído nos 469 abaixo                                   |
 | Acessibilidade          | `pnpm test:a11y`        | ✅ incluído nos 469 abaixo                                   |
@@ -29,11 +30,71 @@ que não pôde ser verificado está na seção de pendências em vez de marcado 
 | Performance             | `pnpm test:performance` | ✅ JS 109 KB / 120 · CSS 14 KB / 25                          |
 | Ferramentas de migração | `--help` nas três       | ✅ exit 0                                                    |
 
-**Total: 236 testes Node + 469 de browser = 705 verificações.**
+**Total: 269 testes Node + 469 de browser fixture + 26 de browser Kal El = 764
+verificações.**
 
 O orçamento de performance é medido sobre o bundle produzido, não por Lighthouse:
 tamanho de bundle é determinístico e é o número que regride em silêncio. Lighthouse
 contra staging continua no checklist de pré-lançamento, onde um LCP real pode ser medido.
+
+## 1.1 O que mudou depois da primeira verificação
+
+Quatro waves de continuação, cada uma com o ciclo de revisão independente fechado.
+
+### Wave 1 — auditoria técnica
+
+Os gates estavam verdes. O que não estava era o que acontece quando o deployment não é
+produção mas também não é ninguém.
+
+- **`APP_ENV=staging` passava por todas as travas**, e o runbook abre staging para a
+  redação por uma semana antes da virada: `CONTENT_SOURCE=fixture` era aceito lá.
+- **`robots.ts` decidia por `NODE_ENV` mais um regex de hostname.** Um build de staging
+  _é_ um build de produção, e um host chamado `homolog.` não casava com nenhum padrão —
+  recebia robots.txt totalmente rastreável.
+- **O classificador de endereço privado existia em duas cópias**, e a do ambiente só
+  conhecia `10.`, `192.168.` e `127.`. A revisão acrescentou que FQDN com ponto final
+  (`localhost.`) também passava.
+- `vitest.config.ts` não resolvia `@mn/content/x`, então um arquivo de teste falhava na
+  coleta em vez de rodar — uma suíte podia parar de existir com o resumo verde.
+- `app/global-error.tsx` não existia: `error.tsx` não cobre falha do layout raiz.
+
+### Wave 2 — a integração, observada
+
+Toda suíte rodava no provider de fixtures, que entrega objetos de domínio prontos. Os
+schemas de DTO, o mapper, a hidratação de taxonomia, a divisão cursor/offset e o proxy de
+mídia nunca eram exercitados por um render real.
+
+`tests/fake-kalel/` é um CMS fiel ao contrato — valida cada resposta contra os schemas da
+própria aplicação antes de enviar — e `pnpm test:kalel` sobe a app apontada para ele. O
+corpus é grande o bastante para forçar os dois modelos de paginação: 140 artigos (cursor
+pede 100) e 260 mídias (offset pede 200).
+
+Encontrou, na primeira execução, que **`next build` falhava inteiro se o CMS estivesse
+fora do ar**, porque `/feed.xml` e `/news-sitemap.xml` são pré-renderizados. Agora
+degradam para documento vazio com TTL curto — e só em `kind=unavailable`: violação de
+contrato e bug próprio continuam explodindo, porque publicar um feed permanentemente vazio
+com 200 é pior que não publicar.
+
+### Wave 3 — o importador, executado
+
+O importador nunca tinha sido rodado de ponta a ponta. `tests/fake-wp/` serve uma REST API
+do WordPress, o Kal El falso ganhou escrita com `externalKey`, `Idempotency-Key` e
+`If-Match`, e um teste roda o CLI real como subprocesso, duas vezes.
+
+- **`findArticleByExternalKey` tratava falha de consulta como ausência**, então um erro do
+  CMS mandava criar um artigo que já existia — recusado pela unicidade, nunca atualizado.
+- **O runbook prometia algo que o código não fazia.** `If-Match` protege os milissegundos
+  entre ler a versão e escrever, não a semana desde a importação. O state file agora guarda
+  a versão escrita, e `--resume` decide de onde continuar, não se lembramos o que
+  escrevemos.
+- **O comentário em `source.ts` afirmava existir um `--wxr`.** Nunca existiu. O caminho
+  para um dump SQL está no runbook, com a sequência exata do inventário à verificação.
+
+### Wave 4 — fidelidade visual
+
+A comparação lado a lado com os `*.dc.html` mostrou que a home não estava mais pobre:
+estava **incompleta**. Três módulos do protótipo não existiam. Detalhe em
+[VISUAL-AUDIT.md](./VISUAL-AUDIT.md).
 
 ## 2. Cobertura por item da Definition of Done
 
@@ -52,20 +113,20 @@ contra staging continua no checklist de pré-lançamento, onde um LCP real pode 
 | ---------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | Descoberta, adaptador e mappers documentados   | ✅ [KAL-EL-DISCOVERY.md](./KAL-EL-DISCOVERY.md), por inspeção do código do CMS                      |
 | Schemas, timeouts, erros e cache tags testados | ✅ 45 testes de contrato, incluindo timeout, 5xx com retry único e HTML de proxy                    |
-| Produção sem fixture e sem token no cliente    | ✅ duas travas independentes + teste estático da fronteira                                          |
+| Produção sem fixture e sem token no cliente    | ✅ duas travas independentes + teste estático da fronteira. **Staging agora conta como produção**   |
 | Ausência do Cinerie degrada só o módulo        | ✅ testado (`keeps the home up when the Cinerie module is unavailable`)                             |
 | Webhook HMAC / replay, preview, invalidação    | ✅ 19 testes; claim de nonce **atômico**; preview preso a um slug                                   |
 | Domínio cobre todos os tipos                   | ⚠️ o **domínio** cobre; o **CMS** não tem modelo para comercial, dossiê e ao vivo — ver pendência 4 |
 
 ### Migração e URLs
 
-| Item                                         | Situação                                                                                  |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Scripts com help, dry-run, resume, relatório | ✅ dry run é o padrão; sem `--apply` o cliente de escrita nem é construído                |
-| Reexecução sem duplicar                      | ✅ por construção (`externalKey` + idempotency key). **Não executado contra dados reais** |
-| Parser sanitiza e contabiliza desconhecidos  | ✅ 58 testes; quatro bugs reais encontrados por eles (ver §3)                             |
-| Mapa de redirects e 410                      | ✅ permalinks, `?p=`, feeds, `wp-json`; sem open redirect (19 testes)                     |
-| Amostra de URLs com zero 404                 | ❌ **não verificável**: a amostra não existe — pendência 2                                |
+| Item                                         | Situação                                                                                                                                                  |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scripts com help, dry-run, resume, relatório | ✅ dry run é o padrão; sem `--apply` o cliente de escrita nem é construído                                                                                |
+| Reexecução sem duplicar                      | ✅ **executado**: o CLI real, duas vezes, contra stand-ins que impõem `externalKey`, `Idempotency-Key` e `If-Match`. Segunda passada reporta `created: 0` |
+| Parser sanitiza e contabiliza desconhecidos  | ✅ 58 testes; quatro bugs reais encontrados por eles (ver §3)                                                                                             |
+| Mapa de redirects e 410                      | ✅ permalinks, `?p=`, feeds, `wp-json`; sem open redirect (19 testes)                                                                                     |
+| Amostra de URLs com zero 404                 | ❌ **não verificável**: a amostra não existe — pendência 2                                                                                                |
 
 ### SEO, performance, segurança
 
@@ -246,12 +307,18 @@ Nenhuma é contornável por código.
 
 **Não verificáveis aqui:**
 
-- **Nenhuma execução contra o Kal El real.** Tudo foi validado contra o contrato lido do
-  código-fonte e um CMS simulado. A idempotência da importação é uma propriedade do
-  desenho, **não uma observação**.
-- **Fidelidade visual é uma baseline, não um julgamento.** As 160 imagens provam que nada
-  mudou desde que a tela foi aprovada; comparar lado a lado com cada `*.dc.html` é revisão
-  humana e continua pendente.
+- **Nenhuma execução contra o Kal El real.** O que existe agora é mais forte que antes —
+  a aplicação inteira renderiza em `CONTENT_SOURCE=kalel` contra um CMS que valida as
+  próprias respostas pelos schemas da app, e o importador roda duas vezes contra um alvo
+  que impõe as mesmas regras do real. O que isso **não** substitui: latência, volume e
+  comportamento sob carga do CMS de verdade.
+- **A comparação lado a lado foi feita, e não cobriu tudo.** As sete superfícies foram
+  abertas contra seus protótipos em 1440px e as diferenças de composição encontradas estão
+  corrigidas ([VISUAL-AUDIT.md](./VISUAL-AUDIT.md)). Não foram percorridos elemento a
+  elemento: os cinco templates de artigo entre si, as quatro telas comerciais entre si, e
+  os viewports 768 e 1024 fora da baseline. Isso continua sendo revisão humana.
+- **A ferramenta de comparação não é confiável em 390px** — as capturas saem sem estilo em
+  algumas execuções. A evidência de mobile que vale é a baseline do Playwright.
 - **Dossiê e ao vivo** renderizam a partir do que o CMS consegue expressar e não entram na
   baseline visual — um screenshot de estado vazio não prova fidelidade.
 

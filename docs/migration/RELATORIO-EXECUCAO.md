@@ -11,6 +11,13 @@ estimativa.
 
 ---
 
+> **Continuação, 2026-09-02.** Quatro waves depois deste relatório — auditoria técnica,
+> integração observada, importador executado e fidelidade visual — mudaram números e
+> conclusões. O estado corrente está em [FINAL-VERIFICATION.md](./FINAL-VERIFICATION.md)
+> §1.1 e em [VISUAL-AUDIT.md](./VISUAL-AUDIT.md). O que segue abaixo descreve a entrega
+> original e continua válido como história; onde divergir do estado atual, valem os dois
+> documentos citados.
+
 ## 1. Sumário em uma página
 
 Um portal de cultura pop que rodava em WordPress foi reescrito em Next.js 15 (App Router),
