@@ -55,6 +55,30 @@ A paleta de avatar reaproveita os acentos de editoria, mas um avatar carrega ini
 brancas em 11px bold: `#C77800` com branco é 3,43:1. O acento de editoria em si **não
 mudou** — ele só é usado como cor de rótulo sobre fundo claro, nunca atrás de texto branco.
 
+### 2.6 As fixtures usam as fotografias dos protótipos
+
+Os gradientes gerados por `pnpm fixtures:media` são um bom placeholder e uma apresentação
+errada: uma home cujas capas são todas retângulos de duas cores lê como wireframe.
+
+`pnpm fixtures:media:reference` baixa as quinze fotografias que os sete `*.dc.html`
+referenciam — todas em `www.maquinanerd.com.br/wp-content/uploads/`, o WordPress do
+próprio operador —, redimensiona para 1600px e grava em `public/fixtures/`. O host é
+fixado no script; qualquer outro é recusado.
+
+**Reverter:** `pnpm fixtures:media` regenera os gradientes e as baselines voltam com
+`pnpm test:visual --update-snapshots`. Se o operador preferir não versionar fotografia de
+divulgação neste repositório, é essa a saída — um comando.
+
+### 2.7 `--brand-solid`, para o vermelho preenchido
+
+`--brand-ink` é o vermelho **como tipo**, e `--brand-text` vira vermelho claro no tema
+escuro para continuar legível como tipo. Uma pílula preenchida precisa do oposto: uma
+superfície escura o bastante para o branco sentar em cima, nos dois temas.
+
+Usar `--brand-text` como fundo produziu uma barra clara com tipo vermelho sobre vermelho —
+invisível, e só no tema escuro. `--brand-solid` (com `--brand-solid-ink`) nomeia o caso,
+e é 6,6:1 com branco.
+
 ### 2.3 Escopo de tokens para superfícies escuras
 
 Faixas que se pintam de escuro enquanto o tema da página é claro (rodapé, faixa de vídeo,

@@ -2763,3 +2763,254 @@ img {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: 35px;
 }
+
+/* --------------------------------------------------------- the franchise hub
+ *
+ * Full-bleed, dark, with the art behind a vertical scrim. The measurements come from
+ * `Máquina Nerd Especiais.dc.html`: a 1240px inner column, the tab row above the title,
+ * and a 2×2 panel of figures whose 1px rules are the grid gap showing through.
+ */
+
+.mn-hub {
+  position: relative;
+  overflow: hidden;
+  background: var(--mn-ink);
+  color: var(--mn-on-ink);
+  /* Dark surface: nested type takes the on-ink palette rather than restating it. */
+  --mn-fg: var(--mn-on-ink);
+  --mn-fg2: var(--mn-fg2-on-ink);
+  --mn-line: var(--mn-line-on-ink);
+  --brand-text: var(--brand-on-dark);
+}
+
+.mn-hub__art {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: 50% 32%;
+}
+
+.mn-hub__veil {
+  position: absolute;
+  inset: 0;
+  /*
+   * The prototype starts this at 60%, and over a bright cover that puts the eyebrow at
+   * roughly 1.4:1 — unreadable, and invisible to the automated gate: axe reports text
+   * over a background image as *incomplete*, not as a violation, so nothing would have
+   * caught it. 84% is the floor at which white clears AA against the worst case, a
+   * fully white photograph: 0.16 luminance behind white is 5.1:1.
+   */
+  background: linear-gradient(rgb(11 11 12 / 84%), rgb(11 11 12 / 97%));
+}
+
+.mn-hub__inner {
+  position: relative;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: clamp(26px, 4vw, 48px) clamp(16px, 3vw, 40px);
+}
+
+.mn-hub__tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 26px;
+}
+
+.mn-hub__tab {
+  border-radius: 999px;
+  padding: 9px 20px;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  border: 1px solid rgb(255 255 255 / 22%);
+  color: var(--mn-on-ink);
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.mn-hub__tab:hover {
+  border-color: rgb(255 255 255 / 55%);
+  color: var(--mn-on-ink);
+}
+
+.mn-hub__tab--on {
+  background: var(--mn-on-ink);
+  border-color: var(--mn-on-ink);
+  color: var(--mn-ink);
+}
+
+.mn-hub__tab--on:hover {
+  color: var(--mn-ink);
+}
+
+.mn-hub__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 30px;
+  align-items: flex-end;
+}
+
+.mn-hub__lede {
+  flex: 2 1 380px;
+  min-width: 0;
+}
+
+.mn-hub__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--brand-on-dark);
+}
+
+.mn-hub__eyebrowrule {
+  width: 26px;
+  height: 2px;
+  background: var(--brand-on-dark);
+}
+
+.mn-hub__title {
+  font-weight: 900;
+  font-size: clamp(38px, 6.6vw, 78px);
+  line-height: 0.92;
+  letter-spacing: -0.045em;
+  margin: 0 0 16px;
+  color: var(--mn-on-ink);
+}
+
+.mn-hub__desc {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.7;
+  /* 74% in the prototype, which does not clear AA once the scrim is honest about the
+     photograph underneath it. */
+  color: rgb(255 255 255 / 88%);
+  max-width: 56ch;
+}
+
+.mn-hub__stats {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  /* The rules between the cells are this gap showing through. */
+  gap: 1px;
+  background: var(--mn-line-on-ink);
+  border: 1px solid var(--mn-line-on-ink);
+  margin: 0;
+}
+
+.mn-hub__stat {
+  background: var(--mn-ink);
+  padding: 16px 18px;
+}
+
+.mn-hub__statvalue {
+  margin: 0;
+  font-weight: 900;
+  font-size: clamp(20px, 2.2vw, 27px);
+  letter-spacing: -0.03em;
+  color: var(--mn-on-ink);
+}
+
+.mn-hub__statlabel {
+  margin: 0 0 4px;
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mn-fg2-on-ink);
+}
+
+/* ------------------------------------------------------- what is coming next */
+
+.mn-upcoming {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+  gap: 1px;
+  background: var(--mn-line);
+  border: 1px solid var(--mn-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.mn-upcoming__item {
+  background: var(--mn-bg);
+  padding: 18px 20px 20px;
+}
+
+.mn-upcoming__when {
+  margin: 0 0 10px;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--brand-text);
+}
+
+.mn-upcoming__what {
+  margin: 0 0 6px;
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.mn-upcoming__note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--mn-fg2);
+}
+
+/* ------------------------------------------------ the desk head, as designed */
+
+.mn-cathead__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.mn-cathead__lede {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.mn-cathead__stats {
+  display: flex;
+  gap: 26px;
+  margin: 0;
+  flex: none;
+}
+
+.mn-cathead__stat {
+  display: flex;
+  /* The figure reads first and the label sits under it, while the markup keeps the
+     term before its definition. */
+  flex-direction: column-reverse;
+}
+
+.mn-cathead__statvalue {
+  margin: 0;
+  font-weight: 900;
+  font-size: clamp(20px, 2vw, 26px);
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.mn-cathead__statlabel {
+  margin: 4px 0 0;
+  padding: 0;
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mn-fg2);
+}

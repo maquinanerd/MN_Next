@@ -15,6 +15,7 @@ import {
   Pagination,
   SectionHeading,
   Shell,
+  DateTime,
 } from '@mn/ui';
 import { JsonLd, buildGraph, collectionNode, breadcrumbNode, listingMetadata, absolute } from '@mn/seo';
 
@@ -37,6 +38,8 @@ export interface CategoryData {
   category: Category;
   items: ArticleSummary[];
   page: number;
+  /** How many the desk holds in total; null when the source cannot say. */
+  total: number | null;
   totalPages: number | null;
   hasNext: boolean;
   mostRead: ArticleSummary[] | null;
@@ -56,6 +59,7 @@ export async function loadCategory(slug: string, page: number): Promise<Category
     return {
       category: result.category,
       items: result.items,
+      total: result.total,
       page: result.page,
       totalPages: result.totalPages,
       hasNext: result.hasNext,
@@ -102,6 +106,17 @@ export function CategoryView({ data, page }: { data: CategoryData; page: number 
 
   const [hero, ...rest] = items;
 
+  /*
+   * The second figure is the date of the newest item, not a count of today's.
+   *
+   * "Hoje" was countable only in appearance: this view holds one page, so from page two
+   * onward the answer was always zero, it read `updatedAt` and so counted a correction
+   * as a publication, and it used the server's midnight rather than São Paulo's. The
+   * newest publication date answers the same question — is this desk alive — and is
+   * exactly right from the first item, because the listing is ordered by date.
+   */
+  const newest = items.find((a) => a.publishedAt !== null)?.publishedAt ?? null;
+
   return (
     <>
       <JsonLd graph={graph} />
@@ -122,8 +137,35 @@ export function CategoryView({ data, page }: { data: CategoryData; page: number 
         <Breadcrumbs items={crumbs} />
 
         <header className="mn-cathead">
-          <h1 className="mn-cathead__title">{category.name}</h1>
-          {category.description ? <p className="mn-cathead__desc">{category.description}</p> : null}
+          <div className="mn-cathead__row">
+            <div className="mn-cathead__lede">
+              <h1 className="mn-cathead__title">{category.name}</h1>
+              {category.description ? <p className="mn-cathead__desc">{category.description}</p> : null}
+            </div>
+            {/*
+             * The pair of figures the design puts beside the desk title. Counted, not
+             * invented: the prototype's second cell is "hoje", and that is genuinely
+             * knowable, unlike the visit counts it shows further down the page.
+             */}
+            {/* The term precedes its definition in the markup, as the spec requires;
+                the design's order — figure above label — is done in CSS. */}
+            <dl className="mn-cathead__stats">
+              <div className="mn-cathead__stat">
+                <dt className="mn-cathead__statlabel">Matérias</dt>
+                <dd className="mn-cathead__statvalue">
+                  {data.total === null ? '—' : data.total.toLocaleString('pt-BR')}
+                </dd>
+              </div>
+              {newest ? (
+                <div className="mn-cathead__stat">
+                  <dt className="mn-cathead__statlabel">Última</dt>
+                  <dd className="mn-cathead__statvalue">
+                    <DateTime iso={newest} />
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+          </div>
           {subs.length > 0 ? (
             <nav className="mn-cathead__subs" aria-label={`Assuntos de ${category.name}`}>
               {subs.map((sub) => (

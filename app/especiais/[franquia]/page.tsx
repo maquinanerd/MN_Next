@@ -9,17 +9,58 @@ import {
   ArticleGrid,
   Breadcrumbs,
   Editorial,
-  MnImage,
-  SIZES,
   SectionHeading,
+  FranchiseHero,
+  DateTime,
+  type FranchiseStat,
 } from '@mn/ui';
 import { JsonLd, breadcrumbNode, buildGraph, collectionNode, listingMetadata, absolute } from '@mn/seo';
 
-import { repo } from '../../../lib/content';
+import { optional, repo } from '../../../lib/content';
 import { seoContext } from '../../../lib/seo-context';
 
 /** Franchise hub at `/especiais/{franquia}`. */
 export const revalidate = 300;
+
+/**
+ * The figures beside the franchise title.
+ *
+ * Every one is counted from content that exists. The design's cells are audience and
+ * production numbers this platform does not hold; these answer the same question — how
+ * big is this thing, and is it alive — with what it does hold.
+ */
+function hubStats(
+  special: NonNullable<Awaited<ReturnType<ReturnType<typeof repo>['getSpecial']>>>,
+  total: number | null,
+): FranchiseStat[] {
+  const chapters = special.dossiers.reduce((n, d) => n + d.chapters.length, 0);
+  // Only `publishedAt`: an edit is not a publication, and this cell says when the
+  // franchise last had something new.
+  const latest = special.articles.find((a) => a.publishedAt !== null)?.publishedAt ?? null;
+  return [
+    // `special.articles` is a *window* — the CMS returns a page, not the archive — so
+    // counting it states a number that is simply wrong on any franchise with more
+    // articles than fit. The desk listing knows the real total; when it cannot say, the
+    // cell is omitted rather than filled with the window's length.
+    ...(total !== null ? [{ label: 'Matérias', value: total.toLocaleString('pt-BR') }] : []),
+    { label: 'Dossiês', value: String(special.dossiers.length) },
+    ...(chapters > 0 ? [{ label: 'Capítulos', value: String(chapters) }] : []),
+    ...(latest
+      ? [
+          {
+            label: 'Última',
+            value: new Intl.DateTimeFormat('pt-BR', {
+              month: 'short',
+              year: 'numeric',
+              timeZone: 'America/Sao_Paulo',
+            })
+              .format(new Date(latest))
+              .replace('.', ''),
+          },
+        ]
+      : []),
+  ].slice(0, 4);
+}
 
 type Params = { franquia: string };
 
@@ -45,6 +86,11 @@ export default async function FranchiseHubPage({ params }: { params: Promise<Par
   if (!slug) notFound();
   const special = await repo().getSpecial([slug]);
   if (!special) notFound();
+  // The sibling franchises become the tab row. A failure here costs the tabs, not the
+  // page: the hub is about this franchise, and the others are navigation.
+  const siblings = (await optional(repo().listSpecials(), 'hub-siblings')) ?? [];
+  // The real archive size for this franchise, which `getSpecial` cannot report.
+  const listing = await optional(repo().listCategory(slug, 1), 'hub-total');
 
   const ctx = seoContext();
   const crumbs = [
@@ -70,22 +116,39 @@ export default async function FranchiseHubPage({ params }: { params: Promise<Par
     <>
       <JsonLd graph={graph} />
 
+      {/*
+       * Full-bleed, so outside `Editorial`. The figures beside the title are counted
+       * from what the platform actually holds — the prototype's "9,3 mi na estreia" and
+       * "612 matérias" are numbers this site does not record, and inventing them would
+       * put fiction on a page that otherwise reports.
+       */}
+      <FranchiseHero
+        franchise={special.franchise}
+        siblings={siblings.map((s) => ({ slug: s.franchise.slug, name: s.franchise.name }))}
+        stats={hubStats(special, listing?.total ?? null)}
+      />
+
       <Editorial>
         <Breadcrumbs items={crumbs} />
 
-        <header className="mn-hub__cover">
-          {special.franchise.cover ? (
-            <MnImage image={special.franchise.cover} alt="" sizes={SIZES.full} priority />
-          ) : null}
-          <span className="mn-hub__scrim" aria-hidden="true" />
-          <div className="mn-hub__body">
-            <p className="mn-longform__kickers">
-              <span>Especial</span>
-            </p>
-            <h1 className="mn-hub__title">{special.franchise.name}</h1>
-            <p className="mn-hub__desc">{special.franchise.description}</p>
-          </div>
-        </header>
+        {special.franchise.timeline && special.franchise.timeline.length > 0 ? (
+          <section className="mn-section" aria-label="O que vem por aí">
+            <SectionHeading label="O que vem por aí" />
+            <div className="mn-upcoming">
+              {special.franchise.timeline.map((entry) => (
+                <article className="mn-upcoming__item" key={entry.label}>
+                  <p className="mn-upcoming__when">{entry.label}</p>
+                  <h3 className="mn-upcoming__what">{entry.text}</h3>
+                  {entry.date ? (
+                    <p className="mn-upcoming__note">
+                      <DateTime iso={entry.date} />
+                    </p>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         {special.dossiers.length > 0 ? (
           <section className="mn-section" aria-label="Dossiês">
@@ -99,20 +162,6 @@ export default async function FranchiseHubPage({ params }: { params: Promise<Par
                 </Link>
               ))}
             </div>
-          </section>
-        ) : null}
-
-        {special.franchise.timeline && special.franchise.timeline.length > 0 ? (
-          <section className="mn-section" aria-label="Linha do tempo">
-            <SectionHeading label="Ordem de exibição" />
-            <ol className="mn-timeline-list">
-              {special.franchise.timeline.map((entry) => (
-                <li key={entry.label}>
-                  <p className="mn-timeline__time">{entry.label}</p>
-                  <p className="mn-timeline__text">{entry.text}</p>
-                </li>
-              ))}
-            </ol>
           </section>
         ) : null}
 

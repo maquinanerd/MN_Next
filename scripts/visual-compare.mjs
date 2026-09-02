@@ -71,6 +71,10 @@ function serveReference() {
 
 async function capture(page, url, file) {
   await page.goto(url, { waitUntil: 'networkidle', timeout: 60_000 });
+  // `networkidle` can fire before a stylesheet has been parsed, and a capture taken then
+  // shows unstyled markup — which reads as a broken layout rather than as a broken shot.
+  await page.waitForFunction(() => document.styleSheets.length > 0, undefined, { timeout: 15_000 });
+  await page.evaluate(() => document.fonts.ready);
   await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
   // The consent banner covers the foot of every capture otherwise.
   const consent = page.getByRole('button', { name: /Aceitar todos|Apenas essenciais/ });
