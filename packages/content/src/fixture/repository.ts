@@ -68,6 +68,7 @@ export class FixtureContentRepository implements ContentRepository {
 
   async getHome(): Promise<HomePage> {
     const all = this.published().map(toSummary);
+    const specialLead = all.find((a) => a.category?.slug === 'marvel') ?? all[2] ?? null;
     const byCategory = new Map<string, ArticleSummary[]>();
     for (const a of all.slice(6)) {
       const key = a.category?.slug ?? 'geral';
@@ -88,6 +89,19 @@ export class FixtureContentRepository implements ContentRepository {
       mostRead: all.slice(0, 5),
       whereToWatch: fixtureWatchTitles,
       poll: fixturePoll,
+      // The three modules the approved front page has and a grid cannot express. The
+      // banner's lockup is designed, not derived: "Saga do / Infinito / Explicada" is
+      // three weights, and splitting a title on whitespace would break on the next one.
+      banner: {
+        href: '/especiais/marvel/a-decada-que-apostou-tudo',
+        label: 'Documentário',
+        title: 'Saga do Infinito Explicada',
+        image: all.find((a) => a.cover)?.cover ?? null,
+        lockup: { over: 'Saga do', main: 'Infinito', under: 'Explicada' },
+        tags: ['Marvel', 'Disney+', 'MCU'],
+      },
+      special: specialLead ? { slug: 'marvel', name: 'Marvel', lead: specialLead } : null,
+      more: all.slice(6, 15),
       updatedAt: all[0]?.updatedAt ?? '2026-08-27T16:05:00-03:00',
     };
   }

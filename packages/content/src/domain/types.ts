@@ -278,6 +278,40 @@ export interface HomeSection {
   articles: ArticleSummary[];
 }
 
+/**
+ * The three-part word lockup the approved home banner uses.
+ *
+ * Presentational, and deliberately data rather than a string split: the design sets
+ * "Saga do / Infinito / Explicada" in three different weights and letter-spacings, and
+ * deriving that from a title by guessing where to cut would break on the first headline
+ * that did not fit the pattern. When a source cannot supply it — the CMS has no dossier
+ * model — the banner renders the title on one line instead of inventing a split.
+ */
+export interface BannerLockup {
+  over: string;
+  main: string;
+  under: string;
+}
+
+/** A full-width promotional banner at the top of the home. */
+export interface HomeBanner {
+  href: string;
+  /** The badge in the corner: "Documentário", "Dossiê", "Especial". */
+  label: string;
+  title: string;
+  image: Image | null;
+  lockup: BannerLockup | null;
+  /** Short context words along the bottom edge — franchise, platform, universe. */
+  tags: string[];
+}
+
+/** A franchise feature: one article given the room the design gives it. */
+export interface HomeSpecial {
+  slug: string;
+  name: string;
+  lead: ArticleSummary;
+}
+
 export interface HomePage {
   lead: ArticleSummary | null;
   secondary: ArticleSummary[];
@@ -287,6 +321,12 @@ export interface HomePage {
   /** Null when the Cinerie service is unavailable - the module simply does not render. */
   whereToWatch: WatchTitle[] | null;
   poll: Poll | null;
+  /** Null when nothing is promoted; the banner simply does not render. */
+  banner: HomeBanner | null;
+  /** Null when no franchise has a lead article to feature. */
+  special: HomeSpecial | null;
+  /** The compact tail of the front page: many items, small, with covers. */
+  more: ArticleSummary[];
   updatedAt: ISODate;
 }
 

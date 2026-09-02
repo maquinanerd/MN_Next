@@ -48,6 +48,7 @@ export { WhereToWatch } from './cinerie/WhereToWatch';
 
 export { PollVS } from './specials/PollVS';
 export { ChapterNav, LiveCoverage, ChapterLinks } from './specials/specials';
+export { HomeBannerBand, HomeSpecialFeature, HomeMoreGrid } from './specials/HomeModules';
 
 export { NewsletterForm } from './forms/NewsletterForm';
 export { SearchForm } from './forms/SearchForm';

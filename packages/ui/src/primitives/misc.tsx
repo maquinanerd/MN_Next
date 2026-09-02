@@ -27,16 +27,26 @@ export function SectionHeading({
   linkLabel = 'Ver todas',
   tone = 'light',
   as: As = 'h2',
+  accent,
 }: {
   label: string;
   href?: string;
   linkLabel?: string;
   tone?: 'light' | 'dark';
   as?: 'h2' | 'h3';
+  /** A word set in brand red before the label, as in "**Especial** · Star Wars". */
+  accent?: string;
 }) {
   return (
     <div className={tone === 'dark' ? 'mn-sectionheading mn-sectionheading--dark' : 'mn-sectionheading'}>
-      <As className="mn-sectionheading__label">{label}</As>
+      <As className="mn-sectionheading__label">
+        {accent ? (
+          <>
+            <span className="mn-sectionheading__accent">{accent}</span> ·{' '}
+          </>
+        ) : null}
+        {label}
+      </As>
       <span className="mn-sectionheading__rule" aria-hidden="true" />
       {href ? (
         <a className="mn-sectionheading__link" href={href}>

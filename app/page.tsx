@@ -16,6 +16,9 @@ import {
   WhereToWatch,
   articleHref,
   AuthorByline,
+  HomeBannerBand,
+  HomeSpecialFeature,
+  HomeMoreGrid,
 } from '@mn/ui';
 import { JsonLd, buildGraph, collectionNode } from '@mn/seo';
 
@@ -94,8 +97,8 @@ export default async function HomePage() {
 
             {home.secondary.length > 0 ? (
               <div className="mn-home__secondary">
-                {home.secondary.map((article) => (
-                  <ArticleCard key={article.id} article={article} size="md" showExcerpt showKicker={false} />
+                {home.secondary.slice(0, 2).map((article) => (
+                  <ArticleCard key={article.id} article={article} size="lg" showExcerpt showKicker={false} />
                 ))}
               </div>
             ) : null}
@@ -113,6 +116,21 @@ export default async function HomePage() {
           <AdSlot id="ad-home-leaderboard" {...AD_SLOTS.leaderboard} targeting={{ brand: 'mn', template: 'home' }} />
         </div>
       </Shell>
+
+      {/*
+       * The full-width band, third module on the approved front page.
+       *
+       * Its absence was the single largest departure from the design: the page went from
+       * hero to grid to grid with nothing to break the rhythm, which is what made it read
+       * as a wireframe rather than as a front page.
+       */}
+      {home.banner ? (
+        <Shell>
+          <div className="mn-section">
+            <HomeBannerBand banner={home.banner} />
+          </div>
+        </Shell>
+      ) : null}
 
       {home.sections[0] ? (
         <Shell>
@@ -147,6 +165,12 @@ export default async function HomePage() {
         </Shell>
       ) : null}
 
+      {home.special ? (
+        <Shell>
+          <HomeSpecialFeature special={home.special} />
+        </Shell>
+      ) : null}
+
       <section className="mn-videoband" aria-label="Galeria de vídeos">
         <Shell>
           <SectionHeading label="Galeria de vídeos" tone="dark" href="/videos" linkLabel="Mais vídeos" />
@@ -169,6 +193,12 @@ export default async function HomePage() {
           <MostRead items={home.mostRead} />
         </section>
       </Shell>
+
+      {home.more.length > 0 ? (
+        <Shell>
+          <HomeMoreGrid label="Mais, mais, mais" articles={home.more} />
+        </Shell>
+      ) : null}
 
       {home.sections[3] ? (
         <Shell>

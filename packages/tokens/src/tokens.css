@@ -178,6 +178,20 @@
   --brand-ink: var(--mn-red-ink);
   --brand-on-dark: var(--mn-red-on-dark);
   --brand-text: var(--mn-red-text);
+  /*
+   * The brand as a filled surface with ink on top — the desk pill on the lead, and
+   * anything else the design fills.
+   *
+   * The darker red, not the bright one, and that is what the prototype uses: white on
+   * `--brand` is 4.0:1 and white on this is 6.6:1.
+   *
+   * It is deliberately **not** `--brand-text`, which flips to a bright red in the dark
+   * theme so it stays legible *as type*. A filled pill needs the opposite: a surface
+   * dark enough for white to sit on, in both themes. Using the text token here produced
+   * a bright bar with red-on-red type — invisible, and only in dark mode.
+   */
+  --brand-solid: var(--mn-red-ink);
+  --brand-solid-ink: #ffffff;
 }
 
 :root[data-brand='cinerie'] {
@@ -185,6 +199,8 @@
   --brand-ink: var(--cinerie-blue-ink);
   --brand-on-dark: var(--cinerie-blue-on-dark);
   --brand-text: var(--cinerie-blue-ink);
+  --brand-solid: var(--cinerie-blue-ink);
+  --brand-solid-ink: #ffffff;
 }
 
 :root[data-brand='cinerie'][data-theme='dark'] {

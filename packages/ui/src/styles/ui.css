@@ -2480,3 +2480,286 @@ img {
     padding-inline: 16px;
   }
 }
+
+/* ---------------------------------------------------------------- home modules
+ *
+ * Three compositions the approved front page has that a card grid cannot express.
+ * Every number here is measured from the prototype, not approximated: the band is
+ * 1440/380, its scrim runs to the right because the type sits there, the feature splits
+ * 700fr against 520fr, and the tail pairs a 96px thumbnail with the headline.
+ */
+
+.mn-banner {
+  position: relative;
+  display: block;
+  /*
+   * The width has to be stated. With only `aspect-ratio` and `min-height`, the box
+   * derives its *width* from the floor — 220px at 1440/380 is 834px — and a tablet gets
+   * a band wider than the viewport. Stating the width makes the ratio produce a height
+   * and leaves `min-height` doing what it was for.
+   */
+  width: 100%;
+  aspect-ratio: 1440 / 380;
+  min-height: 180px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--mn-ink);
+  /* Dark surface: the nested type inherits the on-ink palette rather than restating it. */
+  --mn-fg: var(--mn-on-ink);
+  --mn-fg2: var(--mn-fg2-on-ink);
+  --brand-text: var(--brand-on-dark);
+  color: var(--mn-on-ink);
+}
+
+.mn-banner__art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 22% 28%;
+  opacity: 0.92;
+}
+
+.mn-banner__scrim {
+  position: absolute;
+  inset: 0;
+  /* Left to right: the art is on the left, the words on the right. */
+  background: linear-gradient(90deg, rgb(11 11 12 / 10%) 0%, rgb(11 11 12 / 70%) 44%, rgb(11 11 12 / 96%) 80%);
+}
+
+.mn-banner__stamp {
+  position: absolute;
+  top: 24px;
+  right: 28px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mn-banner__logo {
+  height: 15px;
+  width: auto;
+  opacity: 0.9;
+}
+
+.mn-banner__badge {
+  background: rgb(255 255 255 / 14%);
+  color: var(--mn-on-ink);
+  font-weight: 800;
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  border-radius: 3px;
+}
+
+.mn-banner__lockup {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  text-align: right;
+  /* The 42% left padding is what keeps the type off the subject of the photograph. */
+  padding: 0 clamp(24px, 5vw, 72px) 0 42%;
+  gap: 6px;
+}
+
+.mn-banner__over {
+  font-weight: 500;
+  font-size: clamp(14px, 1.5vw, 21px);
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: rgb(255 255 255 / 85%);
+}
+
+.mn-banner__main {
+  font-weight: 900;
+  font-size: clamp(30px, 6.6vw, 88px);
+  line-height: 0.86;
+  letter-spacing: -0.035em;
+  text-transform: uppercase;
+  color: var(--mn-on-ink);
+}
+
+.mn-banner__under {
+  font-weight: 600;
+  font-size: clamp(10px, 1.1vw, 14px);
+  letter-spacing: 0.5em;
+  text-transform: uppercase;
+  /* Brand red as type, which is only legitimate on a dark ground. */
+  color: var(--brand-on-dark);
+}
+
+.mn-banner__tags {
+  position: absolute;
+  bottom: 22px;
+  right: 28px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgb(255 255 255 / 60%);
+}
+
+@media (width <= 640px) {
+  .mn-banner {
+    aspect-ratio: 4 / 3;
+  }
+
+  .mn-banner__lockup {
+    /* No room to hold the type off the art; centre it and let the scrim do the work. */
+    align-items: flex-start;
+    text-align: left;
+    justify-content: flex-end;
+    padding: 0 20px 54px;
+  }
+
+  .mn-banner__scrim {
+    background: linear-gradient(0deg, rgb(11 11 12 / 96%) 6%, rgb(11 11 12 / 45%) 62%, rgb(11 11 12 / 30%));
+  }
+
+  .mn-banner__tags {
+    right: auto;
+    left: 20px;
+    gap: 14px;
+    font-size: 10px;
+  }
+}
+
+.mn-sectionheading__accent {
+  color: var(--brand-text);
+}
+
+/* --------------------------------------------------------------- the feature */
+
+.mn-feature {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 45px;
+  align-items: flex-start;
+}
+
+.mn-feature__text {
+  flex: 700 1 380px;
+  min-width: 0;
+}
+
+.mn-feature__title {
+  font-weight: 800;
+  font-size: clamp(23px, 2.1vw, 30px);
+  line-height: 1.24;
+  letter-spacing: -0.028em;
+  margin: 0 0 18px;
+}
+
+.mn-feature__media {
+  position: relative;
+  flex: 520 1 300px;
+  min-width: 0;
+  aspect-ratio: 16 / 11;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--mn-surf2);
+  display: block;
+}
+
+.mn-feature__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ------------------------------------------------------------------ the tail */
+
+.mn-more {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  gap: 26px 45px;
+}
+
+.mn-more__item {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.mn-more__media {
+  position: relative;
+  display: block;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--mn-surf2);
+}
+
+.mn-more__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mn-more__title {
+  font-weight: 700;
+  font-size: 14.5px;
+  line-height: 1.36;
+  margin: 0 0 10px;
+}
+
+.mn-more__body {
+  min-width: 0;
+}
+
+/* -------------------------------------------------------- the hero, as designed
+ *
+ * Three departures from the prototype that together changed how the front page reads:
+ * the lead's desk label was plain red type where the design has a filled pill, "Ler mais"
+ * was sentence case where the design shouts it, and the row under the lead carried three
+ * small cards where the design carries two large ones. The last is the one that matters —
+ * an editorial page earns its rhythm by changing card size between rows, and three even
+ * cards under a hero is the same beat twice.
+ */
+
+.mn-home__leadtext .mn-card__kicker {
+  display: inline-block;
+  /* The column is a flex container, so a plain inline-block child still stretches to
+     its full width — which turned the pill into a red rule across the page. */
+  align-self: flex-start;
+  background: var(--brand-solid);
+  /* `--brand-ink` is the brand colour used as *type*, which here would be red on red. */
+  color: var(--brand-solid-ink);
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  padding: 9px 16px;
+  border-radius: 6px;
+  margin-bottom: 22px;
+}
+
+.mn-home__leadtext .mn-card__kicker:hover {
+  background: var(--brand);
+  color: var(--brand-solid-ink);
+}
+
+.mn-home__leadtext .mn-card__excerpt a {
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.mn-home__secondary {
+  /* Two across, not three: the design pairs large cards here and keeps the small ones
+     for the tail. `auto-fit` at 200px was quietly producing four on a wide screen. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 35px;
+}

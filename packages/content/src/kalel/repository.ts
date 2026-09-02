@@ -83,6 +83,24 @@ const MAX_INDEX_PAGES = 500;
 const MAX_NEWS_PAGES = 10;
 
 /** Media pages by offset; Kal El caps `limit` at 200. */
+/**
+ * Tags that mark an article as worth the full-width band.
+ *
+ * Reserved tags, not a field: the CMS has no dossier model, so promotion to the banner
+ * is an editorial convention the newsroom can apply from the tag picker. Changing this
+ * set is changing one line, which is the point of keeping it here rather than in code
+ * scattered across the page.
+ */
+const BANNER_TAGS = new Set(['especial', 'dossie', 'documentario']);
+
+/** Desks whose articles can lead the franchise feature. */
+const SPECIAL_DESKS = new Set(['especiais', 'marvel', 'star-wars', 'dc']);
+
+/** Where an article lives. Null when it has no desk, which means it has no public URL. */
+function articlePath(article: ArticleSummary): string | null {
+  return article.category ? `/${article.category.slug}/${article.slug}` : null;
+}
+
 const MEDIA_PAGE_SIZE = 200;
 const MAX_MEDIA_PAGES = 200;
 
@@ -331,12 +349,45 @@ export class KalElContentRepository implements ContentRepository {
     // and leaves the rest of the home at 200 (docs/10).
     const whereToWatch = await getCinerieTitles();
 
+    /*
+     * The banner and the franchise feature, from what the CMS can actually express.
+     *
+     * There is no dossier model in Kal El — that gap is recorded in KAL-EL-DISCOVERY —
+     * so neither module is derived from one. The banner promotes the most recent article
+     * carrying a reserved `especial` tag and a cover; the feature promotes the most
+     * recent article in a desk under `especiais`. Both render nothing when there is
+     * nothing to promote, which is the honest outcome and not an empty frame.
+     *
+     * The designed three-word lockup has no source here, so `lockup` stays null and the
+     * band sets the headline on one line.
+     */
+    const promoted = all.find((a) => a.cover !== null && a.tags.some((t) => BANNER_TAGS.has(t.slug)));
+    const banner = promoted
+      ? {
+          href: articlePath(promoted) ?? '/especiais',
+          label: 'Especial',
+          title: promoted.title,
+          image: promoted.cover,
+          lockup: null,
+          tags: promoted.tags.slice(0, 3).map((t) => t.name),
+        }
+      : null;
+
+    const specialLead = all.find((a) => a.category !== null && SPECIAL_DESKS.has(a.category.slug));
+    const special =
+      specialLead && specialLead.category
+        ? { slug: specialLead.category.slug, name: specialLead.category.name, lead: specialLead }
+        : null;
+
     return {
       lead,
       secondary,
       aside,
       sections,
       mostRead: all.slice(0, 5),
+      banner,
+      special,
+      more: rest.slice(0, 9),
       whereToWatch,
       poll: null,
       updatedAt: lead?.updatedAt ?? this.now().toISOString(),

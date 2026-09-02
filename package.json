@@ -28,7 +28,9 @@
     "fixtures:media": "node scripts/generate-fixture-media.mjs",
     "test:kalel": "playwright test --config playwright.kalel.config.ts",
     "kalel:fake": "tsx tests/fake-kalel/main.ts",
-    "import:sandbox": "tsx tests/fake-wp/main.ts"
+    "import:sandbox": "tsx tests/fake-wp/main.ts",
+    "fixtures:media:reference": "node scripts/fixture-media-from-reference.mjs",
+    "visual:compare": "node scripts/visual-compare.mjs"
   },
   "dependencies": {
     "@mn/content": "workspace:*",
