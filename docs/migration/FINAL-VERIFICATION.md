@@ -208,8 +208,8 @@ Uma única mudança, em branch e commit próprios no repositório do CMS:
   PostgreSQL real
 - Regressão conferida: `articles.test.ts` e `pipeline-contract.test.ts` seguem verdes
 
-**Não commitada, não enviada.** Fica no repositório do Kal El para revisão de quem cuida
-dele. O portal funciona sem ela — o resultado filtrado é sempre reconferido contra o slug
+**Commitada no repositório do Kal El, não enviada.** Fica na branch `feat/article-slug-filter`
+para revisão de quem cuida do CMS; nenhum push foi feito. O portal funciona sem ela — o resultado filtrado é sempre reconferido contra o slug
 pedido e uma divergência cai no índice completo.
 
 ## 5. Pendências externas

@@ -53,6 +53,62 @@ describe('production environment guards', () => {
     expect(() => validateEnv({ ...PROD_BASE, MEDIA_ALLOWED_HOSTS: 'localhost' })).toThrow(EnvError);
   });
 
+  it('holds staging to the same guards, because staging serves readers too', () => {
+    // The runbook opens staging to the newsroom for a week before the cutover. A week
+    // spent reviewing invented articles is a week of review thrown away, so a staging
+    // deployment gets production's guards — every one except the public-URL scheme,
+    // since an internal staging host may legitimately be plain http.
+    const staging = { ...PROD_BASE, APP_ENV: 'staging' } as NodeJS.ProcessEnv;
+    expect(validateEnv(staging).appEnv).toBe('staging');
+
+    expect(() => validateEnv({ ...staging, CONTENT_SOURCE: 'fixture' })).toThrow(EnvError);
+    expect(() => validateEnv({ ...staging, KAL_EL_SERVICE_TOKEN: undefined })).toThrow(EnvError);
+    expect(() => validateEnv({ ...staging, KAL_EL_WEBHOOK_SECRET: undefined })).toThrow(EnvError);
+    expect(() => validateEnv({ ...staging, KAL_EL_PREVIEW_SECRET: undefined })).toThrow(EnvError);
+    expect(() => validateEnv({ ...staging, TRUST_PROXY: undefined })).toThrow(EnvError);
+    expect(() => validateEnv({ ...staging, KAL_EL_BASE_URL: 'http://cms.internal' })).toThrow(EnvError);
+    expect(() => validateEnv({ ...staging, MEDIA_ALLOWED_HOSTS: '172.16.0.9' })).toThrow(EnvError);
+
+    // …but a staging host reachable over plain http inside the network is fine.
+    expect(validateEnv({ ...staging, NEXT_PUBLIC_SITE_URL: 'http://homolog.internal' }).appEnv).toBe('staging');
+  });
+
+  it('names the deployment in the message, so the fix is obvious', () => {
+    try {
+      validateEnv({ ...PROD_BASE, APP_ENV: 'staging', CONTENT_SOURCE: 'fixture' });
+      throw new Error('expected a rejection');
+    } catch (err) {
+      expect((err as EnvError).issues.join(' ')).toContain('in staging');
+    }
+  });
+
+  it('refuses every private range as an image host, not just the obvious three', () => {
+    // The check used to be a regex that knew about 10., 192.168. and 127. — so
+    // 172.16.0.1 and every IPv6 spelling of a private address walked straight through.
+    for (const host of [
+      '172.16.0.1',
+      '172.31.255.255',
+      '100.64.0.1',
+      '169.254.169.254',
+      '0.0.0.0',
+      'cms.internal',
+      'db.local',
+      'fd00::1',
+      '::ffff:7f00:1',
+      // A trailing dot is a legal fully qualified name that resolves identically. Left
+      // in place it stops the address pattern matching and the host reads as public.
+      'localhost.',
+      '127.0.0.1.',
+      'cms.internal.',
+    ]) {
+      expect(() => validateEnv({ ...PROD_BASE, MEDIA_ALLOWED_HOSTS: host }), host).toThrow(EnvError);
+    }
+    // A public CDN still passes.
+    expect(
+      validateEnv({ ...PROD_BASE, MEDIA_ALLOWED_HOSTS: 'images.maquinanerd.com.br,cdn.example.net' }).mediaAllowedHosts,
+    ).toEqual(['images.maquinanerd.com.br', 'cdn.example.net']);
+  });
+
   it('allows a fixture build when APP_ENV names a non-production deployment', () => {
     const env = validateEnv({
       NODE_ENV: 'production',

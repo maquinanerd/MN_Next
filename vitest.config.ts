@@ -9,7 +9,16 @@ const root = path.dirname(fileURLToPath(import.meta.url));
  *
  * `server-only` is aliased to an empty module: the guard exists to fail a *client*
  * bundle, and every test here runs on the server side by definition.
+ *
+ * The workspace aliases come in pairs — the bare package name and the subpath prefix —
+ * because the application imports both forms (`@mn/content` and `@mn/content/env`) and
+ * an exact-match-only alias silently fails to resolve the second. That is not a
+ * cosmetic gap: a test file that reaches a deep import throws at collection time, so the
+ * whole file reports "no tests" instead of failing, and a suite can quietly stop running
+ * while the summary still looks green.
  */
+const workspace = ['tokens', 'content', 'seo', 'ui'] as const;
+
 export default defineConfig({
   test: {
     environment: 'node',
@@ -25,12 +34,12 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: {
-      'server-only': path.join(root, 'tests/stubs/server-only.ts'),
-      '@mn/tokens': path.join(root, 'packages/tokens/src/index.ts'),
-      '@mn/content': path.join(root, 'packages/content/src/index.ts'),
-      '@mn/seo': path.join(root, 'packages/seo/src/index.ts'),
-      '@mn/ui': path.join(root, 'packages/ui/src/index.ts'),
-    },
+    alias: [
+      { find: 'server-only', replacement: path.join(root, 'tests/stubs/server-only.ts') },
+      ...workspace.flatMap((name) => [
+        { find: `@mn/${name}/`, replacement: path.join(root, 'packages', name, 'src') + '/' },
+        { find: `@mn/${name}`, replacement: path.join(root, 'packages', name, 'src/index.ts') },
+      ]),
+    ],
   },
 });

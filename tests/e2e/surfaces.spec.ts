@@ -224,12 +224,20 @@ test.describe('search', () => {
 });
 
 test.describe('discovery surfaces', () => {
-  test('robots.txt points at both sitemaps', async ({ request }) => {
+  test('robots.txt closes a deployment that is not the real site', async ({ request }) => {
+    // This suite runs a production *build* under APP_ENV=test, which is exactly the
+    // shape a staging box has. It must not be crawlable, and it must not advertise its
+    // sitemaps: a pre-launch deployment holding the whole archive competes with the real
+    // site for its own content.
+    //
+    // The production shape — both sitemaps listed, /api and /preview disallowed — is
+    // asserted directly against the function in tests/security/deployment-guards.test.ts,
+    // because reaching it from here would mean running this suite with real credentials.
     const res = await request.get('/robots.txt');
     expect(res.ok()).toBe(true);
     const body = await res.text();
-    expect(body).toContain('sitemap.xml');
-    expect(body).toContain('news-sitemap.xml');
+    expect(body).toContain('Disallow: /');
+    expect(body).not.toContain('news-sitemap.xml');
   });
 
   test('the sitemap index names every child file', async ({ request }) => {

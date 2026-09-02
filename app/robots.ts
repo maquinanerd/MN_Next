@@ -8,13 +8,20 @@ import { siteUrl } from '../lib/seo-context';
  * `/_next/image` and `/_next/static` stay crawlable - blocking them is a classic way to
  * make Google render the site without its own images and CSS (docs/06 checklist).
  *
- * A non-production host disallows everything: a staging deployment that gets indexed
- * competes with the real site for its own content.
+ * A non-production deployment disallows everything: a staging deployment that gets
+ * indexed competes with the real site for its own content.
+ *
+ * The deciding signal is `APP_ENV`, not `NODE_ENV` — a staging build *is* a production
+ * build, so `NODE_ENV` reads "production" there too. The hostname patterns stay as a
+ * second net for a deployment that forgot to set `APP_ENV`, but they cannot be the
+ * primary test: a staging host named `homolog.` or `hml.` matches none of them and
+ * would have been handed a fully crawlable robots.txt.
  */
 export default function robots(): MetadataRoute.Robots {
   const base = siteUrl();
+  const appEnv = process.env.APP_ENV ?? process.env.NODE_ENV;
   const isProduction =
-    process.env.NODE_ENV === 'production' && !/localhost|127\.0\.0\.1|staging|preview|vercel\.app/i.test(base);
+    appEnv === 'production' && !/localhost|127\.0\.0\.1|staging|preview|homolog|hml\.|vercel\.app/i.test(base);
 
   if (!isProduction) {
     return {

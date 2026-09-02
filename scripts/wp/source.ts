@@ -2,6 +2,8 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 
 import { z } from 'zod';
 
+import { isPrivateHost } from '@mn/content/security/address';
+
 import { CliError, rateLimiter } from './cli';
 
 /**
@@ -113,107 +115,21 @@ export function assetUrlAllowed(
 
   const host = url.hostname.toLowerCase();
   if (!allowedHosts.has(host)) return { ok: false, reason: `host ${host} is not the source origin` };
-  if (isPrivateAddress(host)) return { ok: false, reason: `host ${host} resolves to a private address` };
+  if (isPrivateHost(host)) return { ok: false, reason: `host ${host} resolves to a private address` };
   return { ok: true, url };
 }
 
 /**
- * Literal private, loopback and link-local addresses.
- *
- * Syntactic only — it judges an address, not a name. `WordPressSource` resolves the
- * hostname first and passes every address it gets back through here, which is what
- * closes the case of an allowlisted name pointing at 169.254.169.254.
+ * Re-exported so the importer's guard and the runtime's guard are provably the same
+ * function. They were two copies once, and the copy in this file was the one that knew
+ * about IPv6 while the other did not.
  */
-export function isPrivateAddress(host: string): boolean {
-  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.internal') || host.endsWith('.local')) {
-    return true;
-  }
-  const bare = host.replace(/^\[|\]$/g, '').replace(/%.*$/, '');
-  if (bare.includes(':')) return isPrivateIpv6(bare);
-  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
-  if (!v4) return false;
-  const [a, b] = [Number(v4[1]), Number(v4[2])];
-  if (a === 10 || a === 127 || a === 0) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 169 && b === 254) return true;
-  if (a === 100 && b >= 64 && b <= 127) return true;
-  return false;
-}
+export { isPrivateHost as isPrivateAddress } from '@mn/content/security/address';
 
 /** Every address a name resolves to — all of them, since any one would be used. */
 async function defaultLookup(host: string): Promise<string[]> {
   const records = await dnsLookup(host, { all: true });
   return records.map((r) => r.address);
-}
-
-/**
- * Whether an IPv6 address is one the importer must not reach.
- *
- * Parsed, not pattern-matched. \`::ffff:10.0.0.1\` and \`::ffff:a00:1\` are the same
- * address written two ways, and a check that only recognises the dotted spelling reads
- * the hex one as a public address — which is precisely how an internal service gets
- * reached through a guard that looks like it works.
- */
-function isPrivateIpv6(address: string): boolean {
-  const parts = expandIpv6(address);
-  if (!parts) return true; // unparseable is not a thing to connect to
-
-  const [h0 = 0] = parts;
-  // Every /96 that carries an IPv4 address in its last two groups. Each is a different
-  // spelling of the same destination, so all of them have to be judged as IPv4.
-  const embedsV4 = [
-    [0, 0, 0, 0, 0, 0xffff], // ::ffff:a.b.c.d     IPv4-mapped
-    [0, 0, 0, 0, 0xffff, 0], // ::ffff:0:a.b.c.d   IPv4-translated (RFC 6145)
-    [0, 0, 0, 0, 0, 0], //      ::a.b.c.d          IPv4-compatible, deprecated
-    [0x64, 0xff9b, 0, 0, 0, 0], // 64:ff9b::/96    NAT64 well-known prefix
-  ].some((prefix) => prefix.every((group, i) => parts[i] === group));
-  if (embedsV4) {
-    const [, , , , , , g = 0, h = 0] = parts;
-    if (g === 0 && h === 0) return true; // ::
-    if (g === 0 && h === 1) return true; // ::1
-    return isPrivateAddress([g >> 8, g & 0xff, h >> 8, h & 0xff].join('.'));
-  }
-
-  if ((h0 & 0xfe00) === 0xfc00) return true; // fc00::/7  unique local
-  if ((h0 & 0xffc0) === 0xfe80) return true; // fe80::/10 link local
-  if ((h0 & 0xffc0) === 0xfec0) return true; // fec0::/10 site local, deprecated
-  return false;
-}
-
-/** An IPv6 address as its eight 16-bit groups, or null if it is not one. */
-function expandIpv6(address: string): number[] | null {
-  let text = address.toLowerCase();
-
-  // A trailing dotted quad is four more hex digits.
-  const dotted = /(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(text);
-  if (dotted?.[1]) {
-    const octets = dotted[1].split('.').map(Number);
-    if (octets.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) return null;
-    const [a = 0, b = 0, c = 0, d = 0] = octets;
-    text = text.slice(0, dotted.index) + ((a << 8) | b).toString(16) + ':' + ((c << 8) | d).toString(16);
-  }
-
-  const halves = text.split('::');
-  if (halves.length > 2) return null;
-  const toGroups = (part: string): number[] | null => {
-    if (part === '') return [];
-    const groups: number[] = [];
-    for (const group of part.split(':')) {
-      if (!/^[0-9a-f]{1,4}$/.test(group)) return null;
-      groups.push(parseInt(group, 16));
-    }
-    return groups;
-  };
-
-  const head = toGroups(halves[0] ?? '');
-  const tail = halves.length === 2 ? toGroups(halves[1] ?? '') : [];
-  if (!head || !tail) return null;
-
-  if (halves.length === 1) return head.length === 8 ? head : null;
-  const gap = 8 - head.length - tail.length;
-  if (gap < 1) return null;
-  return [...head, ...Array<number>(gap).fill(0), ...tail];
 }
 
 export class WordPressSource {
@@ -343,12 +259,12 @@ export class WordPressSource {
    * gap needs a connection-level dispatcher, and is recorded as such in the runbook.
    */
   private async resolvesPublicly(host: string): Promise<boolean> {
-    if (isPrivateAddress(host)) return false;
+    if (isPrivateHost(host)) return false;
     // A literal IP has already been judged; resolving it again proves nothing.
     if (/^[d.]+$/.test(host) || host.includes(':')) return true;
     try {
       const addresses = await this.lookupImpl(host);
-      return addresses.length > 0 && addresses.every((a) => !isPrivateAddress(a.toLowerCase()));
+      return addresses.length > 0 && addresses.every((a) => !isPrivateHost(a.toLowerCase()));
     } catch {
       // A name that will not resolve is not a name worth fetching from.
       return false;

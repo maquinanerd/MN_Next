@@ -1,13 +1,18 @@
 import 'server-only';
 import { z } from 'zod';
 
+import { isPrivateHost } from './security/address';
+
 /**
  * Server environment contract.
  *
  * Two properties this module exists to guarantee:
  *
- *  1. `CONTENT_SOURCE=fixture` is refused in production. A fixture provider silently
- *     serving a live site is worse than an outage: it looks fine and is entirely wrong.
+ *  1. `CONTENT_SOURCE=fixture` is refused wherever the deployment serves people —
+ *     production *and* staging. A fixture provider silently serving a live site is worse
+ *     than an outage: it looks fine and is entirely wrong. Staging counts because the
+ *     runbook opens it to the newsroom for a week before the cutover, and a week spent
+ *     reviewing invented articles is a week of review thrown away.
  *  2. No secret is ever read outside this module, and nothing here is exported to the
  *     client bundle. `server-only` makes an accidental client import a build error.
  *
@@ -89,34 +94,42 @@ function build(raw: NodeJS.ProcessEnv): ServerEnv {
   const env = parsed.data;
   const issues: string[] = [];
   const appEnv = env.APP_ENV ?? env.NODE_ENV;
+  // Both of these serve pages to real people, so both get the same guards. Only the
+  // public URL is allowed to differ: a staging host may legitimately be reached over
+  // plain http inside a network, while the credential that reaches the CMS may not.
+  const servesReaders = appEnv === 'production' || appEnv === 'staging';
+  const where = appEnv;
 
-  if (appEnv === 'production') {
+  if (servesReaders) {
     if (env.CONTENT_SOURCE !== 'kalel') {
-      issues.push('CONTENT_SOURCE must be "kalel" in production - the fixture provider must never serve readers');
+      issues.push(`CONTENT_SOURCE must be "kalel" in ${where} - the fixture provider must never serve readers`);
     }
-    if (!env.KAL_EL_BASE_URL) issues.push('KAL_EL_BASE_URL is required in production');
+    if (!env.KAL_EL_BASE_URL) issues.push(`KAL_EL_BASE_URL is required in ${where}`);
     if (env.KAL_EL_BASE_URL && !env.KAL_EL_BASE_URL.startsWith('https://')) {
-      issues.push('KAL_EL_BASE_URL must be https in production');
+      // The service token travels to this host on every read. Plaintext is a leak
+      // wherever it happens, so this one is not relaxed for staging.
+      issues.push(`KAL_EL_BASE_URL must be https in ${where} - the service token travels to it`);
     }
-    if (!env.KAL_EL_SITE_ID) issues.push('KAL_EL_SITE_ID is required in production');
-    if (!env.KAL_EL_SERVICE_TOKEN) issues.push('KAL_EL_SERVICE_TOKEN is required in production');
-    if (!env.KAL_EL_WEBHOOK_SECRET) issues.push('KAL_EL_WEBHOOK_SECRET is required in production');
+    if (!env.KAL_EL_SITE_ID) issues.push(`KAL_EL_SITE_ID is required in ${where}`);
+    if (!env.KAL_EL_SERVICE_TOKEN) issues.push(`KAL_EL_SERVICE_TOKEN is required in ${where}`);
+    if (!env.KAL_EL_WEBHOOK_SECRET) issues.push(`KAL_EL_WEBHOOK_SECRET is required in ${where}`);
     if (env.KAL_EL_WEBHOOK_SECRET && env.KAL_EL_WEBHOOK_SECRET.length < 32) {
       issues.push('KAL_EL_WEBHOOK_SECRET must be at least 32 characters');
     }
-    if (!env.KAL_EL_PREVIEW_SECRET) issues.push('KAL_EL_PREVIEW_SECRET is required in production');
+    if (!env.KAL_EL_PREVIEW_SECRET) issues.push(`KAL_EL_PREVIEW_SECRET is required in ${where}`);
     if (env.KAL_EL_PREVIEW_SECRET && env.KAL_EL_PREVIEW_SECRET.length < 32) {
       issues.push('KAL_EL_PREVIEW_SECRET must be at least 32 characters');
     }
-    if (!env.NEXT_PUBLIC_SITE_URL.startsWith('https://')) {
-      issues.push('NEXT_PUBLIC_SITE_URL must be https in production');
-    }
     if (env.TRUST_PROXY === undefined) {
       issues.push(
-        'TRUST_PROXY must be set explicitly in production ("true" behind a reverse proxy, "false" otherwise) - ' +
+        `TRUST_PROXY must be set explicitly in ${where} ("true" behind a reverse proxy, "false" otherwise) - ` +
           'rate limiting buckets on the client address and both defaults fail badly',
       );
     }
+  }
+
+  if (appEnv === 'production' && !env.NEXT_PUBLIC_SITE_URL.startsWith('https://')) {
+    issues.push('NEXT_PUBLIC_SITE_URL must be https in production');
   }
 
   if (env.CONTENT_SOURCE === 'kalel') {
@@ -129,13 +142,15 @@ function build(raw: NodeJS.ProcessEnv): ServerEnv {
     .map((h) => h.trim().toLowerCase())
     .filter(Boolean);
 
-  if (appEnv === 'production') {
+  if (servesReaders) {
     for (const host of mediaAllowedHosts) {
       if (host.includes('*')) {
         issues.push(`MEDIA_ALLOWED_HOSTS entry "${host}" contains a wildcard; list explicit hosts`);
       }
-      if (/^(localhost|127\.|10\.|192\.168\.|169\.254\.|\[?::1)/.test(host)) {
-        issues.push(`MEDIA_ALLOWED_HOSTS entry "${host}" is a private address`);
+      // Shared with the importer rather than re-derived here: the copy that used to
+      // live in this file accepted 172.16.0.1 and every IPv6 spelling.
+      if (isPrivateHost(host)) {
+        issues.push(`MEDIA_ALLOWED_HOSTS entry "${host}" is a private or local address`);
       }
     }
   }
