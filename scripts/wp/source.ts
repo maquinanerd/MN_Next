@@ -13,8 +13,15 @@ import { CliError, rateLimiter } from './cli';
  * plugin setting. The charter is explicit about that, and it matters operationally: the
  * legacy site stays live and unchanged for the thirty days after the switch.
  *
- * Reads go through the REST API. A WXR export is the fallback when the API is closed;
- * `--wxr` points at the file and the same normalisation runs over it.
+ * **Reads go through the REST API, and only the REST API.** There is no `--wxr` flag and
+ * no SQL reader; an earlier version of this comment claimed the first one, which was a
+ * lie a reader could not detect until the day it mattered.
+ *
+ * An archive that arrives as a database dump is therefore restored locally and served by
+ * a WordPress the importer can talk to — the procedure is in the runbook, and
+ * `pnpm import:sandbox` is the same shape with stand-ins in place of the real archive.
+ * Adding a file reader later means implementing this class's async-generator surface and
+ * nothing else; every consumer speaks to that, not to HTTP.
  */
 
 const wpRendered = z.object({ rendered: z.string() }).transform((v) => v.rendered);
@@ -83,6 +90,15 @@ export interface SourceOptions {
   fetchImpl?: typeof fetch;
   /** Name resolution, injectable so the SSRF guard is testable without a resolver. */
   lookupImpl?: (host: string) => Promise<string[]>;
+  /**
+   * Permit assets on private or loopback addresses.
+   *
+   * Exists for one reason: a rehearsal against a WordPress restored on the operator's own
+   * machine. The caller is responsible for proving the whole run is local — `import.ts`
+   * refuses the flag unless *every* configured endpoint is loopback, so it cannot be
+   * switched on for a run that can reach anything real.
+   */
+  allowPrivateHosts?: boolean;
 }
 
 /**
@@ -101,6 +117,7 @@ export interface SourceOptions {
 export function assetUrlAllowed(
   raw: string,
   allowedHosts: Set<string>,
+  allowPrivateHosts = false,
 ): { ok: true; url: URL } | { ok: false; reason: string } {
   let url: URL;
   try {
@@ -111,11 +128,18 @@ export function assetUrlAllowed(
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return { ok: false, reason: `scheme ${url.protocol}` };
   // Credentials in a URL are how a fetch gets aimed at something that trusts them.
   if (url.username !== '' || url.password !== '') return { ok: false, reason: 'credentials in URL' };
-  if (url.port !== '' && !['80', '443'].includes(url.port)) return { ok: false, reason: `port ${url.port}` };
+  // A non-standard port is refused for the same reason a private address is: it is how
+  // an asset URL reaches an internal service. Both concessions are made together, and
+  // only for a rehearsal that `import.ts` has proved is entirely local.
+  if (!allowPrivateHosts && url.port !== '' && !['80', '443'].includes(url.port)) {
+    return { ok: false, reason: `port ${url.port}` };
+  }
 
   const host = url.hostname.toLowerCase();
   if (!allowedHosts.has(host)) return { ok: false, reason: `host ${host} is not the source origin` };
-  if (isPrivateHost(host)) return { ok: false, reason: `host ${host} resolves to a private address` };
+  if (!allowPrivateHosts && isPrivateHost(host)) {
+    return { ok: false, reason: `host ${host} is a private address` };
+  }
   return { ok: true, url };
 }
 
@@ -140,6 +164,7 @@ export class WordPressSource {
   /** Hosts an asset may legitimately come from: the source origin, plus any CDN. */
   private readonly assetHosts: Set<string>;
   private readonly lookupImpl: (host: string) => Promise<string[]>;
+  private readonly allowPrivateHosts: boolean;
 
   constructor(opts: SourceOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
@@ -148,6 +173,7 @@ export class WordPressSource {
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.assetHosts = new Set([new URL(this.baseUrl).hostname, ...(opts.assetHosts ?? [])].map((h) => h.toLowerCase()));
     this.lookupImpl = opts.lookupImpl ?? defaultLookup;
+    this.allowPrivateHosts = opts.allowPrivateHosts === true;
   }
 
   static fromEnv(overrides: Partial<SourceOptions> = {}): WordPressSource {
@@ -259,6 +285,9 @@ export class WordPressSource {
    * gap needs a connection-level dispatcher, and is recorded as such in the runbook.
    */
   private async resolvesPublicly(host: string): Promise<boolean> {
+    // The local-rehearsal escape hatch. The host allowlist still applies: this only
+    // stops the address check from refusing a loopback host the operator declared.
+    if (this.allowPrivateHosts) return true;
     if (isPrivateHost(host)) return false;
     // A literal IP has already been judged; resolving it again proves nothing.
     if (/^[d.]+$/.test(host) || host.includes(':')) return true;
@@ -282,7 +311,7 @@ export class WordPressSource {
     let current = url;
 
     for (let hop = 0; hop <= maxHops; hop += 1) {
-      const allowed = assetUrlAllowed(current, this.assetHosts);
+      const allowed = assetUrlAllowed(current, this.assetHosts, this.allowPrivateHosts);
       if (!allowed.ok) return null;
       if (!(await this.resolvesPublicly(allowed.url.hostname))) return null;
 

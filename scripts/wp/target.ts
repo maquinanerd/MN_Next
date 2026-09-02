@@ -91,7 +91,14 @@ export class KalElTarget {
       'GET',
       `/articles?externalKey=${encodeURIComponent(externalKey)}&limit=1`,
     );
-    const first = res.data?.items?.[0];
+    // "I could not check" is not "it does not exist". Collapsing the two means a CMS
+    // hiccup during the lookup sends the importer down the create path for an article
+    // that is already there — which `externalKey` uniqueness then refuses, so the article
+    // is never updated and every later run repeats the same wasted attempt.
+    if (res.error !== null || res.data === null) {
+      throw new CliError(`could not check whether ${externalKey} is already imported: ${res.error ?? 'no data'}`);
+    }
+    const first = res.data.items?.[0];
     return first ? { id: first.id, version: first.version } : null;
   }
 

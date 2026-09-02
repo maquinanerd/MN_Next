@@ -17,6 +17,7 @@ import {
 } from './cli';
 import { idempotencyKey, loadState, mappingKey, saveState, type RunState } from './state';
 import { ALLOWED_ASSET_TYPES, WordPressSource, detectImageType, type WpMedia, type WpPost } from './source';
+import { isLoopbackHost } from '@mn/content/security/address';
 import { KalElTarget } from './target';
 import { emptyReport, htmlToBlocks, shortcodeAssetRef, type TransformReport } from './transform';
 
@@ -48,6 +49,12 @@ const FLAGS = [
     default: false,
   },
   { name: 'max-asset-mb', description: 'largest asset to transfer', type: 'number' as const, default: 25 },
+  {
+    name: 'allow-private-assets',
+    description: 'local rehearsal only: permit assets on loopback (refused unless every endpoint is local)',
+    type: 'boolean' as const,
+    default: false,
+  },
 ];
 
 /**
@@ -118,7 +125,41 @@ async function main(): Promise<void> {
     artefacts: [],
   };
 
-  const source = WordPressSource.fromEnv({ requestsPerSecond: Number(values.rate) });
+  const allowPrivateHosts = values['allow-private-assets'] === true;
+  if (allowPrivateHosts) {
+    // The flag only means anything when the whole run is local. Refusing it otherwise is
+    // what stops it from becoming a way to point a production import at an internal
+    // address — the guard it disables exists for exactly that.
+    // Loopback, not merely "private". A Kal El on 10.0.0.5 is a *real* CMS on a real
+    // internal network, and letting the flag through there would disable the guard
+    // exactly where it protects something — which is the opposite of a local rehearsal.
+    const urls = [process.env.WP_BASE_URL, process.env.KAL_EL_BASE_URL].filter(Boolean) as string[];
+    const remote = urls.filter((url) => {
+      try {
+        return !isLoopbackHost(new URL(url).hostname);
+      } catch {
+        return true;
+      }
+    });
+    // `WP_ASSET_HOSTS` is a third set of endpoints, and the one the flag actually
+    // relaxes. Checking only the two base URLs left the obvious hole open: loopback for
+    // both, `WP_ASSET_HOSTS=10.0.0.5`, and the fetch goes straight into the network with
+    // the address check switched off.
+    remote.push(
+      ...(process.env.WP_ASSET_HOSTS ?? '')
+        .split(',')
+        .map((h) => h.trim())
+        .filter((h) => h !== '' && !isLoopbackHost(h)),
+    );
+    if (remote.length > 0) {
+      throw new CliError(
+        `--allow-private-assets is for a local rehearsal and every endpoint must be loopback; these are not: ${remote.join(', ')}`,
+      );
+    }
+    console.log('[wp:import] asset host check relaxed — local rehearsal only');
+  }
+
+  const source = WordPressSource.fromEnv({ requestsPerSecond: Number(values.rate), allowPrivateHosts });
   // Constructed only when applying: a dry run has no client that could write.
   const target = apply ? KalElTarget.fromEnv() : null;
   const indexes = emptyIndexes();
@@ -532,6 +573,14 @@ async function importPost(post: WpPost, ctx: ImportContext): Promise<'created' |
 
   const existing = await target.findArticleByExternalKey(externalKey);
   if (existing) {
+    // Did an editor touch this since we last wrote it?
+    const ours = ctx.state.articleVersions[externalKey];
+    if (ours !== undefined && ours !== existing.version) {
+      throw new CliError(
+        `article ${externalKey} is at version ${existing.version} in Kal El but the import last wrote ${ours}; ` +
+          'it was edited after import and is left untouched',
+      );
+    }
     /*
      * Every field the migration owns is re-sent, not just the text.
      *
@@ -562,12 +611,14 @@ async function importPost(post: WpPost, ctx: ImportContext): Promise<'created' |
     }
     if (!res.data) throw new CliError(`update failed for ${externalKey}: ${res.error ?? 'unknown'}`);
     ctx.state.mappings[mappingKey('post', post.id)] = existing.id;
+    ctx.state.articleVersions[externalKey] = res.data.version;
     return 'updated';
   }
 
   const created = await target.createArticle(body, idempotencyKey('post', post.id));
   if (!created.data?.id) throw new CliError(`create failed for ${externalKey}: ${created.error ?? 'unknown'}`);
   ctx.state.mappings[mappingKey('post', post.id)] = created.data.id;
+  ctx.state.articleVersions[externalKey] = created.data.version;
   return 'created';
 }
 

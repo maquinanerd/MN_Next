@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { Image } from '@mn/content';
 import { emptyReport, htmlToBlocks, shortcodeAssetRef } from '../../scripts/wp/transform';
 import { assetUrlAllowed, isPrivateAddress, WordPressSource } from '../../scripts/wp/source';
+import { KalElTarget } from '../../scripts/wp/target';
 
 /**
  * Regressions from the final review.
@@ -277,5 +278,41 @@ describe('asset fetching cannot be aimed at an internal address', () => {
     });
     const result = await source.fetchAsset('https://cdn.example.net/a.jpg', 1024);
     expect(result?.mimeType).toBe('image/jpeg');
+  });
+});
+
+describe('an unanswered lookup is not an answer', () => {
+  it('refuses to treat a failed externalKey check as "not imported yet"', async () => {
+    // Collapsing the two sends the importer down the create path for an article that is
+    // already there. `externalKey` uniqueness then refuses it, so the article is never
+    // updated — and every later run repeats the same wasted attempt, reporting a create
+    // failure for a row that exists and is simply never reconciled.
+    const target = new KalElTarget({
+      baseUrl: 'https://cms.example.com',
+      token: 'ke_st.test',
+      siteId: '11111111-2222-4333-8444-555566667777',
+      fetchImpl: (async () =>
+        new Response(JSON.stringify({ error: { code: 'internal_error' } }), {
+          status: 500,
+          headers: { 'content-type': 'application/json' },
+        })) as unknown as typeof fetch,
+    });
+
+    await expect(target.findArticleByExternalKey('wp:post:1')).rejects.toThrow(/could not check/);
+  });
+
+  it('an empty result really does mean "not imported yet"', async () => {
+    const target = new KalElTarget({
+      baseUrl: 'https://cms.example.com',
+      token: 'ke_st.test',
+      siteId: '11111111-2222-4333-8444-555566667777',
+      fetchImpl: (async () =>
+        new Response(JSON.stringify({ data: { items: [] } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })) as unknown as typeof fetch,
+    });
+
+    await expect(target.findArticleByExternalKey('wp:post:1')).resolves.toBeNull();
   });
 });

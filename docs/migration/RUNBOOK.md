@@ -119,6 +119,38 @@ async claim(key: string, ttlMs: number) {
 
 ## 4. Migração
 
+### 4.0 O que o importador lê — e o que fazer com um dump SQL
+
+**Só a REST API do WordPress.** Não existe leitor de WXR nem de SQL, e não vale fingir que
+existe: um leitor escrito antes de o arquivo chegar seria adivinhação sobre prefixo de
+tabela, plugins e charset.
+
+Um backup em SQL vira uma origem legível em quatro passos, todos locais:
+
+```bash
+# 1. Suba MySQL e WordPress apontando para um banco vazio (docker, ou o que preferir).
+# 2. Restaure o dump:
+mysql -h 127.0.0.1 -u wp -p wordpress < backup.sql
+# 3. Ajuste siteurl/home para o host local, senão a REST devolve URLs de produção:
+mysql -h 127.0.0.1 -u wp -p wordpress   -e "UPDATE wp_options SET option_value='http://localhost:8080' WHERE option_name IN ('siteurl','home');"
+# 4. Confirme que a REST responde antes de qualquer outra coisa:
+curl -s http://localhost:8080/wp-json/wp/v2/posts?per_page=1 | head -c 200
+```
+
+> O passo 3 importa mais do que parece: sem ele, `source_url` das mídias aponta para o
+> domínio de produção e o download dos assets sai do ambiente local sem ninguém pedir.
+
+Se o WordPress local ficar em `localhost`, o guarda de SSRF recusa os assets — ele
+rejeita endereço privado e porta fora de 80/443, por projeto. Para um ensaio inteiramente
+local existe `--allow-private-assets`, que **só é aceito quando todos os endpoints são
+loopback**: apontar para um Kal El real com essa flag é recusado com erro.
+
+Para ver o pipeline funcionando sem ter arquivo nenhum:
+
+```bash
+pnpm import:sandbox      # sobe um WordPress falso e um Kal El vazio, e imprime o env
+```
+
 ### 4.1 Ensaio
 
 ```bash
@@ -164,6 +196,43 @@ ultrapassar `--max-asset-mb`.
 > Enquanto isso, o controle real é o allowlist: **não inclua em `WP_ASSET_HOSTS` nenhum
 > host cujo DNS você não controle**, e rode a importação de uma máquina sem acesso a
 > serviços internos sensíveis.
+
+### 4.2.1 A sequência exata, do inventário à verificação
+
+Copiável, na ordem. Nada aqui escreve em produção sem `--apply`.
+
+```bash
+# 0. Inventário: quantos itens existem na origem, sem tocar em nada.
+curl -sI "$WP_BASE_URL/wp-json/wp/v2/posts?per_page=1"      | grep -i x-wp-total
+curl -sI "$WP_BASE_URL/wp-json/wp/v2/media?per_page=1"      | grep -i x-wp-total
+curl -sI "$WP_BASE_URL/wp-json/wp/v2/categories?per_page=1" | grep -i x-wp-total
+
+# 1. Ensaio de uma fatia, para ler o relatório antes de qualquer escrita.
+pnpm wp:import --limit 100
+cat artifacts/migration/import-report.json
+
+# 2. Ensaio completo. Continua sem escrever nada.
+pnpm wp:import
+
+# 3. Importação real, retomável.
+pnpm wp:import --apply --resume
+
+# 4. Segunda execução: a prova de idempotência. Deve reportar created: 0.
+pnpm wp:import --apply --resume
+
+# 5. Delta final, na virada, só o que mudou depois da data.
+pnpm wp:import --apply --resume --since 2026-09-01T00:00:00Z
+
+# 6. Redirects e verificação. Zero 404 é bloqueante de lançamento.
+pnpm redirects:build --apply
+pnpm urls:verify --base https://staging.exemplo --urls data/import/top-urls.txt
+```
+
+O passo 4 não é cerimônia: é o teste que o
+[wp-import-end-to-end](../../tests/integration/wp-import-end-to-end.test.ts) executa
+automaticamente contra stand-ins, e é o mesmo comportamento que se espera contra o CMS
+real. Se ele reportar `created` diferente de zero, **pare** — algo em `externalKey` ou no
+state file não está funcionando, e continuar duplica o acervo.
 
 ### 4.3 Redirects
 

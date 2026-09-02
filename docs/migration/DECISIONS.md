@@ -145,6 +145,34 @@ O Kal El permite publicar sem categoria; este site não tem rota para isso — `
 lido pelo catch-all como editoria. O repositório filtra esses artigos de toda listagem e
 `articleHref` devolve `null` em vez de inventar um endereço.
 
+### 4.6 Só REST: nem WXR, nem SQL
+
+`docs/03` prevê "WP REST API ou WXR export". **Só a REST foi implementada**, e o
+comentário em `source.ts` que afirmava existir um `--wxr` foi corrigido: não existia.
+
+Um leitor de arquivo escrito antes de o arquivo existir seria adivinhação — o formato de
+um dump depende do prefixo de tabela, dos plugins instalados e do charset, e o backup
+ainda não foi entregue. O caminho suportado para um dump é restaurá-lo em um WordPress
+local e apontar o importador para ele, o que é procedimento conhecido, não código novo.
+Está no [RUNBOOK §4.1](./RUNBOOK.md).
+
+Se um leitor de arquivo passar a ser necessário, ele implementa a superfície de
+geradores assíncronos de `WordPressSource` e nada mais: nenhum consumidor fala HTTP.
+
+### 4.7 Reimportação não sobrescreve edição editorial
+
+`If-Match` sozinho protege os milissegundos entre ler a versão e escrever — não diz nada
+sobre um editor que melhorou o texto na semana passada. O runbook prometia que um artigo
+editado depois da importação seria deixado intacto; o código não fazia isso.
+
+O state file agora guarda a versão que a importação escreveu (`articleVersions`). Se o
+Kal El estiver em outra versão, a mudança não é nossa para sobrescrever: o artigo é
+pulado, a execução termina com código 1 e o relatório nomeia o artigo.
+
+**Consequência aceita:** uma primeira execução defeituosa em um artigo que alguém depois
+editou não pode ser reparada rodando de novo. A ferramenta reporta e uma pessoa decide —
+que é melhor que apagar trabalho de redação em silêncio.
+
 ### 4.5 Permalink legado ainda não confirmado
 
 `docs/04` marca isso como aberto e bloqueante da fase de redirects. O middleware trata as

@@ -29,6 +29,16 @@ export interface RunState {
    * has to survive into the next run as work still owed.
    */
   pendingMediaMeta: number[];
+  /**
+   * The article version this importer last wrote, per source item.
+   *
+   * `If-Match` alone only protects the moment between reading a version and writing it,
+   * which is a few milliseconds — it says nothing about an editor who improved the
+   * article last week. Remembering what we wrote is what turns "left untouched" from a
+   * claim in the runbook into behaviour: if the CMS has moved on from our number, the
+   * change is not ours to overwrite.
+   */
+  articleVersions: Record<string, number>;
   failures: { id: string; reason: string }[];
 }
 
@@ -42,22 +52,39 @@ export function emptyState(now: string, runId = randomUUID()): RunState {
     counts: { read: 0, created: 0, updated: 0, skipped: 0, failed: 0 },
     mappings: {},
     pendingMediaMeta: [],
+    articleVersions: {},
     failures: [],
   };
 }
 
+/**
+ * Loads the checkpoint.
+ *
+ * `--resume` decides whether to continue from the saved *position*. It does not decide
+ * whether to remember what this importer has already written: `articleVersions` and
+ * `pendingMediaMeta` are records of ownership, and discarding them turns a run without
+ * `--resume` into one that overwrites an article an editor has since improved. So the
+ * file is always read when it exists, and only the cursor is conditional.
+ */
 export async function loadState(file: string, now: string, resume: boolean): Promise<RunState> {
-  if (!resume) return emptyState(now);
+  let parsed: RunState | null = null;
   try {
-    const raw = await readFile(file, 'utf8');
-    const parsed = JSON.parse(raw) as RunState;
-    // A checkpoint written before this field existed is still a valid checkpoint.
-    return { ...parsed, pendingMediaMeta: parsed.pendingMediaMeta ?? [] };
+    parsed = JSON.parse(await readFile(file, 'utf8')) as RunState;
   } catch {
-    // A missing checkpoint on `--resume` starts a fresh run rather than failing: the
+    // A missing or unreadable checkpoint starts a fresh run rather than failing: the
     // pipeline is idempotent, so re-reading from the beginning is always safe.
-    return emptyState(now);
+    parsed = null;
   }
+  if (!parsed) return emptyState(now);
+
+  const carried = {
+    // A checkpoint written before these fields existed is still a valid checkpoint.
+    pendingMediaMeta: parsed.pendingMediaMeta ?? [],
+    articleVersions: parsed.articleVersions ?? {},
+    mappings: parsed.mappings ?? {},
+  };
+  if (resume) return { ...parsed, ...carried };
+  return { ...emptyState(now), runId: parsed.runId, ...carried };
 }
 
 export async function saveState(file: string, state: RunState): Promise<void> {

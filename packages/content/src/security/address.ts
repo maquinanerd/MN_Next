@@ -43,6 +43,37 @@ export function isPrivateHost(host: string): boolean {
 }
 
 /**
+ * Whether a host is this machine and nothing else.
+ *
+ * Narrower than `isPrivateHost` on purpose, and the difference matters: `10.0.0.5` is
+ * private, but it is also a real service on a real network. Anything that relaxes a
+ * safety check "because this is only a local rehearsal" has to mean *local*, or it
+ * relaxes the check exactly where the check was protecting something.
+ */
+export function isLoopbackHost(host: string): boolean {
+  const name = host.trim().toLowerCase().replace(/\.+$/, '');
+  if (name === 'localhost' || name.endsWith('.localhost')) return true;
+
+  const bare = name.replace(/^\[|\]$/g, '').replace(/%.*$/, '');
+  if (bare.includes(':')) {
+    const parts = expandIpv6(bare);
+    if (!parts) return false;
+    // ::1, and the IPv4-embedding prefixes carrying 127.x.
+    const [, , , , , , g = 0, h = 0] = parts;
+    if (parts.slice(0, 7).every((p) => p === 0) && h === 1) return true;
+    const embeds = [
+      [0, 0, 0, 0, 0, 0xffff],
+      [0, 0, 0, 0, 0xffff, 0],
+      [0, 0, 0, 0, 0, 0],
+    ].some((prefix) => prefix.every((group, i) => parts[i] === group));
+    return embeds && g >> 8 === 127;
+  }
+
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(bare);
+  return v4?.[1] === '127';
+}
+
+/**
  * IPv6, parsed rather than pattern-matched.
  *
  * `::ffff:10.0.0.1` and `::ffff:a00:1` are the same address written two ways, and a

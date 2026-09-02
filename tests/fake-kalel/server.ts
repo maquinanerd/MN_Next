@@ -13,7 +13,8 @@ import {
   kalelRedirectSchema,
   kalelTagSchema,
 } from '../../packages/content/src/kalel/dto';
-import { SERVICE_TOKEN, SITE_ID, all } from './corpus';
+import { SERVICE_TOKEN, SITE_ID, all, type Row } from './corpus';
+import { handleWrite } from './writes';
 
 /**
  * A stand-in for Kal El, faithful to the contract rather than to the caller.
@@ -34,11 +35,25 @@ import { SERVICE_TOKEN, SITE_ID, all } from './corpus';
  * an unauthenticated read.
  */
 
+export interface FakeKalElOptions {
+  /**
+   * Accept writes, so the WordPress importer can be run against this for real.
+   *
+   * Off by default: the delivery gate must not be able to mutate what it reads, or a
+   * test could pass by writing the row it then asserts.
+   */
+  writable?: boolean;
+  /** Start with nothing, so a creation count means something. */
+  empty?: boolean;
+}
+
 export interface FakeKalEl {
   url: string;
   close: () => Promise<void>;
   /** Requests seen, for asserting that a page did not fan out unreasonably. */
   requests: string[];
+  /** What the store holds now — the assertion surface for an import run. */
+  contents: () => { articles: Row[]; media: Row[]; categories: Row[]; tags: Row[]; authors: Row[] };
 }
 
 const json = (res: ServerResponse, status: number, body: unknown): void => {
@@ -73,15 +88,31 @@ const decodeCursor = (cursor: string | undefined): number => {
   return n?.[1] ? Number(n[1]) : 0;
 };
 
-type Row = Record<string, unknown>;
-
 function summarise(article: Row): Row {
   const { document: _document, seo: _seo, provenance: _provenance, workflowNote: _note, ...summary } = article;
   return summary;
 }
 
-export async function startFakeKalEl(port = 0): Promise<FakeKalEl> {
+export async function startFakeKalEl(port = 0, options: FakeKalElOptions = {}): Promise<FakeKalEl> {
   const requests: string[] = [];
+
+  // A mutable copy. The read-only gate never touches it; the import gate fills it.
+  const store = {
+    articles: options.empty ? [] : [...all.articles],
+    media: options.empty ? [] : [...all.media],
+    categories: options.empty ? [] : [...all.categories],
+    tags: options.empty ? [] : [...all.tags],
+    authors: options.empty ? [] : [...all.authors],
+    entities: options.empty ? [] : [...all.entities],
+    redirects: options.empty ? [] : [...all.redirects],
+  };
+  let nextId = 1;
+  const mint = (kind: number): string => {
+    const n = nextId++;
+    return `${kind.toString(16).padStart(8, '0')}-${n.toString(16).padStart(4, '0')}-4000-9000-${n.toString(16).padStart(12, '0')}`;
+  };
+  /** Idempotency keys already honoured, so a retry returns the first result. */
+  const idempotent = new Map<string, unknown>();
 
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', 'http://fake.local');
@@ -139,6 +170,19 @@ export async function startFakeKalEl(port = 0): Promise<FakeKalEl> {
     const rest = site[1] ?? '/';
     const q = url.searchParams;
 
+    // Writes are dispatched before the read routes, not after: the read routes match on
+    // the path alone, so a POST to /articles would otherwise be answered by the *listing*
+    // — a 200 with a body the caller cannot use, reported as "create failed: unknown".
+    if (req.method !== 'GET') {
+      // Off unless asked for: the delivery gate must not be able to mutate what it
+      // reads, or a test could pass by writing the row it then asserts.
+      if (!options.writable) return fail(res, 405, 'read_only', 'this instance accepts reads only');
+      void handleWrite({ store, mint, idempotent, json, fail }, req, res, rest).catch((err: unknown) => {
+        fail(res, 500, 'fake_error', err instanceof Error ? err.message : String(err));
+      });
+      return;
+    }
+
     try {
       // ------------------------------------------------------------- articles
       if (rest === '/articles') {
@@ -146,7 +190,9 @@ export async function startFakeKalEl(port = 0): Promise<FakeKalEl> {
         // with no status filter returns drafts too, and the application is expected to
         // ask for `status=published` on every public read. A fake that hid the draft
         // would have hidden a missing filter along with it.
-        let items = [...all.articles, all.draftArticle].filter((a) => a['status'] === (q.get('status') ?? a['status']));
+        let items = [...store.articles, all.draftArticle].filter(
+          (a) => a['status'] === (q.get('status') ?? a['status']),
+        );
         if (q.get('slug')) items = items.filter((a) => a['slug'] === q.get('slug'));
         if (q.get('externalKey')) items = items.filter((a) => a['externalKey'] === q.get('externalKey'));
         if (q.get('categoryId'))
@@ -173,19 +219,19 @@ export async function startFakeKalEl(port = 0): Promise<FakeKalEl> {
 
       const article = /^\/articles\/([0-9a-f-]{36})$/.exec(rest);
       if (article?.[1]) {
-        const found = [...all.articles, all.draftArticle].find((a) => a['id'] === article[1]);
+        const found = [...store.articles, all.draftArticle].find((a) => a['id'] === article[1]);
         if (!found) return fail(res, 404, 'not_found', 'no such article');
         return json(res, 200, { data: kalelArticleSchema.parse(found) });
       }
 
       // ------------------------------------------------------------- taxonomy
       if (rest === '/categories')
-        return json(res, 200, { data: all.categories.map((c) => kalelCategorySchema.parse(c)) });
-      if (rest === '/tags') return json(res, 200, { data: all.tags.map((t) => kalelTagSchema.parse(t)) });
-      if (rest === '/authors') return json(res, 200, { data: all.authors.map((a) => kalelAuthorSchema.parse(a)) });
-      if (rest === '/entities') return json(res, 200, { data: all.entities.map((e) => kalelEntitySchema.parse(e)) });
+        return json(res, 200, { data: store.categories.map((c) => kalelCategorySchema.parse(c)) });
+      if (rest === '/tags') return json(res, 200, { data: store.tags.map((t) => kalelTagSchema.parse(t)) });
+      if (rest === '/authors') return json(res, 200, { data: store.authors.map((a) => kalelAuthorSchema.parse(a)) });
+      if (rest === '/entities') return json(res, 200, { data: store.entities.map((e) => kalelEntitySchema.parse(e)) });
       if (rest === '/redirects')
-        return json(res, 200, { data: all.redirects.map((r) => kalelRedirectSchema.parse(r)) });
+        return json(res, 200, { data: store.redirects.map((r) => kalelRedirectSchema.parse(r)) });
 
       // ---------------------------------------------------------------- media
       if (rest === '/media') {
@@ -193,15 +239,15 @@ export async function startFakeKalEl(port = 0): Promise<FakeKalEl> {
         // and every cover older than that silently disappears from the site.
         const limit = Math.min(Math.max(Number(q.get('limit') ?? 60), 1), 200);
         const offset = Math.max(Number(q.get('offset') ?? 0), 0);
-        const page = all.media.slice(offset, offset + limit);
+        const page = store.media.slice(offset, offset + limit);
         return json(res, 200, {
-          data: kalelMediaListSchema.parse({ items: page, total: all.media.length }),
+          data: kalelMediaListSchema.parse({ items: page, total: store.media.length }),
         });
       }
 
       const mediaFile = /^\/media\/([0-9a-f-]{36})\/file$/.exec(rest);
       if (mediaFile?.[1]) {
-        const row = all.media.find((m) => m['id'] === mediaFile[1]);
+        const row = store.media.find((m) => m['id'] === mediaFile[1]);
         if (!row) return fail(res, 404, 'not_found', 'no such media');
         res.writeHead(200, { 'content-type': String(row['mimeType']), 'content-length': JPEG_BYTES.length });
         return res.end(JPEG_BYTES);
@@ -209,7 +255,7 @@ export async function startFakeKalEl(port = 0): Promise<FakeKalEl> {
 
       const mediaRow = /^\/media\/([0-9a-f-]{36})$/.exec(rest);
       if (mediaRow?.[1]) {
-        const row = all.media.find((m) => m['id'] === mediaRow[1]);
+        const row = store.media.find((m) => m['id'] === mediaRow[1]);
         if (!row) return fail(res, 404, 'not_found', 'no such media');
         return json(res, 200, { data: kalelMediaSchema.parse(row) });
       }
@@ -229,6 +275,13 @@ export async function startFakeKalEl(port = 0): Promise<FakeKalEl> {
   return {
     url: `http://127.0.0.1:${boundPort}`,
     requests,
+    contents: () => ({
+      articles: store.articles,
+      media: store.media,
+      categories: store.categories,
+      tags: store.tags,
+      authors: store.authors,
+    }),
     close: () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
   };
 }

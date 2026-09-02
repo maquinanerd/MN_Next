@@ -3,6 +3,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { EnvError, redact, validateEnv } from '../../packages/content/src/env';
+import { isLoopbackHost, isPrivateHost } from '../../packages/content/src/security/address';
 
 /**
  * The failure this suite exists to prevent is not a crash - it is a production instance
@@ -198,5 +199,20 @@ describe('client/server boundary', () => {
     const files = [...walk('app'), ...walk('components'), ...walk('lib'), ...walk('packages')];
     const offenders = files.filter((f) => /ke_st\.[A-Za-z0-9]{8,}/.test(readFileSync(f, 'utf8')));
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('the local-rehearsal escape hatch is actually local', () => {
+  it('recognises only loopback, not every private address', () => {
+    for (const host of ['127.0.0.1', '127.1.2.3', 'localhost', 'localhost.', '::1', '[::1]', '::ffff:127.0.0.1']) {
+      expect(isLoopbackHost(host), host).toBe(true);
+    }
+    // These are private, and a --allow-private-assets check built on `isPrivateHost`
+    // accepted every one of them: a Kal El on 10.0.0.5 is a real CMS on a real network,
+    // and disabling the address guard there is the opposite of a local rehearsal.
+    for (const host of ['10.0.0.5', '192.168.1.10', '172.16.0.1', '169.254.169.254', 'cms.internal', '8.8.8.8']) {
+      expect(isLoopbackHost(host), host).toBe(false);
+      expect(isPrivateHost(host) || host === '8.8.8.8', host).toBe(true);
+    }
   });
 });
