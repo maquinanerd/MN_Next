@@ -87,13 +87,14 @@ limpa.
 
 ## Documentação
 
-| Documento                                                     | Para quê                                                |
-| ------------------------------------------------------------- | ------------------------------------------------------- |
-| [DECISIONS.md](docs/migration/DECISIONS.md)                   | escolhas feitas sem consulta, com o porquê e a reversão |
-| [KAL-EL-DISCOVERY.md](docs/migration/KAL-EL-DISCOVERY.md)     | contrato real do CMS e as divergências adotadas         |
-| [VISUAL-AUDIT.md](docs/migration/VISUAL-AUDIT.md)             | cada protótipo ligado à rota e ao screenshot            |
-| [RUNBOOK.md](docs/migration/RUNBOOK.md)                       | operação, virada e rollback                             |
-| [FINAL-VERIFICATION.md](docs/migration/FINAL-VERIFICATION.md) | resultados reais dos gates e pendências externas        |
+| Documento                                                     | Para quê                                                 |
+| ------------------------------------------------------------- | -------------------------------------------------------- |
+| [DECISIONS.md](docs/migration/DECISIONS.md)                   | escolhas feitas sem consulta, com o porquê e a reversão  |
+| [KAL-EL-DISCOVERY.md](docs/migration/KAL-EL-DISCOVERY.md)     | contrato real do CMS e as divergências adotadas          |
+| [VISUAL-AUDIT.md](docs/migration/VISUAL-AUDIT.md)             | cada protótipo ligado à rota e ao screenshot             |
+| [RUNBOOK.md](docs/migration/RUNBOOK.md)                       | operação, virada e rollback                              |
+| [FINAL-VERIFICATION.md](docs/migration/FINAL-VERIFICATION.md) | resultados reais dos gates e pendências externas         |
+| [RELATORIO-EXECUCAO.md](docs/migration/RELATORIO-EXECUCAO.md) | registro completo da execução: o que, como e a que custo |
 
 Os sete `*.dc.html` do Claude Design são a fonte visual canônica. Eles não vão para
 produção: são protótipos autônomos, traduzidos em componentes React. Estados que eles não
