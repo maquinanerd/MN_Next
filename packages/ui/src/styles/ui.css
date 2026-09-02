@@ -673,38 +673,62 @@ img {
 
 /* ======================================================== most read ======= */
 
+/*
+ * A bordered panel, as in the prototype — not a bare list.
+ *
+ * The rank numerals are grey rather than brand red: in the design they are texture
+ * behind the headline, and setting them in red made the column read as five competing
+ * labels. The exact tone is `--mn-rank`, which is darker than the prototype's — see the
+ * token, and note that `aria-hidden` does *not* exempt text from contrast, which is what
+ * the accessibility gate proved.
+ */
 .mn-mostread {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  border: 1px solid var(--mn-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.mn-mostread__head {
+  margin: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--mn-line);
+  background: var(--mn-surf);
+  font-weight: 900;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--brand-text);
 }
 
 .mn-mostread__item {
   display: flex;
-  gap: var(--space-3);
+  gap: 13px;
   align-items: baseline;
-  padding-bottom: var(--space-4);
+  padding: 13px 16px;
   border-bottom: 1px solid var(--mn-line);
 }
 
 .mn-mostread__item:last-child {
   border-bottom: 0;
-  padding-bottom: 0;
 }
 
 .mn-mostread__rank {
-  font-size: var(--fs-h4);
+  font-size: 22px;
+  line-height: 1;
   font-weight: 900;
-  color: var(--brand-text);
+  color: var(--mn-rank);
   flex: none;
-  min-width: 28px;
+  min-width: 26px;
   font-variant-numeric: tabular-nums;
 }
 
 .mn-mostread__title {
-  font-size: var(--fs-h5);
+  font-size: 14px;
   font-weight: 700;
-  line-height: 1.3;
+  line-height: 1.36;
+  margin: 0;
 }
 
 .mn-mostread__title a:hover {
@@ -2728,10 +2752,17 @@ img {
  * cards under a hero is the same beat twice.
  */
 
-.mn-home__leadtext .mn-card__kicker {
+/**
+ * The desk label as the design draws it: a filled pill, not red type.
+ *
+ * Used by the home lead and by the article header. It is one rule because it is one
+ * thing — the first version lived only on the home, and the article kept plain red type,
+ * so the same label looked like two different components on two pages.
+ */
+.mn-kicker--pill {
   display: inline-block;
-  /* The column is a flex container, so a plain inline-block child still stretches to
-     its full width — which turned the pill into a red rule across the page. */
+  /* Both callers sit in a flex column, where a plain inline-block child still stretches
+     to full width — which turned the pill into a red rule across the page. */
   align-self: flex-start;
   background: var(--brand-solid);
   /* `--brand-ink` is the brand colour used as *type*, which here would be red on red. */
@@ -2739,12 +2770,13 @@ img {
   font-weight: 800;
   font-size: 13px;
   letter-spacing: 0.05em;
+  text-transform: uppercase;
   padding: 9px 16px;
   border-radius: 6px;
   margin-bottom: 22px;
 }
 
-.mn-home__leadtext .mn-card__kicker:hover {
+.mn-kicker--pill:hover {
   background: var(--brand);
   color: var(--brand-solid-ink);
 }

@@ -212,12 +212,7 @@ export function CategoryView({ data, page }: { data: CategoryData; page: number 
 
               <aside className="mn-listing__aside" aria-label="Complementos">
                 {data.mostRead && data.mostRead.length > 0 ? (
-                  <div>
-                    <p className="mn-sectionheading__label" style={{ marginBottom: 16 }}>
-                      Mais lidas em {category.name}
-                    </p>
-                    <MostRead items={data.mostRead} />
-                  </div>
+                  <MostRead items={data.mostRead} title={`Mais lidas em ${category.name}`} />
                 ) : null}
                 <AdSlot id="ad-category-sidebar" {...AD_SLOTS.sidebar} sticky />
                 <div className="mn-newsletter">

@@ -44,6 +44,15 @@
   /** Secondary text on the darkest light surface (--mn-surf2), where #6B7078 is 4.23:1. */
   --mn-fg2-strong: #5f646c;
   --mn-red-text: #b00710;
+  /**
+   * The rank numerals in "Mais lidas".
+   *
+   * The prototype sets them in `--mn-line` (#E9E9EC) — a whisper behind the headline, and
+   * 1.21:1 against white. `aria-hidden` does not exempt it: axe checks anything a sighted
+   * reader can see, and it is right to, because a low-vision reader loses the numeral
+   * entirely. This is the lightest tone that clears the 3:1 large-text bar at 22px bold.
+   */
+  --mn-rank: #8a9099;
   --mn-ink: #0b0b0c; /* UI black: header cartouche, overlays, footer. Only one black. */
   --mn-on-ink: #f5f5f6;
   --mn-line-on-ink: #292b31;
@@ -166,6 +175,7 @@
   --mn-fg: #f5f5f6;
   --mn-fg2: #9aa0a9;
   --mn-fg2-strong: #9aa0a9;
+  --mn-rank: #5a6069;
   --mn-red-text: #ff3b3b;
   --mn-logo-light: none;
   --mn-logo-dark: block;

@@ -85,7 +85,7 @@ export function ArticleHeader({ article, shareUrl, priorityImage = true }: Artic
       ) : null}
 
       {article.category ? (
-        <Link className="mn-article__kicker" href={`/${article.category.slug}`}>
+        <Link className="mn-article__kicker mn-kicker--pill" href={`/${article.category.slug}`}>
           {article.category.name}
         </Link>
       ) : null}

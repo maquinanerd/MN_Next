@@ -104,14 +104,7 @@ async function MostReadRail({ excludeId }: { excludeId: string }) {
     'most-read',
   );
   if (!mostRead || mostRead.length === 0) return null;
-  return (
-    <div>
-      <p className="mn-sectionheading__label" style={{ marginBottom: 16 }}>
-        Mais lidas
-      </p>
-      <MostRead items={mostRead} />
-    </div>
-  );
+  return <MostRead items={mostRead} title="Mais lidas" />;
 }
 
 export default async function ArticlePage({ params }: { params: Promise<Params> }) {

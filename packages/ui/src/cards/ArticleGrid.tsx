@@ -36,10 +36,24 @@ export function ArticleGrid({
   );
 }
 
-/** Numbered "most read" rail. The rank is decorative; the link carries the name. */
-export function MostRead({ items, numbered = true }: { items: ArticleSummary[]; numbered?: boolean }) {
+/**
+ * Numbered "most read" rail. The rank is decorative; the link carries the name.
+ *
+ * The title belongs *inside* the panel, as a header bar with its own rule — the design
+ * draws one bordered box, and a heading floating above it is a different component.
+ */
+export function MostRead({
+  items,
+  numbered = true,
+  title,
+}: {
+  items: ArticleSummary[];
+  numbered?: boolean;
+  title?: string;
+}) {
   return (
     <div className="mn-mostread">
+      {title ? <p className="mn-mostread__head">{title}</p> : null}
       {items.map((article, index) => (
         <div className="mn-mostread__item" key={article.id}>
           {numbered ? (

@@ -37,7 +37,11 @@ const SURFACES = [
     route: '/series/resident-evil-2026-revela-mudanca-em-monstro-classico',
   },
   { key: 'especiais', proto: 'Máquina Nerd Especiais.dc.html', route: '/especiais/marvel' },
-  { key: 'comercial', proto: 'Máquina Nerd Comercial.dc.html', route: '/reviews/box-sandman-edicao-definitiva' },
+  {
+    key: 'comercial',
+    proto: 'Máquina Nerd Comercial.dc.html',
+    route: '/reviews/box-sandman-edicao-definitiva-vale-os-r-289',
+  },
   { key: 'design-system', proto: 'Máquina Nerd Design System.dc.html', route: '/sobre' },
   { key: 'indice', proto: 'Máquina Nerd Índice.dc.html', route: '/' },
 ];

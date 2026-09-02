@@ -71,7 +71,7 @@ export default async function HomePage() {
               <div className="mn-home__lead">
                 <div className="mn-home__leadtext">
                   {home.lead.category ? (
-                    <Link className="mn-card__kicker" href={`/${home.lead.category.slug}`}>
+                    <Link className="mn-card__kicker mn-kicker--pill" href={`/${home.lead.category.slug}`}>
                       {home.lead.category.name}
                     </Link>
                   ) : null}
