@@ -25,7 +25,9 @@
     "wp:import": "tsx scripts/wp/import.ts",
     "urls:verify": "tsx scripts/wp/verify.ts",
     "redirects:build": "tsx scripts/wp/build-redirects.ts",
-    "fixtures:media": "node scripts/generate-fixture-media.mjs"
+    "fixtures:media": "node scripts/generate-fixture-media.mjs",
+    "test:kalel": "playwright test --config playwright.kalel.config.ts",
+    "kalel:fake": "tsx tests/fake-kalel/main.ts"
   },
   "dependencies": {
     "@mn/content": "workspace:*",

@@ -1,6 +1,7 @@
 import { sitemapIndex } from '@mn/seo';
 
-import { repo } from '../../lib/content';
+import { discoveryCacheControl, isContentError, repo } from '../../lib/content';
+import { logger } from '../../lib/logger';
 import { seoContext } from '../../lib/seo-context';
 
 /**
@@ -20,10 +21,16 @@ export async function GET(): Promise<Response> {
   const ctx = seoContext();
 
   let articlePages = 1;
+  let degraded = false;
   try {
     articlePages = await repo().countSitemapPages();
-  } catch {
-    articlePages = 1;
+  } catch (err) {
+    if (!isContentError(err) || err.kind !== 'unavailable') throw err;
+    // Degrading in silence is how an outage becomes a permanent half-index nobody
+    // noticed. One page is still crawlable; the log is what gets it looked at, and the
+    // short TTL is what stops a partial index outliving the outage by three hours.
+    logger.error('discovery.degraded', { label: 'sitemap-index', correlationId: err.correlationId ?? null });
+    degraded = true;
   }
 
   const paths = [
@@ -37,7 +44,7 @@ export async function GET(): Promise<Response> {
   return new Response(sitemapIndex(ctx, paths), {
     headers: {
       'content-type': 'application/xml; charset=utf-8',
-      'cache-control': 'public, s-maxage=3600, stale-while-revalidate=7200',
+      'cache-control': discoveryCacheControl(degraded, 3600),
     },
   });
 }

@@ -154,6 +154,39 @@ uma instância sem o patch ignora o parâmetro e responde com o artigo mais rece
 isso o resultado é sempre reconferido contra o slug pedido e, se divergir, cai no índice
 completo. Correto nos dois casos, uma ida e volta no caso corrigido.
 
+## Verificação sem credenciais: o CMS de contrato
+
+Nenhuma execução contra o Kal El real foi possível. O que passou a existir no lugar de
+uma afirmação de desenho é um **stand-in fiel ao contrato** em `tests/fake-kalel/`, e um
+gate que roda a aplicação inteira contra ele com `CONTENT_SOURCE=kalel`:
+
+```bash
+pnpm test:kalel          # sobe o CMS falso + a app em modo kalel e roda 23 verificações
+pnpm kalel:fake          # só o CMS falso, para desenvolvimento manual
+```
+
+Duas regras o mantêm honesto:
+
+1. **Toda resposta é validada antes de sair** — contra `packages/content/src/kalel/dto.ts`,
+   os mesmos schemas que a aplicação usa para parsear. Um duplo que deriva para "o que
+   faz o app passar" não prova nada; este falha com 500 nomeando o campo.
+2. **Ele imita o que a API real tem de incômodo**: artigo pagina por cursor opaco, mídia
+   pagina por `limit`/`offset` com `total`. São dois modelos na mesma API, e código que
+   presume um só quebra aqui.
+
+O corpus tem 40 artigos publicados em seis editorias, 24 mídias (duas páginas de offset)
+e um rascunho que só o preview abre. As formas foram transcritas de
+`packages/contracts/src/*.ts` do Kal El — que é lido, nunca copiado para este repositório.
+
+**O que o gate observou funcionando:** home, artigo com documento renderizado nó a nó, as
+seis editorias, tag, autor, 404 real, busca com e sem resultado, proxy de mídia
+autenticado devolvendo bytes de imagem, índice de sitemap e seus filhos, news sitemap,
+RSS, JSON-LD com `NewsArticle` e `BreadcrumbList`, readiness, ausência de token em toda
+página, e o rascunho invisível para leitura pública.
+
+O que ele **não** substitui: latência real, volume real, e o comportamento do CMS sob
+carga. Isso continua pendente de credenciais.
+
 ## Escopos mínimos por finalidade
 
 | Finalidade           | Escopos                                                                                               |

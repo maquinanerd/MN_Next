@@ -64,6 +64,7 @@ faltar qualquer uma — inclusive `TRUST_PROXY`, que precisa ser respondida expl
 | `revalidate.duplicate`      | log         | reentrega normal. Não é erro                                        |
 | `preview.rejected`          | log         | token de preview inválido ou expirado                               |
 | `rum.metric`                | log         | Core Web Vitals por template e editoria                             |
+| `discovery.degraded`        | log         | feed ou sitemap renderizado vazio por falha do CMS. **Alerta**      |
 
 Toda linha é JSON com `event`, `time` e um `correlationId` quando existe um. Segredos são
 removidos na saída; nenhum log carrega token.
@@ -178,6 +179,20 @@ com código não-zero se qualquer URL terminar em 404, loop ou mais hops que o p
 > A ferramenta diz isso e sai com código 2 em vez de fingir sucesso.
 
 ---
+
+## 4.4 O build precisa do CMS
+
+`next build` pré-renderiza as editorias. Se o Kal El estiver inalcançável nesse momento,
+**o build falha** — e isso é intencional: publicar estaticamente uma editoria vazia é pior
+que um deploy que não acontece, porque a editoria vazia fica no CDN.
+
+As exceções são `/feed.xml` e `/news-sitemap.xml`, que degradam para um documento válido
+e vazio, com `cache-control` curto para que a próxima revalidação repare. O motivo é
+assimétrico e vale dizer: uma página tem estado de erro, um feed não tem. Um feed que
+explode derruba o deploy inteiro; um feed vazio por cinco minutos não derruba nada, e a
+linha `discovery.degraded` no log é o que faz alguém olhar.
+
+Antes de rodar um build de produção, confira `GET /v1/health` no CMS.
 
 ## 5. Virada
 

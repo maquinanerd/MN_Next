@@ -59,6 +59,40 @@ export async function optional<T>(promise: Promise<T>, label: string): Promise<T
   }
 }
 
+/**
+ * A discovery document that must exist even when the CMS does not.
+ *
+ * Sitemaps and feeds are rendered at build time. Left to throw, an unreachable CMS does
+ * not degrade one file — it **fails the whole build**, so the site cannot be deployed
+ * while the CMS has a hiccup, which is precisely when a deploy is most likely needed.
+ *
+ * So an *outage* here becomes an empty-but-valid document, logged loudly, and served
+ * with a short TTL so the next revalidation repairs it instead of freezing the emptiness
+ * in place. A reader never sees this: a page still errors visibly, because a page has an
+ * error state and a sitemap does not.
+ *
+ * **Only an outage.** A contract violation means the CMS changed shape, and a bug of our
+ * own means the mapper is broken — both would publish a permanently empty feed with a
+ * 200 and no signal to anyone. Those are re-thrown, which fails the build, which is the
+ * correct outcome: the deploy that would have shipped the emptiness does not happen.
+ */
+export async function discovery<T>(promise: Promise<T[]>, label: string): Promise<{ items: T[]; degraded: boolean }> {
+  try {
+    return { items: await promise, degraded: false };
+  } catch (err) {
+    if (!isContentError(err) || err.kind !== 'unavailable') throw err;
+    logger.error('discovery.degraded', { label, kind: err.kind, correlationId: err.correlationId ?? null });
+    return { items: [], degraded: true };
+  }
+}
+
+/** Short while degraded, so the next revalidation repairs it rather than caching a gap. */
+export function discoveryCacheControl(degraded: boolean, seconds: number): string {
+  return degraded
+    ? 'public, s-maxage=60, stale-while-revalidate=60'
+    : `public, s-maxage=${seconds}, stale-while-revalidate=${seconds * 2}`;
+}
+
 /** Page numbers arrive from a URL segment; anything else is a 404, not a 500. */
 export function parsePage(raw: string | undefined): number {
   if (raw === undefined) return 1;
@@ -66,4 +100,4 @@ export function parsePage(raw: string | undefined): number {
   return Number(raw);
 }
 
-export { ContentError };
+export { ContentError, isContentError };

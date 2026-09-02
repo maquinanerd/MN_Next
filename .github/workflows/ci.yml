@@ -56,7 +56,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        gate: [e2e, a11y, visual]
+        # `kalel` is the odd one out: it boots a contract-faithful stand-in CMS and
+        # runs the app with CONTENT_SOURCE=kalel against it. Every other gate uses the
+        # fixture provider, which hands the routes finished domain objects and therefore
+        # never exercises the DTO schemas, the mapper or the media proxy.
+        gate: [e2e, a11y, visual, kalel]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -76,6 +80,7 @@ jobs:
           path: |
             artifacts/playwright-report/
             artifacts/playwright/
+            artifacts/playwright-kalel/
           retention-days: 14
           if-no-files-found: ignore
 

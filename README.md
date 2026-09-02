@@ -56,6 +56,7 @@ Três limites fazem o resto funcionar:
 | `pnpm test:e2e`           | comportamento das superfícies em 4 viewports                      |
 | `pnpm test:a11y`          | axe-core, teclado, alvos de toque e movimento reduzido            |
 | `pnpm test:visual`        | 160 baselines: 20 superfícies × 2 temas × 4 viewports             |
+| `pnpm test:kalel`         | a app inteira em `CONTENT_SOURCE=kalel` contra um CMS de contrato |
 | `pnpm test:performance`   | orçamento de bundle (docs/08)                                     |
 | `pnpm fixtures:media`     | regenera as imagens do acervo de fixtures                         |
 
