@@ -1241,10 +1241,23 @@ img {
   object-fit: cover;
 }
 
+/*
+ * The scrim has to be strongest where the type is, not merely at the very bottom edge.
+ *
+ * At 20% → 92% the whole upper half of the cover was near-transparent, and the block sits
+ * in the lower 45% — over a bright photograph the kicker and the standfirst were simply
+ * gone. The prototype gets away with a lighter gradient because its cover is shorter and
+ * its type block is tighter; at `clamp(360px, 52vh, 620px)` the same numbers leave the
+ * text floating over the picture.
+ *
+ * The bottom 45% now holds at 88% or more, which is 6.2:1 for white against the worst
+ * case — a fully white photograph. Nothing automated would have caught this: axe reports
+ * text over a background image as *incomplete*, never as a violation.
+ */
 .mn-longform__scrim {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgb(11 11 12 / 20%) 0%, rgb(11 11 12 / 92%) 100%);
+  background: linear-gradient(to top, rgb(11 11 12 / 97%) 0%, rgb(11 11 12 / 88%) 45%, rgb(11 11 12 / 42%) 100%);
 }
 
 .mn-longform__inner {
@@ -1265,7 +1278,9 @@ img {
   max-width: 62ch;
   font-size: clamp(16px, 1.6vw, 19px);
   line-height: 1.55;
-  color: var(--mn-fg2-on-ink);
+  /* Not `--mn-fg2-on-ink`: that tone is calibrated against a flat dark surface, and this
+     one has a photograph under it. 86% white clears AA against the scrim's floor. */
+  color: rgb(255 255 255 / 86%);
 }
 
 .mn-longform__kickers {
@@ -1278,21 +1293,71 @@ img {
   text-transform: uppercase;
 }
 
+/*
+ * The lead kicker is a filled pill in the design, not red type.
+ *
+ * Red type over a photograph is the one thing the brand rule exists to prevent, and here
+ * it was doing it: `--brand-on-dark` over a bright orange still is unreadable at any
+ * scrim strength that still shows the picture. Filled, it carries its own background.
+ */
 .mn-longform__kickers span:first-child {
-  color: var(--brand-on-dark);
+  background: var(--brand-solid);
+  color: var(--brand-solid-ink);
+  font-weight: 800;
+  padding: 5px 10px;
+  border-radius: 4px;
+}
+
+.mn-longform__kickers span:not(:first-child) {
+  font-weight: 700;
+  color: rgb(255 255 255 / 78%);
 }
 
 /* ---- urgent ---- */
 
+/*
+ * Brand red, not black.
+ *
+ * Red as a surface, which is what the brand rule permits and what the design draws.
+ *
+ * The exact red is the darker one. The prototype fills this strip with `#E30613`, and
+ * white on it is 4.0:1 — fine for the headline-sized type it happens to show there, and
+ * short of AA for the 11px bold count this strip actually carries. `--brand-solid` is
+ * 6.6:1 and reads as the same alarm. Fidelity gives way to legibility here, and the
+ * divergence is recorded in VISUAL-AUDIT.
+ */
 .mn-urgent__strip {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
   flex-wrap: wrap;
-  background: var(--mn-ink);
-  color: var(--mn-on-ink);
-  padding: 12px 0;
+  background: var(--brand-solid);
+  color: var(--brand-ink-on-brand);
+  padding: 11px 18px;
+  /* Rounded at the top only: it is a cap on the article block below, not a floating pill. */
+  border-radius: 8px 8px 0 0;
+  margin-top: 24px;
   font-size: var(--fs-meta);
+}
+
+/*
+ * The badge already carries the urgency; a second red inside red is noise.
+ *
+ * Darkened rather than lightened: a white veil over the strip composites to a lighter
+ * red, and white on that fell under the bar for 11px bold. A black veil deepens it
+ * instead.
+ */
+.mn-urgent__strip .mn-live-badge {
+  background: rgb(0 0 0 / 25%);
+  color: var(--brand-ink-on-brand);
+}
+
+.mn-urgent__count {
+  margin-left: auto;
+  font-weight: 800;
+  font-size: var(--fs-floor);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
 
 .mn-live-badge {
@@ -3045,4 +3110,145 @@ img {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--mn-fg2);
+}
+
+/* ------------------------------------------------ the list template, numbered
+ *
+ * A ranked list numbers its entries; that is the template. The numerals are large and
+ * red, sitting to the left of each heading, and they come from a CSS counter rather than
+ * from the text — so the body stays clean typed nodes and a heading cannot carry a number
+ * that disagrees with its position.
+ *
+ * Descendant, not child: each block is wrapped, so `> h2` matched nothing. Only heading
+ * blocks produce an h2 in this subtree, so the looser selector cannot catch anything else.
+ */
+
+.mn-body--list {
+  counter-reset: mn-list-entry;
+}
+
+.mn-body--list h2 {
+  counter-increment: mn-list-entry;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 16px;
+  align-items: baseline;
+}
+
+.mn-body--list h2::before {
+  content: counter(mn-list-entry, decimal-leading-zero);
+  color: var(--brand-text);
+  font-weight: 900;
+  font-size: clamp(28px, 3.4vw, 40px);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------ the list index */
+
+.mn-listindex {
+  border: 1px solid var(--mn-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.mn-listindex__head {
+  margin: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--mn-line);
+  background: var(--mn-surf);
+  font-weight: 900;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--brand-text);
+}
+
+.mn-listindex__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mn-listindex__item {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--mn-line);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+.mn-listindex__item:last-child {
+  border-bottom: 0;
+}
+
+.mn-listindex__num {
+  font-weight: 900;
+  color: var(--brand-text);
+  flex: none;
+  min-width: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------- the video template's band
+ *
+ * The design opens a video story on ink, full width, with the player as the subject and
+ * no sidebar competing with it. Rendered as a standard article it became a headline with
+ * an embed under it — the same page as every other story, which is the one thing the
+ * template exists not to be.
+ */
+
+.mn-videohead {
+  background: var(--mn-ink);
+  color: var(--mn-on-ink);
+  --mn-fg: var(--mn-on-ink);
+  --mn-fg2: var(--mn-fg2-on-ink);
+  --mn-line: var(--mn-line-on-ink);
+  --brand-text: var(--brand-on-dark);
+  padding-block: clamp(28px, 4vw, 52px);
+}
+
+.mn-videohead__title {
+  font-weight: 900;
+  font-size: clamp(28px, 3.4vw, 44px);
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+  margin: 0 0 16px;
+  max-width: 20ch;
+}
+
+.mn-videohead__dek {
+  margin: 0 0 26px;
+  max-width: 58ch;
+  font-size: clamp(15px, 1.5vw, 17px);
+  line-height: 1.6;
+  color: rgb(255 255 255 / 82%);
+}
+
+.mn-videohead__kickers {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+  font-size: var(--fs-floor);
+  font-weight: 700;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: rgb(255 255 255 / 78%);
+}
+
+.mn-videohead__kickers span:first-child {
+  background: var(--brand-solid);
+  color: var(--brand-solid-ink);
+  font-weight: 800;
+  padding: 5px 10px;
+  border-radius: 4px;
+}
+
+.mn-videohead__player {
+  max-width: 1000px;
 }

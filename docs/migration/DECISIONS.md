@@ -118,6 +118,17 @@ suporta todos eles; o mapper preenche o que o CMS sabe expressar hoje e as propo
 registradas. **Consequência honesta:** BuyBox e nota de review não renderizam para conteúdo
 autorado no Kal El até que a mudança seja aceita.
 
+### 3.5 No template de lista, toda `h2` é uma entrada
+
+Os numerais e o índice "Nesta lista" derivam das `h2` do documento, porque o modelo do Kal
+El tem heading e nada mais estreito. Uma subseção editorial dentro de uma lista numerada
+seria numerada junto.
+
+Os dois lados leem o mesmo conjunto, então nunca discordam entre si — o que não conseguem
+é discordar de uma intenção que o documento não sabe expressar. É a mesma classe de
+convenção das tags reservadas: mudá-la é acrescentar um tipo de nó ao CMS, não ajustar
+CSS.
+
 ### 3.3 Convenções por tag reservada
 
 `longform` e `ao-vivo` selecionam template; `patrocinado`, `afiliado`, `review-amostra` e

@@ -34,6 +34,7 @@ export { ArticleBody, headingsOf, bodyWordCount } from './article/ArticleBody';
 export { ShareBar } from './article/ShareBar';
 export { EmbedBlock } from './article/EmbedBlock';
 export { TagList, AuthorBox, RelatedArticles, UpdateTimeline } from './article/parts';
+export { ListIndex } from './article/ListIndex';
 
 export { AdSlot, AD_SLOTS } from './ads/AdSlot';
 export type { AdSlotName } from './ads/AdSlot';

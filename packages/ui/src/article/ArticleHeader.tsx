@@ -11,9 +11,9 @@ import { Editorial, Shell } from '../primitives/misc';
  * Article header, one composition per approved template.
  *
  * `longform` is a full-bleed cover with the title over the image; `urgent` opens with the
- * live strip and an update stamp; the rest are the column + sidebar layout. A commercial
- * article always renders `<SponsoredLabel />` above the headline - never below, never
- * collapsible (docs/07).
+ * live strip and an update stamp; `video` opens on ink with the player as the subject;
+ * the rest are the column + sidebar layout. A commercial article always renders
+ * `<SponsoredLabel />` above the headline - never below, never collapsible (docs/07).
  */
 
 export interface ArticleHeaderProps {
@@ -27,6 +27,10 @@ function readingLabel(minutes: number): string {
 }
 
 export function ArticleHeader({ article, shareUrl, priorityImage = true }: ArticleHeaderProps) {
+  // Counted from the same headings that become the timeline below, so the strip and the
+  // list can never disagree about how many updates a running story has.
+  const updateCount = article.template === 'urgent' ? article.body.filter((b) => b.type === 'heading').length : 0;
+
   const byline = (
     <AuthorByline
       authors={article.authors}
@@ -34,6 +38,33 @@ export function ArticleHeader({ article, shareUrl, priorityImage = true }: Artic
       suffix={readingLabel(article.readingMinutes)}
     />
   );
+
+  if (article.template === 'video') {
+    /*
+     * The video story opens on ink, full width, with the embed as the subject.
+     *
+     * Rendered as a standard article it was a headline with a player under it — the same
+     * page as every other story, which is the one thing this template exists not to be.
+     * The embed itself stays in the body, where the facade and the consent gate already
+     * live; this band carries the framing.
+     */
+    return (
+      <header className="mn-videohead">
+        <Editorial>
+          <div className="mn-videohead__kickers">
+            <span>Trailer</span>
+            {article.category ? <span>{article.category.name}</span> : null}
+          </div>
+          <h1 className="mn-videohead__title">{article.title}</h1>
+          {article.subtitle ? <p className="mn-videohead__dek">{article.subtitle}</p> : null}
+          {byline}
+          <div style={{ marginTop: 18 }}>
+            <ShareBar url={shareUrl} title={article.title} />
+          </div>
+        </Editorial>
+      </header>
+    );
+  }
 
   if (article.template === 'longform') {
     return (
@@ -75,6 +106,16 @@ export function ArticleHeader({ article, shareUrl, priorityImage = true }: Artic
                   }).format(new Date(article.updatedAt))}
                 </time>
               </span>
+              {/*
+               * The update count the design puts at the right end of the strip. Counted
+               * from the headings that become the timeline entries, so it can never
+               * disagree with the list below it.
+               */}
+              {updateCount > 0 ? (
+                <span className="mn-urgent__count">
+                  {updateCount} {updateCount === 1 ? 'atualização' : 'atualizações'}
+                </span>
+              ) : null}
             </div>
           </Shell>
         </div>
@@ -98,7 +139,7 @@ export function ArticleHeader({ article, shareUrl, priorityImage = true }: Artic
         <ShareBar url={shareUrl} title={article.title} />
       </div>
 
-      {article.cover && article.template !== 'video' ? (
+      {article.cover ? (
         <figure className="mn-article__figure">
           <div className="mn-figure__frame" style={{ position: 'relative' }}>
             <MnImage image={article.cover} sizes={SIZES.hero} priority={priorityImage} />

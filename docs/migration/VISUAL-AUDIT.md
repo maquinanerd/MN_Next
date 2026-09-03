@@ -128,7 +128,59 @@ conhecíveis — o total vem da listagem, "hoje" conta o que foi publicado desde
 — então foram acrescentados. A `<dl>` mantém o termo antes da definição, como a
 especificação exige, e a ordem visual do design é feita no CSS.
 
-### 5. As capas eram gradientes
+### 5. Os cinco templates de artigo estavam em um arquivo só, e quatro nunca tinham sido olhados
+
+`Máquina Nerd Notícias.dc.html` não é uma página: são cinco telas empilhadas, cada uma
+atrás de um `data-screen-label`. Capturar o arquivo inteiro comparava o template padrão
+com uma página e os outros quatro com nada — que é exatamente como passaram despercebidos.
+
+`pnpm visual:compare -- --screens` recorta cada tela pelo seu rótulo e a compara com a
+rota que a implementa:
+
+| Template | `data-screen-label` | Rota                               |
+| -------- | ------------------- | ---------------------------------- |
+| Padrão   | Notícia padrão      | `/series/resident-evil-2026-…`     |
+| Longform | Longform            | `/series/como-ahsoka-virou-…`      |
+| Urgente  | Urgente             | `/series/lanterns-atinge-…`        |
+| Vídeo    | Vídeo               | `/animes/netflix-revela-trailer-…` |
+| Lista    | Lista               | `/series/5-coisas-que-o-trailer-…` |
+
+**Padrão** — batia, depois de a pílula de editoria e o painel "Mais lidas" serem
+corrigidos (divergências 2 e 4 acima).
+
+**Longform** — a estrutura batia e o texto estava ilegível. O scrim ia de 20% no topo a
+92% na base, mas o bloco de texto fica nos 45% de baixo de uma capa de até 620px, e sobre
+uma fotografia clara o kicker e o olho simplesmente sumiam. Além disso "Grande reportagem"
+era tipo vermelho sobre foto — a única coisa que a regra da marca existe para impedir.
+Agora o scrim segura 88% onde o texto está (6,2:1 para branco contra a pior foto
+possível), o kicker é pílula preenchida, e o olho subiu para 86% de branco.
+
+**Urgente** — a tarja era **preta**; no protótipo é vermelho de marca, com cantos
+arredondados só no topo porque ela tampa o bloco do artigo, e traz a contagem de
+atualizações à direita. Corrigido, e a contagem sai das mesmas headings que viram a
+timeline, para que as duas não possam discordar. O chip "AO VIVO" precisou de um véu
+**escuro**: clareando o vermelho ele compunha #E8333D, e branco ali é 4,22:1.
+
+> **Divergência assumida:** o protótipo preenche a tarja com `#E30613`, onde branco é
+> 4,0:1. Serve para o tipo grande que ele mostra ali e não para a contagem de 11px que a
+> tarja de fato carrega. Ela usa o vermelho escuro (`--brand-solid`, 6,6:1), que lê como o
+> mesmo alarme. Fidelidade cedeu à legibilidade.
+
+**Vídeo** — era o template padrão com um embed no meio. O design abre a matéria de vídeo
+sobre tinta, largura cheia, sem sidebar, com o player como assunto. Agora tem sua própria
+faixa e a coluna inteira; o embed continua no corpo, onde a fachada e o gate de
+consentimento já vivem.
+
+**Lista** — faltavam as duas coisas que fazem o template: os numerais grandes ao lado de
+cada entrada, e o índice "Nesta lista" na sidebar. Os numerais vêm de um contador CSS, não
+do texto — o número é propriedade da posição, e uma heading que carrega o próprio "03"
+erra no instante em que uma entrada muda de lugar. O índice é construído das mesmas
+headings do corpo, então não pode listar uma entrada que o artigo não tem.
+
+> Nenhuma dessas quatro seria pega por baseline nem por axe: a baseline concordava consigo
+> mesma, e o axe reporta texto sobre imagem como _incomplete_, nunca como violação.
+
+### 6. As capas eram gradientes
 
 O acervo de fixtures apontava para gradientes gerados. São um bom placeholder e uma
 apresentação errada: uma home cujas dez capas são retângulos de duas cores lê como
@@ -141,7 +193,7 @@ em [DECISIONS.md](./DECISIONS.md) e se desfaz com um comando.
 
 Com o provider Kal El, as capas são as do CMS, servidas pelo proxy autenticado.
 
-### 6. Dossiê e ao vivo dependem de modelo que o CMS não tem
+### 7. Dossiê e ao vivo dependem de modelo que o CMS não tem
 
 Inalterado desde a auditoria anterior, e continua sendo a resposta honesta: o Kal El não
 tem franquia, dossiê nem evento ao vivo. As rotas renderizam a partir do que ele sabe
@@ -187,7 +239,10 @@ A comparação cobriu, lado a lado e em 1440px: home, editoria, artigo padrão, 
 especiais, comercial, índice e design system. As diferenças de **composição** encontradas
 estão corrigidas.
 
-Não foram percorridos elemento a elemento: os cinco templates de artigo entre si, as quatro
-telas comerciais entre si, e os viewports 768 e 1024 fora da baseline. Esses continuam
-cobertos por baseline e por axe — o que garante que não regridem, não que sejam idênticos
-ao protótipo. É trabalho de revisão humana, e está dito aqui em vez de marcado como feito.
+Os **cinco templates de artigo** foram percorridos um a um (divergência 5) e as
+diferenças estruturais estão corrigidas.
+
+Não foram percorridas: as quatro telas comerciais entre si — publieditorial, review,
+comparativo e landing —, e os viewports 768 e 1024 fora da baseline. Continuam cobertos
+por baseline e por axe, o que garante que não regridem, não que sejam idênticos ao
+protótipo. É trabalho de revisão humana, e está dito aqui em vez de marcado como feito.

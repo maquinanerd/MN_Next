@@ -10,6 +10,7 @@ import {
   AD_SLOTS,
   ArticleBody,
   ArticleHeader,
+  ListIndex,
   AuthorBox,
   Breadcrumbs,
   Editorial,
@@ -129,6 +130,10 @@ export default async function ArticlePage({ params }: { params: Promise<Params> 
   const graph = buildGraph(ctx, [articleNode(ctx, article), reviewNode(ctx, article), breadcrumbNode(ctx, crumbs)]);
 
   const isLongform = article.template === 'longform';
+  // The video story opens on its own full-width band, like longform does; the header is
+  // rendered above the editorial column rather than inside it.
+  const isVideo = article.template === 'video';
+  const isList = article.template === 'list';
 
   return (
     <>
@@ -146,14 +151,16 @@ export default async function ArticlePage({ params }: { params: Promise<Params> 
         </div>
       ) : null}
 
-      {isLongform ? <ArticleHeader article={article} shareUrl={canonical} /> : null}
+      {isLongform || isVideo ? <ArticleHeader article={article} shareUrl={canonical} /> : null}
 
       <Editorial>
-        {isLongform ? null : <Breadcrumbs items={crumbs} />}
+        {isLongform || isVideo ? null : <Breadcrumbs items={crumbs} />}
 
-        <article className={isLongform ? '' : 'mn-article'}>
+        {/* No sidebar on video, as the design has it: the player is the subject, and a
+            rail beside it makes the page an ordinary story with an embed in it. */}
+        <article className={isLongform || isVideo ? '' : 'mn-article'}>
           <div>
-            {isLongform ? null : <ArticleHeader article={article} shareUrl={canonical} />}
+            {isLongform || isVideo ? null : <ArticleHeader article={article} shareUrl={canonical} />}
 
             {article.template === 'urgent' ? (
               <section aria-label="Linha do tempo das atualizações" style={{ marginBottom: 32 }}>
@@ -173,6 +180,7 @@ export default async function ArticlePage({ params }: { params: Promise<Params> 
 
             <ArticleBody
               blocks={article.body}
+              numbered={isList}
               sponsored={sponsored}
               showAds={adsAllowed}
               dropcapFirstParagraph={isLongform}
@@ -206,8 +214,14 @@ export default async function ArticlePage({ params }: { params: Promise<Params> 
             </Suspense>
           </div>
 
-          {isLongform ? null : (
+          {isLongform || isVideo ? null : (
             <aside className="mn-article__aside" aria-label="Complementos">
+              {/*
+               * A ranked list gets its own index first: a reader arrives wanting to know
+               * what the five things *are*. "Mais lidas" still follows, but it is not the
+               * thing this page is about.
+               */}
+              {isList ? <ListIndex blocks={article.body} /> : null}
               <Suspense fallback={null}>
                 <MostReadRail excludeId={article.id} />
               </Suspense>

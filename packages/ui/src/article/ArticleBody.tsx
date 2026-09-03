@@ -27,6 +27,13 @@ export interface ArticleBodyProps {
   /** Server-derived GAM targeting for in-article slots. */
   adTargeting?: Record<string, string | string[]>;
   dropcapFirstParagraph?: boolean;
+  /**
+   * Number the top-level headings, for the ranked-list template.
+   *
+   * A CSS counter rather than text in the heading: the number is a property of the
+   * position, and a heading carrying its own "03" goes wrong the moment an entry moves.
+   */
+  numbered?: boolean;
 }
 
 /**
@@ -210,12 +217,13 @@ export function ArticleBody({
   showAds = true,
   adTargeting,
   dropcapFirstParagraph = false,
+  numbered = false,
 }: ArticleBodyProps) {
   const positions = showAds ? adPositions(blocks) : new Set<number>();
   let firstParagraphSeen = false;
 
   return (
-    <div className="mn-body">
+    <div className={numbered ? 'mn-body mn-body--list' : 'mn-body'}>
       {blocks.map((block, index) => {
         let rendered = block;
         if (dropcapFirstParagraph && !firstParagraphSeen && block.type === 'paragraph') {

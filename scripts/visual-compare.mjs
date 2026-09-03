@@ -46,6 +46,40 @@ const SURFACES = [
   { key: 'indice', proto: 'Máquina Nerd Índice.dc.html', route: '/' },
 ];
 
+/**
+ * The five article templates, which live as five screens inside one prototype file.
+ *
+ * `Máquina Nerd Notícias.dc.html` is not one page: it stacks the five approved article
+ * shapes, each behind a `data-screen-label`. Capturing the file whole compares the
+ * standard template against a page and the other four against nothing, which is how they
+ * went unexamined. Each screen is clipped to its own element instead.
+ */
+const SCREENS = [
+  {
+    key: 'artigo-padrao',
+    label: 'Notícia padrão',
+    route: '/series/resident-evil-2026-revela-mudanca-em-monstro-classico',
+  },
+  {
+    key: 'artigo-longform',
+    label: 'Longform',
+    route: '/series/como-ahsoka-virou-o-centro-do-plano-galactico-da-disney',
+  },
+  {
+    key: 'artigo-urgente',
+    label: 'Urgente',
+    route: '/series/lanterns-atinge-93-milhoes-de-espectadores-na-estreia-na-hbo',
+  },
+  {
+    key: 'artigo-video',
+    label: 'Vídeo',
+    route: '/animes/netflix-revela-trailer-de-lego-one-piece-com-aventura-inedita',
+  },
+  { key: 'artigo-lista', label: 'Lista', route: '/series/5-coisas-que-o-trailer-de-ahsoka-t2-esconde-sobre-thrawn' },
+];
+
+const SCREEN_PROTO = 'Máquina Nerd Notícias.dc.html';
+
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -73,14 +107,14 @@ function serveReference() {
   return new Promise((resolve) => server.listen(PROTO_PORT, '127.0.0.1', () => resolve(server)));
 }
 
-async function capture(page, url, file) {
+/** Navigates and waits until the page is genuinely painted and settled. */
+async function load(page, url) {
   await page.goto(url, { waitUntil: 'networkidle', timeout: 60_000 });
   // `networkidle` can fire before a stylesheet has been parsed, and a capture taken then
   // shows unstyled markup — which reads as a broken layout rather than as a broken shot.
   await page.waitForFunction(() => document.styleSheets.length > 0, undefined, { timeout: 15_000 });
   await page.evaluate(() => document.fonts.ready);
   await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
-  // The consent banner covers the foot of every capture otherwise.
   const consent = page.getByRole('button', { name: /Aceitar todos|Apenas essenciais/ });
   if ((await consent.count()) > 0) {
     await consent
@@ -89,7 +123,6 @@ async function capture(page, url, file) {
       .catch(() => undefined);
     await page.waitForTimeout(250);
   }
-  // Walk the page so lazy images resolve before the shot.
   await page.evaluate(
     () =>
       new Promise((done) => {
@@ -106,6 +139,35 @@ async function capture(page, url, file) {
       }),
   );
   await page.waitForTimeout(800);
+}
+
+/**
+ * Captures one screen of a multi-screen prototype.
+ *
+ * The clip runs from the labelled element to the next label, so a screen carries its own
+ * banner and stops where the following one starts.
+ */
+async function captureScreen(page, url, label, file) {
+  await load(page, url);
+  const box = await page.evaluate((wanted) => {
+    const marks = [...document.querySelectorAll('[data-screen-label]')];
+    const index = marks.findIndex((m) => (m.getAttribute('data-screen-label') ?? '').trim() === wanted);
+    if (index < 0) return null;
+    const start = marks[index].getBoundingClientRect().top + window.scrollY;
+    const next = marks[index + 1];
+    const end = next ? next.getBoundingClientRect().top + window.scrollY : document.body.scrollHeight;
+    return { top: Math.max(0, Math.round(start)), height: Math.round(end - start) };
+  }, label);
+  if (!box) throw new Error(`no screen labelled "${label}"`);
+  await page.screenshot({
+    path: file,
+    fullPage: true,
+    clip: { x: 0, y: box.top, width: page.viewportSize().width, height: box.height },
+  });
+}
+
+async function capture(page, url, file) {
+  await load(page, url);
   await page.screenshot({ path: file, fullPage: true });
 }
 
@@ -113,7 +175,10 @@ async function main() {
   const args = process.argv.slice(2);
   const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null;
   const widths = args.includes('--width') ? [Number(args[args.indexOf('--width') + 1])] : [1440, 390];
-  const surfaces = only ? SURFACES.filter((s) => s.key === only) : SURFACES;
+  // `--screens` compares the five article templates, which share one prototype file.
+  const screensOnly = args.includes('--screens');
+  const surfaces = screensOnly ? [] : only ? SURFACES.filter((s) => s.key === only) : SURFACES;
+  const screens = screensOnly || !only ? SCREENS.filter((s) => !only || s.key === only) : [];
 
   const { chromium } = await import('@playwright/test');
   const server = await serveReference();
@@ -136,6 +201,25 @@ async function main() {
           console.error(`  ${surface.key} @ ${width} failed: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
+
+      for (const screen of screens) {
+        const protoFile = path.join(OUT, `${screen.key}-${width}-proto.png`);
+        const appFile = path.join(OUT, `${screen.key}-${width}-app.png`);
+        try {
+          await captureScreen(
+            page,
+            `http://127.0.0.1:${PROTO_PORT}/${encodeURIComponent(SCREEN_PROTO)}`,
+            screen.label,
+            protoFile,
+          );
+          await capture(page, `${APP}${screen.route}`, appFile);
+          index.push({ surface: screen.key, width, proto: `${SCREEN_PROTO} · ${screen.label}`, route: screen.route });
+          console.warn(`  ${screen.key} @ ${width}`);
+        } catch (err) {
+          console.error(`  ${screen.key} @ ${width} failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
       await page.close();
     }
   } finally {
