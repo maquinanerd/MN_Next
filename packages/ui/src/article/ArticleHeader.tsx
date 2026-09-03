@@ -122,7 +122,11 @@ export function ArticleHeader({ article, shareUrl, priorityImage = true }: Artic
       ) : null}
 
       {article.commercial ? (
-        <SponsoredLabel kind={article.commercial.kind} brand={article.commercial.brandName} />
+        <SponsoredLabel
+          kind={article.commercial.kind}
+          brand={article.commercial.brandName}
+          {...(article.commercial.brandLogo ? { brandLogo: article.commercial.brandLogo } : {})}
+        />
       ) : null}
 
       {article.category ? (

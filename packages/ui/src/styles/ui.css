@@ -1029,7 +1029,17 @@ img {
  * whole components — a BuyBox CTA, a comparison row, a source link — and a blanket
  * `.mn-body a` rule repainted the green purchase button brand red at 1.35:1.
  */
-.mn-body :where(p, li, td, th, blockquote, figcaption, dd) a {
+/*
+ * Prose links, and only prose links.
+ *
+ * `a:not([class])` is the whole guard: a link the parser produced from article text has
+ * no class, and a link a component rendered always has one. Without it this rule beat
+ * `.mn-cta` on specificity — `:where()` contributes nothing, so `.mn-body … a` is
+ * (0,1,1) against the button's (0,1,0) — and the purchase button inside a comparison
+ * table drew its price in brand red, underlined, on green. Roughly 2:1, on the one
+ * control the page exists to be clicked.
+ */
+.mn-body :where(p, li, td, th, blockquote, figcaption, dd) a:not([class]) {
   color: var(--brand-text);
   text-decoration: underline;
   text-decoration-thickness: 2px;
@@ -1566,6 +1576,35 @@ img {
   font-weight: 900;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
+}
+
+/*
+ * "Oferecido por", pushed to the right end of the strip as the design has it.
+ *
+ * The advertiser's mark is part of the disclosure. It sits after the text, never instead
+ * of it: an image that fails to load must not take the disclosure with it.
+ */
+.mn-sponsored__by {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mn-sponsored__bylabel {
+  font-size: var(--fs-floor);
+  font-weight: 700;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.mn-sponsored__logo img {
+  display: block;
+  height: 22px;
+  width: auto;
+  max-width: 120px;
+  object-fit: contain;
 }
 
 .mn-buybox {
@@ -3251,4 +3290,131 @@ img {
 
 .mn-videohead__player {
   max-width: 1000px;
+}
+
+/* --------------------------------------------------- the campaign landing band
+ *
+ * The seasonal landing opens on ink with the campaign name set in two tones, and runs a
+ * red strip of terms underneath it. The route was rendering a black bar with the headline
+ * in it and nothing else — the same page as any article with a dark title.
+ */
+
+.mn-campaign {
+  background: var(--mn-ink);
+  color: var(--mn-on-ink);
+  --mn-fg: var(--mn-on-ink);
+  --mn-fg2: var(--mn-fg2-on-ink);
+  --brand-text: var(--brand-on-dark);
+}
+
+.mn-campaign__inner {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: clamp(30px, 5vw, 56px) clamp(16px, 3vw, 40px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 30px;
+  align-items: center;
+}
+
+.mn-campaign__lede {
+  flex: 1 1 340px;
+  min-width: 0;
+}
+
+.mn-campaign__stamp {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.mn-campaign__logo {
+  height: 15px;
+  width: auto;
+  opacity: 0.9;
+}
+
+.mn-campaign__badge {
+  background: var(--brand-solid);
+  color: var(--brand-solid-ink);
+  font-weight: 800;
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  border-radius: 3px;
+}
+
+.mn-campaign__title {
+  font-weight: 900;
+  font-size: clamp(34px, 6vw, 72px);
+  line-height: 0.94;
+  letter-spacing: -0.045em;
+  margin: 0 0 18px;
+  text-transform: uppercase;
+  color: var(--mn-on-ink);
+}
+
+.mn-campaign__dek {
+  margin: 0 0 24px;
+  max-width: 46ch;
+  font-size: clamp(14px, 1.5vw, 17px);
+  line-height: 1.6;
+  color: rgb(255 255 255 / 84%);
+}
+
+.mn-campaign__media {
+  position: relative;
+  flex: 1 1 300px;
+  min-width: 0;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--mn-surf2);
+}
+
+.mn-campaign__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/*
+ * The terms strip.
+ *
+ * The prototype fills it with `#E30613`, where white at 12px bold is 4.0:1 — under AA.
+ * Same trade as the urgent strip: the darker red reads as the same alarm and clears the
+ * bar. Recorded in VISUAL-AUDIT.
+ */
+.mn-campaign__terms {
+  background: var(--brand-solid);
+  color: var(--brand-solid-ink);
+  padding: 10px 0;
+  overflow: hidden;
+}
+
+.mn-campaign__termsinner {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 clamp(16px, 3vw, 40px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  column-gap: 20px;
+  row-gap: 6px;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.mn-campaign__term {
+  white-space: nowrap;
+}
+
+.mn-campaign__sep {
+  opacity: 0.5;
 }

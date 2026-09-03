@@ -10,6 +10,7 @@ import {
   AD_SLOTS,
   ArticleBody,
   ArticleHeader,
+  BuyBox,
   ListIndex,
   AuthorBox,
   Breadcrumbs,
@@ -134,6 +135,15 @@ export default async function ArticlePage({ params }: { params: Promise<Params> 
   // rendered above the editorial column rather than inside it.
   const isVideo = article.template === 'video';
   const isList = article.template === 'list';
+  /*
+   * An article whose body already carries a buy box does not get a second one in the rail.
+   *
+   * Both are legitimate: the design puts it in the rail, and an editor who placed the
+   * block in the body meant it there. What is not legitimate is both at once — the same
+   * price, the same retailer and two different verification sentences stacked on one page,
+   * which is what shipped the moment the rail box was added.
+   */
+  const bodyHasBuyBox = article.body.some((block) => block.type === 'buyBox');
 
   return (
     <>
@@ -217,7 +227,18 @@ export default async function ArticlePage({ params }: { params: Promise<Params> 
           {isLongform || isVideo ? null : (
             <aside className="mn-article__aside" aria-label="Complementos">
               {/*
-               * A ranked list gets its own index first: a reader arrives wanting to know
+               * The buy box, at the top of the rail, exactly where the design puts it.
+               *
+               * The offers were being fetched and dropped: a review carried its prices,
+               * its retailers and its verification date all the way to the page and then
+               * rendered none of them. On the one template whose reason to exist is
+               * "should I buy this", that is the whole answer missing.
+               */}
+              {article.commercial?.offers && article.commercial.offers.length > 0 && !bodyHasBuyBox ? (
+                <BuyBox offers={article.commercial.offers} disclosure={article.commercial.disclosure} />
+              ) : null}
+              {/*
+               * A ranked list gets its own index next: a reader arrives wanting to know
                * what the five things *are*. "Mais lidas" still follows, but it is not the
                * thing this page is about.
                */}

@@ -180,7 +180,52 @@ headings do corpo, então não pode listar uma entrada que o artigo não tem.
 > Nenhuma dessas quatro seria pega por baseline nem por axe: a baseline concordava consigo
 > mesma, e o axe reporta texto sobre imagem como _incomplete_, nunca como violação.
 
-### 6. As capas eram gradientes
+### 6. As quatro telas comerciais, e uma delas não mostrava o preço
+
+`Máquina Nerd Comercial.dc.html` empilha quatro telas do mesmo jeito que o de notícias:
+publieditorial, review de produto, comparativo e landing de oferta. Mesma armadilha, mesmo
+recorte por `data-screen-label`.
+
+| Tela              | Rota                                       |
+| ----------------- | ------------------------------------------ |
+| Publieditorial    | `/quadrinhos/como-montar-uma-estante-…`    |
+| Review de produto | `/reviews/box-sandman-edicao-definitiva-…` |
+| Comparativo       | `/quadrinhos/os-10-melhores-box-…`         |
+| Landing de oferta | `/ofertas/semana-nerd-2026`                |
+
+**Review** — a **BuyBox não era renderizada**. As ofertas chegavam à página: preço,
+varejista, preço de lista, data de verificação, tudo carregado e descartado. No único
+template cuja razão de existir é responder "compro ou não", a resposta inteira estava
+faltando. Agora abre a coluna da direita, como no protótipo.
+
+**Comparativo** — a tabela existe e renderiza. O que não renderizava era o **botão de
+compra**: ele saía com o preço em vermelho e sublinhado sobre o verde, ~2:1. A regra de
+link de prosa, `.mn-body :where(p, li, td…) a`, vence `.mn-cta` na especificidade —
+`:where()` não conta, então (0,1,1) contra (0,1,0). Agora a regra é `a:not([class])`: um
+link que o parser produziu do texto não tem classe, um link que um componente renderizou
+sempre tem. Era o controle que a página existe para ser clicado.
+
+**Publieditorial** — faltava o slot "Oferecido por" com a marca do anunciante à direita da
+tarja. O campo `brandLogo` já existia em `CommercialMeta` e nada o lia. A marca do
+anunciante é parte da divulgação, não enfeite. Em modo fixture ele não aparece porque não
+há anunciante — o protótipo também desenha ali um placeholder.
+
+**Landing de oferta** — a rota abria com uma barra preta e o título dentro, que é a mesma
+página de qualquer artigo com título escuro. O design abre como campanha: a marca, o selo
+"Ofertas", o nome em escala de cartaz, a imagem ao lado e uma tarja de condições correndo
+por baixo. As condições são autorais (`campaignTerms`) porque são compromissos que a área
+comercial assume — derivá-las das ofertas seria inventar uma promessa que ninguém fez.
+
+> **Não implementados, e por quê:** o contador regressivo e a grade de ofertas da landing.
+> O primeiro precisa de uma data de fim de campanha e o segundo de um catálogo; nenhum dos
+> dois existe no modelo. Um relógio falso e preços falsos numa página comercial são pior
+> que uma seção ausente.
+
+> **Divergência assumida:** a tarja de condições é `#E30613` no protótipo, onde branco a
+> 12px bold é 4,0:1. Usa `--brand-solid`, pelo mesmo motivo e com o mesmo resultado da
+> tarja de urgência.
+
+### 7. As capas eram gradientes
 
 O acervo de fixtures apontava para gradientes gerados. São um bom placeholder e uma
 apresentação errada: uma home cujas dez capas são retângulos de duas cores lê como
@@ -193,7 +238,7 @@ em [DECISIONS.md](./DECISIONS.md) e se desfaz com um comando.
 
 Com o provider Kal El, as capas são as do CMS, servidas pelo proxy autenticado.
 
-### 7. Dossiê e ao vivo dependem de modelo que o CMS não tem
+### 8. Dossiê e ao vivo dependem de modelo que o CMS não tem
 
 Inalterado desde a auditoria anterior, e continua sendo a resposta honesta: o Kal El não
 tem franquia, dossiê nem evento ao vivo. As rotas renderizam a partir do que ele sabe
@@ -239,10 +284,12 @@ A comparação cobriu, lado a lado e em 1440px: home, editoria, artigo padrão, 
 especiais, comercial, índice e design system. As diferenças de **composição** encontradas
 estão corrigidas.
 
-Os **cinco templates de artigo** foram percorridos um a um (divergência 5) e as
-diferenças estruturais estão corrigidas.
+Os **cinco templates de artigo** (divergência 5) e as **quatro telas comerciais**
+(divergência 6) foram percorridos um a um, e as diferenças estruturais estão corrigidas.
 
-Não foram percorridas: as quatro telas comerciais entre si — publieditorial, review,
-comparativo e landing —, e os viewports 768 e 1024 fora da baseline. Continuam cobertos
-por baseline e por axe, o que garante que não regridem, não que sejam idênticos ao
-protótipo. É trabalho de revisão humana, e está dito aqui em vez de marcado como feito.
+Não foram percorridos: os viewports **768 e 1024** fora da baseline, e o **contador
+regressivo** e a **grade de ofertas** da landing sazonal — ambos exigem dado que a
+plataforma não modela (uma data de fim de campanha, um catálogo de produtos), e inventá-los
+poria um relógio falso e preços falsos numa página comercial. Continuam cobertos por
+baseline e por axe, o que garante que não regridem, não que sejam idênticos ao protótipo.
+É trabalho de revisão humana, e está dito aqui em vez de marcado como feito.

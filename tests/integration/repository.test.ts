@@ -180,11 +180,22 @@ describe('FixtureContentRepository', () => {
     expect([...templates].sort()).toEqual(['list', 'longform', 'standard', 'urgent', 'video']);
   });
 
-  it('exposes a commercial article with offers for the BuyBox', async () => {
+  it('exposes a review with offers for the rail, and not a second copy in the body', async () => {
+    // The approved review template puts the buy box in the right-hand rail, so the offers
+    // travel on `commercial.offers`. The body must *not* also carry a `buyBox` block: the
+    // page rendered both for a while, stacking the same price, the same retailer and two
+    // different verification sentences on top of each other.
     const article = await repo.getArticleBySlug('box-sandman-edicao-definitiva-vale-os-r-289');
     expect(article?.commercial?.kind).toBe('affiliate');
     expect(article?.review?.score).toBeGreaterThan(0);
+    expect(article?.commercial?.offers?.length ?? 0).toBeGreaterThan(0);
+    expect(article?.body.some((b) => b.type === 'buyBox')).toBe(false);
+  });
+
+  it('keeps the inline buy box on the campaign landing, which has no rail', async () => {
+    const article = await repo.getArticleBySlug('semana-nerd-2026');
     expect(article?.body.some((b) => b.type === 'buyBox')).toBe(true);
+    expect(article?.commercial?.campaignTerms?.length ?? 0).toBeGreaterThan(0);
   });
 
   it('paginates deterministically', async () => {

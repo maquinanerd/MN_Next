@@ -90,6 +90,15 @@ export interface CommercialMeta {
   disclosure: string;
   offers?: Offer[];
   campaignId?: string;
+  /**
+   * The terms a seasonal campaign runs across its landing — free shipping, a coupon, a
+   * verification time, a stock warning.
+   *
+   * Authored, not derived: these are commitments the sales desk makes, and deriving them
+   * from offer data would mean inventing a promise nobody made. The CMS has no commercial
+   * model at all, so Kal El leaves this undefined and the strip does not render.
+   */
+  campaignTerms?: string[];
 }
 
 export interface ReviewData {

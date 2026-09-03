@@ -339,6 +339,16 @@ const commercialBody: ContentBlock[] = [
   },
 ];
 
+/**
+ * The review body: the commercial one without its inline buy box.
+ *
+ * The approved review template puts the box in the right-hand rail, not in the prose.
+ * Keeping the block here as well would render the same price, retailer and verification
+ * date twice on one page — which is exactly what happened the first time the rail box was
+ * wired up. The landing keeps its inline box, because that template has no rail.
+ */
+const reviewBody: ContentBlock[] = commercialBody.filter((block) => block.type !== 'buyBox');
+
 const comparisonBody: ContentBlock[] = [
   {
     type: 'paragraph',
@@ -504,7 +514,7 @@ const seeds: FixtureArticleSeed[] = [
     cover: 'cover-06',
     publishedAt: '2026-08-25T09:00:00-03:00',
     updatedAt: '2026-08-27T12:00:00-03:00',
-    body: commercialBody,
+    body: reviewBody,
     schemaType: 'Review',
     commercial: {
       kind: 'affiliate',
@@ -614,6 +624,14 @@ const seeds: FixtureArticleSeed[] = [
       kind: 'campaign',
       brandName: 'Semana Nerd',
       campaignId: 'semana-nerd-2026',
+      // The terms the design runs across the landing. Authored here because they are
+      // commitments a sales desk makes, not anything derivable from offer rows.
+      campaignTerms: [
+        'Frete grátis acima de R$ 149',
+        'Cupom MAQUINANERD10',
+        'Preços verificados às 16h04',
+        'Estoque limitado',
+      ],
       disclosure: 'Campanha publicitária. O conteúdo desta página foi definido pelo anunciante.',
     },
   },

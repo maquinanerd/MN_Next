@@ -125,8 +125,15 @@ legítimo de um rascunho abriria **qualquer** slug não publicado que alguém ad
 
 1. **Comercial.** Não há modelo de oferta/preço/nota. `CommercialMeta` é derivada de tag
    reservada (`patrocinado`, `afiliado`, `review-amostra`, `campanha`) + entidade de tipo
-   `brand`. Preço, `verifiedAt`, prós/contras e nota **não têm onde morar** no CMS.
+   `brand`. Preço, `verifiedAt`, prós/contras, nota, logo do anunciante e as condições de
+   campanha (`campaignTerms`) **não têm onde morar** no CMS.
    _Proposta:_ coluna `commercial jsonb` nullable em `articles` + schema Zod.
+
+   _Consequência hoje:_ a caixa de compra do review, o selo "Oferecido por" e a tarja de
+   condições da landing sazonal renderizam em modo fixture e **não renderizam** com o
+   provider Kal El. Não é degradação silenciosa — é o modelo faltando, e o componente não
+   desenha o que não recebe.
+
 2. **Especiais e ao vivo.** Não há modelo de franquia/dossiê/evento. Um especial é uma
    categoria filha de `especiais`; um evento ao vivo é um artigo com a tag `ao-vivo` cujos
    `heading` viram a timeline.

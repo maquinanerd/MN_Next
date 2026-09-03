@@ -78,7 +78,33 @@ const SCREENS = [
   { key: 'artigo-lista', label: 'Lista', route: '/series/5-coisas-que-o-trailer-de-ahsoka-t2-esconde-sobre-thrawn' },
 ];
 
+/**
+ * The four commercial screens, stacked in one prototype the same way.
+ *
+ * Same trap as the article templates: capturing `Máquina Nerd Comercial.dc.html` whole
+ * compares the publieditorial against a page and the other three against nothing.
+ */
+const COMMERCIAL = [
+  {
+    key: 'comercial-publieditorial',
+    label: 'Publieditorial',
+    route: '/quadrinhos/como-montar-uma-estante-de-colecionador-sem-gastar-o-mes-inteiro',
+  },
+  {
+    key: 'comercial-review',
+    label: 'Review de produto',
+    route: '/reviews/box-sandman-edicao-definitiva-vale-os-r-289',
+  },
+  {
+    key: 'comercial-comparativo',
+    label: 'Comparativo',
+    route: '/quadrinhos/os-10-melhores-box-de-quadrinhos-para-comecar-uma-colecao',
+  },
+  { key: 'comercial-landing', label: 'Landing de oferta', route: '/ofertas/semana-nerd-2026' },
+];
+
 const SCREEN_PROTO = 'Máquina Nerd Notícias.dc.html';
+const COMMERCIAL_PROTO = 'Máquina Nerd Comercial.dc.html';
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -178,7 +204,13 @@ async function main() {
   // `--screens` compares the five article templates, which share one prototype file.
   const screensOnly = args.includes('--screens');
   const surfaces = screensOnly ? [] : only ? SURFACES.filter((s) => s.key === only) : SURFACES;
-  const screens = screensOnly || !only ? SCREENS.filter((s) => !only || s.key === only) : [];
+  // Every multi-screen prototype, tagged with the file each screen belongs to.
+  const allScreens = [
+    ...SCREENS.map((s) => ({ ...s, proto: SCREEN_PROTO })),
+    ...COMMERCIAL.map((s) => ({ ...s, proto: COMMERCIAL_PROTO })),
+  ];
+  // `--only` names a surface *or* a screen; the tool should not need to be told which.
+  const screens = allScreens.filter((s) => !only || s.key === only);
 
   const { chromium } = await import('@playwright/test');
   const server = await serveReference();
@@ -208,12 +240,12 @@ async function main() {
         try {
           await captureScreen(
             page,
-            `http://127.0.0.1:${PROTO_PORT}/${encodeURIComponent(SCREEN_PROTO)}`,
+            `http://127.0.0.1:${PROTO_PORT}/${encodeURIComponent(screen.proto)}`,
             screen.label,
             protoFile,
           );
           await capture(page, `${APP}${screen.route}`, appFile);
-          index.push({ surface: screen.key, width, proto: `${SCREEN_PROTO} · ${screen.label}`, route: screen.route });
+          index.push({ surface: screen.key, width, proto: `${screen.proto} · ${screen.label}`, route: screen.route });
           console.warn(`  ${screen.key} @ ${width}`);
         } catch (err) {
           console.error(`  ${screen.key} @ ${width} failed: ${err instanceof Error ? err.message : String(err)}`);

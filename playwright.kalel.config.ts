@@ -32,14 +32,26 @@ export default defineConfig({
   projects: [{ name: 'kalel', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 900 } } }],
   webServer: [
     {
-      command: `pnpm exec tsx tests/fake-kalel/main.ts`,
+      // `node --import tsx` rather than `pnpm exec tsx`: the pnpm shim is an extra
+      // process between Playwright and the server, and on Windows Playwright loses track
+      // of the real one — it reports the CMS as up, then the build a minute later dies on
+      // ECONNREFUSED against a port nothing is listening on any more.
+      command: `node --import tsx tests/fake-kalel/main.ts`,
       url: `http://127.0.0.1:${CMS_PORT}/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
       env: { FAKE_KALEL_PORT: String(CMS_PORT) },
     },
     {
-      command: `pnpm build && pnpm start --port ${APP_PORT}`,
+      /*
+       * Waits for the stand-in CMS before building.
+       *
+       * Playwright brings both entries up together, and `next build` prerenders article
+       * pages — so a build that starts a second too early fails on `ECONNREFUSED` and the
+       * whole gate reports "webServer was not able to start", which says nothing about
+       * the cause. The poll makes the dependency explicit instead of hoping for ordering.
+       */
+      command: `pnpm exec tsx scripts/wait-for.ts http://127.0.0.1:${CMS_PORT}/health && pnpm build && pnpm start --port ${APP_PORT}`,
       url: `${baseURL}/api/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 300_000,
