@@ -126,6 +126,13 @@ describe('wp:import against a live pair of stand-ins', () => {
       expect(store.articles).toHaveLength(expected.posts);
       expect(store.categories).toHaveLength(expected.categories);
       expect(store.tags).toHaveLength(expected.tags);
+
+      // A WordPress category that is not one of the six desks becomes a tag rather than
+      // a route segment. `noticias` is on every post in the real archive; importing it
+      // as a category would create a section the portal has no template for.
+      expect(store.categories.map((c) => c['slug']).sort()).toEqual(['filmes', 'series']);
+      expect(store.tags.map((t) => t['slug'])).toContain('noticias');
+      expect(summary.counts['categoriesAsTags']).toBe(expected.categoriesInWordPress - expected.categories);
       expect(store.authors).toHaveLength(expected.authors);
       expect(store.media).toHaveLength(expected.media);
 
@@ -133,6 +140,9 @@ describe('wp:import against a live pair of stand-ins', () => {
       // ids for author, categories and tags, and they were looked up in maps keyed by
       // slug. An article with no desk is dropped from every listing and from the sitemap.
       for (const article of store.articles) {
+        // Exactly one desk, even though every post carries `noticias` as well: the desk
+        // is the article's URL, so there can only be one, and it must be the desk rather
+        // than whichever category WordPress happened to list first.
         expect(article['categories'], String(article['title'])).toHaveLength(1);
         expect(article['authors'], String(article['title'])).toHaveLength(1);
         expect((article['tags'] as string[]).length).toBeGreaterThan(0);

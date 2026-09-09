@@ -180,19 +180,105 @@ O Kal El permite publicar sem categoria; este site não tem rota para isso — `
 lido pelo catch-all como editoria. O repositório filtra esses artigos de toda listagem e
 `articleHref` devolve `null` em vez de inventar um endereço.
 
-### 4.6 Só REST: nem WXR, nem SQL
+### 4.6 Duas origens: a REST e o arquivo SQL
 
-`docs/03` prevê "WP REST API ou WXR export". **Só a REST foi implementada**, e o
-comentário em `source.ts` que afirmava existir um `--wxr` foi corrigido: não existia.
+Durante toda a fase anterior existia só a REST, e a decisão registrada aqui era que um
+leitor de arquivo escrito antes de o arquivo existir seria adivinhação — prefixo de
+tabela, plugins e charset são fatos de um export específico.
 
-Um leitor de arquivo escrito antes de o arquivo existir seria adivinhação — o formato de
-um dump depende do prefixo de tabela, dos plugins instalados e do charset, e o backup
-ainda não foi entregue. O caminho suportado para um dump é restaurá-lo em um WordPress
-local e apontar o importador para ele, o que é procedimento conhecido, não código novo.
-Está no [RUNBOOK §4.1](./RUNBOOK.md).
+**O arquivo chegou** (`127_0_0_1.sql`, 1,66 GB, phpMyAdmin, 2026-08-21), então a condição
+que a decisão nomeava deixou de valer e `scripts/wp/archive.ts` foi escrito contra o dump
+real: prefixo `wp_`, `utf8mb4`, permalinks `/%postname%/`, 41.318 posts publicados e
+73.173 anexos. Ele implementa `WpReadSource` — a mesma superfície da REST, agora um tipo
+que o compilador verifica — e nenhum consumidor sabe qual dos dois recebeu.
 
-Se um leitor de arquivo passar a ser necessário, ele implementa a superfície de
-geradores assíncronos de `WordPressSource` e nada mais: nenhum consumidor fala HTTP.
+Três coisas que a REST fazia de graça e o leitor de arquivo precisou fazer:
+
+| O que                | Por quê                                                                                                                                                                                                                                                     |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `wpautop`            | A API devolve conteúdo renderizado; o banco tem conteúdo cru. **45% do arquivo (18.786 posts) é do editor clássico e não tem um único `<p>`.** Sem isso, esses artigos importariam com as figuras e nenhuma palavra do texto — e o relatório diria sucesso. |
+| Permalink calculado  | `post.link` sai de `permalink_structure`. A tabela de redirects depende dele.                                                                                                                                                                               |
+| URL de mídia montada | De `home` + `_wp_attached_file`, **nunca de `guid`**: os guids deste arquivo ainda apontam para `http://13.48.147.139`, uma máquina que não serve o site há anos.                                                                                           |
+
+O leitor **não faz nenhuma requisição de rede**. Os bytes dos anexos vêm de um diretório
+de uploads extraído (`--uploads`), então uma importação de arquivo não pode ser apontada
+para lugar nenhum e `--allow-private-assets` é recusado com ela.
+
+A alternativa — restaurar o dump num WordPress local e usar a REST — continua válida e
+documentada no [RUNBOOK §4.0](./RUNBOOK.md), mas não é viável aqui: as mídias estão dentro
+de um `tar.gz` de 101 GB em 19 partes, e nem WSL nem Docker estão disponíveis nesta
+máquina.
+
+### 4.8 Uma categoria do WordPress é uma editoria ou é uma tag
+
+O arquivo tem **8.619 categorias e 36.438 tags**; o portal tem seis editorias. Importar
+categoria por categoria criaria 8.613 segmentos de rota — `/noticias`, `/netflix`,
+`/robert-de-niro` — que nenhum template, nenhuma navegação e nenhum protótipo tem. A
+arquitetura aprovada diz o contrário: _sub-editorias são tags, nunca segmentos de rota_.
+
+Então: slug entre as seis → editoria; qualquer outro → **tag**. Nada é descartado —
+`noticias`, em 32.781 posts, vira tag e continua em todos eles.
+
+Medido no arquivo real: 41.020 dos 41.318 posts publicados (99,3%) têm exatamente uma
+editoria, 190 têm duas e 298 não têm nenhuma.
+
+- **Duas editorias** (190 posts, 0,46%): vence a precedência `reviews, animes,
+quadrinhos, games, series, filmes` — mais específica primeiro, com `reviews` na frente
+  porque é um _formato_ com template e índice próprios. As demais editorias do post são
+  descartadas em vez de viram tags: uma tag "Filmes" ao lado da editoria `series` se lê
+  como seção e não é uma.
+- **Nenhuma editoria** (298 posts): **falha, não aviso.** O portal remove um artigo sem
+  editoria de toda listagem e do sitemap, então importá-lo produz algo que existe e não
+  pode ser encontrado. A execução escreve `unmapped-categories.json` com as categorias
+  responsáveis e quantos posts cada uma resgataria; preenchido, vira `--category-map`.
+
+`post.categories[0]` **não** serve para escolher: o WordPress ordena por term id, e neste
+arquivo a primeira categoria é uma editoria em 8.459 posts e `noticias` na maioria dos
+outros 32.858. O `build-redirects.ts` usava exatamente isso, e mandaria quatro de cada
+cinco redirects para uma seção inexistente.
+
+### 4.9 Colchetes no meio do texto não são shortcodes
+
+O conversor apagava tudo que casasse com `[palavra ...]`. O WordPress não faz isso: ele
+expande shortcodes _registrados_ e imprime o resto literalmente — e este site praticamente
+não registra nenhum (o Powerkit, dono dos 40 `[powerkit_toc]`, nem está em
+`active_plugins`).
+
+O que estava sendo apagado era prosa:
+
+> "Eu trocava ideias com **[a presidente da Lucasfilm]** Kathleen Kennedy"
+> "eu era sincero ao pensar que era o fim **[risos]**"
+> "…Sit Down With **[SPOILER]**"
+
+Interpolação jornalística, marcador de transcrição e parte de um título. Agora só sai o
+que é sintaxe de shortcode sem ambiguidade: fechamento `[/nome]`, nome com `_` ou `-`, ou
+atributos `chave="valor"`. O resto fica e é contado como `bracket-text:*` — inclusive os
+~1.400 marcadores de template que o pipeline de geração deixou por preencher
+(`[Nome do Ator]`, `[INSERIR VÍDEO AQUI]`), que são exatamente o que o leitor vê hoje no
+site publicado.
+
+### 4.10 Imagem de terceiro não vira imagem nossa
+
+Das 87.771 `<img>` no corpo dos artigos, **28.140 são da biblioteca de mídia do site** e
+**44.304 são hotlink de outros veículos** — `static0.srcdn.com` (ScreenRant, 28.050),
+`static0.thegamerimages.com`, `variety.com`, `www.hollywoodreporter.com`,
+`comicbook.com`, entre 61 domínios. Outras **14.445** têm a URL corrompida na origem, com
+espaços e quebras de linha dentro do host e do caminho
+(`https://lumiere-a. akamaihd.\n\nnet/v1/images/image_49e88d01. jpeg. region=…`).
+
+O importador **não baixa nenhuma delas**. Duas razões, e a segunda é a que decide:
+tecnicamente uma imagem sem `mediaId` não vira nó de documento no Kal El; juridicamente,
+baixá-las converteria _hotlink_ em _hospedagem_, que é uma exposição materialmente maior.
+Essa é uma decisão do operador, não de engenharia — o relatório agora quebra o número por
+domínio (`image:external:<host>`) em vez de somar tudo num `image:unresolved` opaco, que
+misturava uma questão de licenciamento com um bug de mapeamento. O bug de mapeamento de
+verdade são **466** imagens do próprio domínio que não casaram.
+
+As URLs corrompidas não são recuperáveis: reverter "espaço depois do ponto" é ambíguo
+porque o `?` da query também virou `. `. Adivinhar produziria URLs inventadas.
+
+**As capas não são afetadas** — vêm de `_thumbnail_id`, que aponta para a biblioteca de
+mídia. 40.663 dos 41.318 posts têm uma.
 
 ### 4.7 Reimportação não sobrescreve edição editorial
 
@@ -208,12 +294,36 @@ pulado, a execução termina com código 1 e o relatório nomeia o artigo.
 editou não pode ser reparada rodando de novo. A ferramenta reporta e uma pessoa decide —
 que é melhor que apagar trabalho de redação em silêncio.
 
-### 4.5 Permalink legado ainda não confirmado
+### 4.5 O permalink legado, confirmado — e por que a tabela não serve
 
-`docs/04` marca isso como aberto e bloqueante da fase de redirects. O middleware trata as
-formas comuns (`/{ano}/{mes}/{slug}`, `?p=`, feeds, `wp-json`, `categoria/`, `author/`); a
-tabela real vem de `pnpm redirects:build` sobre o inventário. **Não é possível declarar
-"zero 404" sem a amostra de URLs de tráfego** — está registrado como pendência externa.
+`permalink_structure` é **`/%postname%/`**, e o plugin `no-category-base-wpml` estava
+ativo. Ou seja: os 41.318 artigos **e** os 8.619 arquivos de categoria estão indexados em
+`/{slug}`, num único espaço de nomes na raiz. Todos caem em `/[categoria]`.
+
+Escrever isso como tabela não funciona. Uma entrada por artigo são ~5 MB de JSON dentro
+do bundle do `middleware.ts`, que roda no edge a cada requisição — acima do limite de
+tamanho, e reparseado a cada cold start, para codificar uma regra sem exceções: _o slug é
+o mesmo, só a editoria é nova_. A versão anterior emitia cinco formas por post e chegava a
+206.590 entradas.
+
+Então a regra virou resolução, em `lib/legacy-permalink.ts`: `/[categoria]` procura o
+segmento desconhecido no CMS — artigo primeiro, tag depois — e responde 308 para o
+endereço real. `cache()` do React garante uma consulta só, porque `generateMetadata` e a
+página correm juntas.
+
+**308, não 301** — o Next não tem 301: `permanentRedirect()` é 308. Para um buscador os
+dois são equivalentes; a diferença é que 308 preserva o método da requisição, o que é
+inerte em um caminho que só responde GET. O status está fixado em teste, porque a
+documentação afirma qual é.
+
+A tabela continua existindo para o que é exceção de verdade: redirects que um editor
+cadastrou no Kal El, o CSV do operador, e os posts cujo slug muda ao passar por
+`slugify`. Sobre o arquivo real isso dá **17 entradas** — 41.003 posts cobertos pela
+regra, 12 com slug acima de 120 caracteres e 5 com um caractere gujarati
+percent-encoded que alguma ferramenta de edição deixou cair no meio do slug.
+
+**Ainda não é possível declarar "zero 404"** sem a amostra de URLs de tráfego do Search
+Console — continua como pendência externa.
 
 ---
 

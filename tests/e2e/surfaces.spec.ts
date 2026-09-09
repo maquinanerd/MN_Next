@@ -287,6 +287,50 @@ test.describe('legacy URLs', () => {
     expect(new URL(page.url()).pathname).toBe('/series');
   });
 
+  /*
+   * The archive publishes at the root.
+   *
+   * `permalink_structure` is `/%postname%/` and the category base was stripped, so every
+   * one of the 41.318 articles and 8.619 category archives is indexed at `/{slug}` —
+   * paths that land on `/[categoria]`. Encoding them as redirect rules would put about
+   * 5 MB of JSON into the edge middleware bundle, so the segment is resolved against the
+   * CMS instead; these two cases are what proves that resolution exists.
+   */
+  test('a bare article slug redirects permanently to its desk', async ({ page, request }) => {
+    const slug = 'box-sandman-edicao-definitiva-vale-os-r-289';
+    const response = await page.goto(`/${slug}`);
+    expect(response?.status()).toBe(200);
+    const pathname = new URL(page.url()).pathname;
+    expect(pathname).not.toBe(`/${slug}`);
+    expect(pathname.endsWith(`/${slug}`)).toBe(true);
+    expect(pathname.split('/').filter(Boolean)).toHaveLength(2);
+
+    // Pinned, because the documentation states it: Next's `permanentRedirect` is a 308,
+    // not a 301. Equivalent to a search engine, and the difference — 308 preserves the
+    // request method — is inert on a path that only answers GET.
+    const raw = await request.get(`/${slug}`, { maxRedirects: 0 });
+    expect(raw.status()).toBe(308);
+    expect(raw.headers()['location']).toContain(`/${slug}`);
+  });
+
+  test('a bare tag slug redirects permanently to the tag archive', async ({ page }) => {
+    // `/netflix` was a category archive on the old site; sub-desks are tags here.
+    await page.goto('/netflix');
+    expect(new URL(page.url()).pathname).toBe('/tag/netflix');
+  });
+
+  test('a segment that is neither is still a 404', async ({ page }) => {
+    // The resolver must not turn every unknown path into a redirect somewhere.
+    const response = await page.goto('/isto-nao-e-nada-disso');
+    expect(response?.status()).toBe(404);
+  });
+
+  test('a desk is served, not redirected to itself', async ({ page }) => {
+    const response = await page.goto('/filmes');
+    expect(response?.status()).toBe(200);
+    expect(new URL(page.url()).pathname).toBe('/filmes');
+  });
+
   test('a WordPress feed redirects to the RSS route', async ({ request }) => {
     const res = await request.get('/feed', { maxRedirects: 0 });
     expect(res.status()).toBe(301);

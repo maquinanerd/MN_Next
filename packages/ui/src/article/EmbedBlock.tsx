@@ -28,7 +28,11 @@ function frameSrc(provider: EmbedProvider, url: string, embedId?: string): strin
     const parsed = new URL(url);
     switch (provider) {
       case 'youtube': {
-        const id = embedId ?? parsed.searchParams.get('v') ?? parsed.pathname.replace(/^\//, '');
+        // The last path segment, not the whole path: YouTube has four shapes for the
+        // same video — `?v=ID`, `youtu.be/ID`, `/embed/ID` and `/shorts/ID` — and taking
+        // the path whole turned the last two into the id `embed/ID`, which the player
+        // answers with an error. The archive carries `/embed/` URLs by the hundred.
+        const id = embedId ?? parsed.searchParams.get('v') ?? parsed.pathname.split('/').filter(Boolean).pop();
         return id ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?autoplay=1` : null;
       }
       case 'vimeo': {

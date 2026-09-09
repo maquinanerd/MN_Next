@@ -119,13 +119,59 @@ async claim(key: string, ttlMs: number) {
 
 ## 4. Migração
 
-### 4.0 O que o importador lê — e o que fazer com um dump SQL
+### 4.0 De onde o importador lê
 
-**Só a REST API do WordPress.** Não existe leitor de WXR nem de SQL, e não vale fingir que
-existe: um leitor escrito antes de o arquivo chegar seria adivinhação sobre prefixo de
-tabela, plugins e charset.
+Duas origens, a mesma interface (`WpReadSource`), e nenhum consumidor sabe qual recebeu.
 
-Um backup em SQL vira uma origem legível em quatro passos, todos locais:
+#### `--source archive` — um dump SQL, direto (recomendado)
+
+Lê o `.sql` ou `.sql.gz` sem restaurar banco nenhum. **Não abre nenhuma conexão de rede**:
+as linhas vêm do dump e os bytes das mídias de um diretório de uploads extraído.
+
+```bash
+export WP_ARCHIVE_DUMP='/caminho/para/127_0_0_1.sql'   # .sql ou .sql.gz
+pnpm wp:import --source archive                        # ensaio: só escreve relatórios
+pnpm wp:import --source archive --uploads /caminho/wp-content/uploads --apply
+```
+
+| Flag             | Para quê                                                                  |
+| ---------------- | ------------------------------------------------------------------------- |
+| `--dump`         | caminho do dump, se preferir a `WP_ARCHIVE_DUMP`                          |
+| `--uploads`      | `wp-content/uploads` extraído; sem ele nenhum byte de mídia é transferido |
+| `--table-prefix` | prefixo das tabelas, quando não for `wp_`                                 |
+| `--category-map` | JSON `"categoria-wp": "editoria"`, para os posts sem editoria             |
+
+O leitor descobre e imprime o que achou antes de qualquer coisa — contagens, `siteurl`,
+`permalink_structure` — e falha nomeando `--table-prefix` se não encontrar as tabelas, em
+vez de reportar um arquivo vazio como uma importação limpa.
+
+**As mídias.** No backup entregue elas estão dentro de `wordpress-files.tar.gz`, partido
+em 19 pedaços de 5 GB (~101 GB no total), sob
+`www.maquinanerd.com.br/wp-content/uploads/` — verificado listando a primeira parte. Para
+extrair só os uploads, sem gravar o WordPress inteiro:
+
+```bash
+cd '.../2026-09-08_095840'
+sha256sum -c PARTS-SHA256SUMS.txt            # confira antes de gastar horas
+cat wordpress-files.tar.gz.part-* | tar -xzf - -C /destino \
+  --strip-components=2 'www.maquinanerd.com.br/wp-content/uploads/*'
+```
+
+Depois `--uploads /destino/uploads`. A transferência ainda exige as credenciais do Kal El;
+sem `--apply` nenhum byte sai do lugar.
+
+`--allow-private-assets` é **recusado** com esta origem: ela não faz requisição nenhuma,
+então não há guarda de endereço para relaxar.
+
+#### `--source rest` (padrão) — um WordPress no ar
+
+```bash
+export WP_BASE_URL='https://www.exemplo.com.br'
+pnpm wp:import
+```
+
+Um dump também pode ser restaurado num WordPress local e lido por aqui, se o objetivo for
+reproduzir o `the_content` do site com todos os plugins ativos:
 
 ```bash
 # 1. Suba MySQL e WordPress apontando para um banco vazio (docker, ou o que preferir).
@@ -150,6 +196,32 @@ Para ver o pipeline funcionando sem ter arquivo nenhum:
 ```bash
 pnpm import:sandbox      # sobe um WordPress falso e um Kal El vazio, e imprime o env
 ```
+
+### 4.0.1 Categorias que não são editorias
+
+O portal tem seis editorias; este WordPress tem 8.619 categorias. Uma categoria vira
+editoria se o slug for uma das seis, e **tag** caso contrário — nada é descartado.
+
+Sobram os posts que não caem em nenhuma: **298 no arquivo real**, a maioria filada só em
+`noticias`. Eles **falham a execução em vez de importar sem editoria**, porque um artigo
+sem editoria é removido de toda listagem e do sitemap — existiria no CMS sem poder ser
+encontrado no site.
+
+O ensaio escreve a lista para você decidir:
+
+```bash
+cat artifacts/migration/full/unmapped-categories.json
+```
+
+```json
+{ "categories": [{ "slug": "noticias", "posts": 222, "desk": null }, ...] }
+```
+
+Preencha os destinos num arquivo próprio (o formato é
+`"categoria-do-wordpress": "editoria"`, veja
+[`data/import/category-map.example.json`](../../data/import/category-map.example.json)) e
+passe em `--category-map`. Um destino que não seja uma das seis é recusado com erro:
+arquivos sob uma rota inexistente dariam 404 na própria URL canônica.
 
 ### 4.1 Ensaio
 

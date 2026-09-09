@@ -69,6 +69,35 @@ test.describe('pages render from the CMS', () => {
     const res = await page.goto('/filmes/nao-existe-em-lugar-nenhum');
     expect(res?.status()).toBe(404);
   });
+
+  /*
+   * The WordPress archive published everything at the root, so `/{slug}` has to resolve
+   * against the CMS rather than out of a redirect table. Against the fixture provider
+   * that is a lookup in an in-memory array; here it goes through the slug filter, the
+   * fallback scan and the taxonomy hydration — the parts that can actually be wrong.
+   */
+  test('a bare article slug resolves through the CMS and redirects to its desk', async ({ page }) => {
+    const article = CORPUS_ARTICLES[5];
+    expect(article).toBeDefined();
+    const slug = String(article?.slug);
+
+    const res = await page.goto(`/${slug}`);
+    expect(res?.status()).toBe(200);
+    const pathname = new URL(page.url()).pathname;
+    expect(pathname).not.toBe(`/${slug}`);
+    expect(pathname.endsWith(`/${slug}`)).toBe(true);
+    expect(pathname.split('/').filter(Boolean)).toHaveLength(2);
+  });
+
+  test('a bare tag slug redirects to the tag archive', async ({ page }) => {
+    await page.goto('/longform');
+    expect(new URL(page.url()).pathname).toBe('/tag/longform');
+  });
+
+  test('a segment that is neither article nor tag is still a 404', async ({ page }) => {
+    const res = await page.goto('/isto-nao-e-nada-disso');
+    expect(res?.status()).toBe(404);
+  });
 });
 
 test.describe('search runs against the CMS', () => {

@@ -13,16 +13,32 @@ import { CliError, rateLimiter } from './cli';
  * plugin setting. The charter is explicit about that, and it matters operationally: the
  * legacy site stays live and unchanged for the thirty days after the switch.
  *
- * **Reads go through the REST API, and only the REST API.** There is no `--wxr` flag and
- * no SQL reader; an earlier version of this comment claimed the first one, which was a
- * lie a reader could not detect until the day it mattered.
+ * **This file reads the REST API and nothing else.** There is no WXR reader here; an
+ * early version of this comment claimed one, which was a lie a reader could not detect
+ * until the day it mattered.
  *
- * An archive that arrives as a database dump is therefore restored locally and served by
- * a WordPress the importer can talk to — the procedure is in the runbook, and
- * `pnpm import:sandbox` is the same shape with stand-ins in place of the real archive.
- * Adding a file reader later means implementing this class's async-generator surface and
- * nothing else; every consumer speaks to that, not to HTTP.
+ * A database dump is read by `archive.ts`, which implements `WpReadSource` — the surface
+ * below — and shares these schemas, so both readers are provably the same shape to every
+ * consumer. That file was written after the archive arrived, which is the only honest
+ * moment to write it: table prefix, plugins and charset are facts about a particular
+ * export, not things to guess at in advance.
  */
+
+/**
+ * What a reader of a WordPress corpus has to offer.
+ *
+ * Deliberately narrow. `import.ts` and `build-redirects.ts` speak to this and never to
+ * HTTP or to a file, which is what lets the same importer run against a live site and
+ * against a dump with no branching anywhere except the line that constructs one.
+ */
+export interface WpReadSource {
+  posts(since?: string): AsyncGenerator<WpPost[]>;
+  categories(): AsyncGenerator<WpTerm[]>;
+  tags(): AsyncGenerator<WpTerm[]>;
+  authors(): AsyncGenerator<WpAuthor[]>;
+  media(): AsyncGenerator<WpMedia[]>;
+  fetchAsset(url: string, maxBytes: number, maxHops?: number): Promise<{ data: Buffer; mimeType: string } | null>;
+}
 
 const wpRendered = z.object({ rendered: z.string() }).transform((v) => v.rendered);
 
@@ -74,6 +90,26 @@ export const wpMediaSchema = z.object({
     })
     .default({}),
 });
+
+/**
+ * A WordPress `post_name`, as text.
+ *
+ * WordPress percent-encodes anything outside ASCII in a slug, so five posts in this
+ * archive are stored as `como-treinar-seu-%e0%aa%85-dragao-streaming` — a stray Gujarati
+ * letter that some editing tool dropped in. Slugifying that string without decoding it
+ * first turns the escape into content: `como-treinar-seu-e0-aa-85-dragao-streaming`,
+ * which becomes the article's permanent URL.
+ *
+ * A malformed escape is left exactly as it is; `decodeURIComponent` throws on those, and
+ * a slug that cannot be decoded is still a slug.
+ */
+export function wpSlug(name: string): string {
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name;
+  }
+}
 
 export type WpPost = z.infer<typeof wpPostSchema>;
 export type WpTerm = z.infer<typeof wpTermSchema>;
@@ -156,7 +192,7 @@ async function defaultLookup(host: string): Promise<string[]> {
   return records.map((r) => r.address);
 }
 
-export class WordPressSource {
+export class WordPressSource implements WpReadSource {
   private readonly baseUrl: string;
   private readonly auth: string | undefined;
   private readonly pace: () => Promise<void>;

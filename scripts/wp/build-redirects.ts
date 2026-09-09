@@ -4,8 +4,10 @@ import path from 'node:path';
 
 import { COMMON_FLAGS, Counter, parseArgs, printHelp, printSummary, runAsScript, type RunSummary } from './cli';
 import { safeInternalPath, normalise } from '../../lib/redirects';
-import { WordPressSource } from './source';
+import { WordPressArchive } from './archive';
+import { WordPressSource, wpSlug, type WpReadSource } from './source';
 import { KalElTarget } from './target';
+import { deskFor, deskOf, loadCategoryMap } from './taxonomy';
 import { slugify } from '@mn/content';
 
 /**
@@ -39,6 +41,19 @@ const FLAGS = [
     default: 'data/import/redirects.csv',
   },
   { name: 'table', description: 'output table', type: 'string' as const, default: 'data/legacy-redirects.json' },
+  {
+    name: 'source',
+    description: 'where WordPress is read from: rest (a live site) or archive (a .sql dump)',
+    type: 'string' as const,
+    default: 'rest',
+  },
+  { name: 'dump', description: 'archive source: path to the .sql or .sql.gz dump', type: 'string' as const },
+  {
+    name: 'category-map',
+    description: 'JSON of "wp-category-slug": "desk-slug" overrides',
+    type: 'string' as const,
+    default: 'data/import/category-map.json',
+  },
 ];
 
 interface Entry {
@@ -77,13 +92,14 @@ async function main(): Promise<void> {
   }
 
   const apply = values.apply === true;
+  const sourceKind = String(values.source);
   const tablePath = String(values.table);
   const outDir = String(values.out);
   const summary: RunSummary = {
     tool: 'redirects:build',
     runId: new Date().toISOString(),
     applied: apply,
-    counts: new Counter(['kalel', 'wordpress', 'csv', 'kept', 'rejected', 'conflicts']),
+    counts: new Counter(['kalel', 'wordpress', 'csv', 'kept', 'rejected', 'conflicts', 'coveredByRule', 'noDesk']),
     failures: [],
     artefacts: [],
   };
@@ -109,41 +125,67 @@ async function main(): Promise<void> {
     }
   }
 
-  // 2. WordPress — every published permalink to its new address.
-  if (process.env.WP_BASE_URL) {
+  /*
+   * 2. WordPress — the permalinks the runtime rule does *not* cover.
+   *
+   * The archive settled two things that used to be guesses. Permalinks are
+   * `/%postname%/`, so a legacy article URL is a bare slug at the root; and
+   * `/[categoria]` now resolves an unknown segment against the CMS and 301s it to the
+   * article's real address. Between them, 41.313 of the 41.318 articles need no table
+   * entry at all — the rule is complete for them, and writing them down anyway put 5 MB
+   * of JSON into the edge middleware bundle.
+   *
+   * What is left is the genuine exception: a post whose slug is not what the runtime
+   * would look up. Five posts in this archive, all carrying a stray percent-encoded
+   * character that `slugify` removes.
+   *
+   * The desk comes from `deskFor`, not from `post.categories[0]`. WordPress orders a
+   * post's categories by term id, so the first one is usually the oldest it was ever
+   * filed under: in this archive `categories[0]` is a desk for 8.459 posts and
+   * `noticias` for most of the other 32.858, which would have sent four out of five
+   * redirects to a section that does not exist.
+   */
+  if (process.env.WP_BASE_URL || sourceKind === 'archive') {
     try {
-      const source = WordPressSource.fromEnv({ requestsPerSecond: Number(values.rate) });
-      const categoriesById = new Map<number, string>();
+      const source: WpReadSource =
+        sourceKind === 'archive'
+          ? WordPressArchive.fromEnv({ ...(values.dump ? { dumpPath: String(values.dump) } : {}) })
+          : WordPressSource.fromEnv({ requestsPerSecond: Number(values.rate) });
+
+      const overrides = await loadCategoryMap(String(values['category-map']));
+      const deskById = new Map<number, string>();
       for await (const batch of source.categories()) {
-        for (const term of batch) categoriesById.set(term.id, slugify(term.slug || term.name));
+        for (const term of batch) {
+          const desk = deskOf(slugify(term.slug || term.name), overrides);
+          if (desk) deskById.set(term.id, desk);
+        }
       }
 
       for await (const batch of source.posts()) {
         for (const post of batch) {
-          const desk = categoriesById.get(post.categories[0] ?? -1);
-          if (!desk) continue;
-          const to = `/${desk}/${slugify(post.slug)}`;
-
-          // The real permalink shape is still unconfirmed (docs/04, open question 1), so
-          // every common form is emitted. A redirect that is never hit costs nothing; a
-          // missing one costs the traffic.
-          const legacy = new URL(post.link).pathname;
-          const published = new Date(`${post.date_gmt}Z`);
-          const yyyy = String(published.getUTCFullYear());
-          const mm = String(published.getUTCMonth() + 1).padStart(2, '0');
-          const dd = String(published.getUTCDate()).padStart(2, '0');
-
-          for (const from of [
-            legacy,
-            `/${yyyy}/${mm}/${slugify(post.slug)}`,
-            `/${yyyy}/${mm}/${dd}/${slugify(post.slug)}`,
-            `/?p=${post.id}`,
-            `/slug/${slugify(post.slug)}`,
-          ]) {
-            if (normalise(from) === normalise(to)) continue;
-            collected.push({ from, to, status: 301, source: 'wordpress' });
-            summary.counts.inc('wordpress');
+          const desk = deskFor(
+            post.categories.map((id) => deskById.get(id)).filter((s): s is string => s !== undefined),
+            overrides,
+          );
+          if (!desk) {
+            summary.counts.inc('noDesk');
+            continue;
           }
+          const slug = slugify(wpSlug(post.slug));
+          const to = `/${desk}/${slug}`;
+          const legacy = normalise(new URL(post.link).pathname);
+
+          // Exactly the condition the runtime rule cannot satisfy: the legacy URL is not
+          // a single segment, or that segment is not the slug the article now has.
+          const segments = legacy.split('/').filter(Boolean);
+          const covered = segments.length === 1 && segments[0] === slug;
+          if (covered || normalise(legacy) === normalise(to)) {
+            summary.counts.inc('coveredByRule');
+            continue;
+          }
+
+          collected.push({ from: legacy, to, status: 301, source: 'wordpress' });
+          summary.counts.inc('wordpress');
         }
       }
     } catch (err) {
@@ -209,7 +251,14 @@ async function main(): Promise<void> {
   const reportPath = path.join(outDir, 'redirects-report.json');
   await writeFile(
     reportPath,
-    JSON.stringify({ counts: summary.counts.toJSON(), conflicts: conflicts.slice(0, 200) }, null, 2),
+    // The rules themselves, not just how many. Now that the runtime rule covers the
+    // bulk, what survives here is the exceptional handful, and an operator reviewing a
+    // migration needs to read them rather than take a count on trust.
+    JSON.stringify(
+      { counts: summary.counts.toJSON(), conflicts: conflicts.slice(0, 200), rules: rows.slice(0, 200) },
+      null,
+      2,
+    ),
     'utf8',
   );
   summary.artefacts.push(reportPath);

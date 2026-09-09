@@ -29,10 +29,22 @@ export interface FakeWordPress {
 
 const rendered = (html: string) => ({ rendered: html });
 
+/**
+ * Two desks and one category that is not a desk.
+ *
+ * The real archive has 8.619 categories and six desks, and `noticias` — on 32.781 of the
+ * 41.318 posts — is the shape that matters: a category every article carries which the
+ * portal has no route for. With only desks here, the demotion rule was untested and a
+ * one-to-one import looked correct.
+ */
 const CATEGORIES = [
   { id: 3, name: 'Filmes', slug: 'filmes', description: 'Cinema.', parent: 0, count: 3 },
   { id: 5, name: 'Séries', slug: 'series', description: 'TV.', parent: 0, count: 3 },
+  { id: 9, name: 'Notícias', slug: 'noticias', description: 'Tudo.', parent: 0, count: 6 },
 ];
+
+/** How many of those are desks, and therefore Kal El categories. */
+const DESK_CATEGORIES = 2;
 
 const TAGS = [
   { id: 11, name: 'Marvel', slug: 'marvel' },
@@ -106,7 +118,10 @@ function postRows(origin: string): Record<string, unknown>[] {
     // Numeric ids, exactly as WordPress sends them.
     author: i % 2 === 0 ? 2 : 7,
     featured_media: i % 2 === 0 ? 101 : 102,
-    categories: [i % 2 === 0 ? 3 : 5],
+    // The desk is second, as in the real archive: WordPress orders by term id and
+    // `noticias` (9) is newer here only by construction — what matters is that the
+    // importer must not read position 0 as the desk.
+    categories: [9, i % 2 === 0 ? 3 : 5],
     tags: i % 3 === 0 ? [11, 12] : [11],
   }));
 }
@@ -172,8 +187,10 @@ export async function startFakeWordPress(port = 0): Promise<FakeWordPress> {
 
 export const expected = {
   posts: POST_COUNT,
-  categories: CATEGORIES.length,
-  tags: TAGS.length,
+  categories: DESK_CATEGORIES,
+  categoriesInWordPress: CATEGORIES.length,
+  // Kal El tags: the two real tags plus the category that was demoted into one.
+  tags: TAGS.length + (CATEGORIES.length - DESK_CATEGORIES),
   authors: USERS.length,
   media: MEDIA_COUNT,
 };

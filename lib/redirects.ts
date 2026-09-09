@@ -89,9 +89,15 @@ const WP_RULES: { test: RegExp; to: string; status: 301 | 410; dropQuery?: boole
 /**
  * Date-based permalinks.
  *
- * The real WordPress pattern is still unconfirmed (docs/04, open question 1), so both
- * common shapes are handled and the article is looked up by slug. If the archive turns
- * out to use a third shape, this is the one function that changes.
+ * The archive settled the open question: `permalink_structure` is `/%postname%/`, so the
+ * site's own URLs are bare slugs and nothing here was ever published under a date. The
+ * shape is still handled because links written by other people outlive a settings
+ * change, and it costs one regex.
+ *
+ * It resolves to the slug form rather than to a table entry. `/[categoria]` looks an
+ * unknown segment up in the CMS and 301s it to the article's real address, so sending
+ * `/2024/05/foo` to `/foo` reaches the same answer without 41.318 rows of JSON in the
+ * edge bundle to encode a rule with no exceptions in it.
  */
 const DATE_PERMALINK = /^\/(?:\d{4})\/(?:\d{2})(?:\/(?:\d{2}))?\/([a-z0-9-]+)$/;
 
@@ -119,8 +125,10 @@ export function legacyRedirect(pathname: string, searchParams: URLSearchParams):
 
   const dated = DATE_PERMALINK.exec(path);
   if (dated?.[1]) {
+    // An explicit entry still wins — an operator CSV may know this one went elsewhere.
     const mapped = TABLE.get(normalise(`/slug/${dated[1]}`));
     if (mapped) return mapped;
+    return { to: `/${dated[1]}`, status: 301 };
   }
 
   return null;

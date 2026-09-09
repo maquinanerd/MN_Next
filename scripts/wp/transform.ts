@@ -7,7 +7,7 @@ import { EMBED_PROVIDERS, safeHref, sanitizeHtml, slugify, toPlainText } from '@
  * The most under-estimated part of a news migration: ten years of editorial HTML does
  * not convert cleanly, and the failure mode that matters is *silent* loss. So every node
  * this converter cannot represent is counted and sampled into a report rather than
- * dropped quietly, and the caller decides whether the残 rate is acceptable.
+ * dropped quietly, and the caller decides whether the loss rate is acceptable.
  *
  * No DOM library: the parser is a small, deliberately boring tokenizer over an
  * already-sanitised string. It only has to understand the block-level shapes WordPress
@@ -153,11 +153,36 @@ export function embedProviderFor(url: string): EmbedProvider | null {
  * body containing two different shortcodes does not collapse into one match.
  */
 const SHORTCODE_RE = /\[([a-z0-9_-]+)([^\]]*)\](?:([\s\S]*?)\[\/\1\])?/gi;
+
+/**
+ * Whether a bracket expression is shortcode *syntax* rather than prose in brackets.
+ *
+ * Three signals, any of which is enough, and none of which ordinary Portuguese produces:
+ * a closing `[/name]`, a name in snake_case or kebab-case, or `key="value"` attributes.
+ * Measured against the whole archive, this keeps every interpolation an editor wrote and
+ * removes `[powerkit_toc title="Table of Contents"]`.
+ */
+export function isShortcodeSyntax(name: string, attrs: string, inner: string | undefined): boolean {
+  if (inner !== undefined) return true;
+  if (/[_-]/.test(name)) return true;
+  return /[a-z0-9_-]+\s*=\s*["']/i.test(attrs);
+}
+
 export interface TransformOptions {
   postId: string | number;
   /** Maps a legacy media URL to an already-imported Kal El image. */
   resolveImage: (src: string) => Image | null;
   report: TransformReport;
+  /**
+   * The legacy site's own hostname.
+   *
+   * Only used to tell two very different failures apart. 45.173 of the archive's 87.771
+   * body images are hotlinked from other publishers — `static0.srcdn.com`,
+   * `variety.com`, `www.hollywoodreporter.com` — and 28.140 come from the site's own
+   * media library. Both used to be counted as `image:unresolved`, which turned a
+   * licensing question and a broken-mapping bug into one indistinguishable number.
+   */
+  siteHost?: string;
 }
 
 /**
@@ -167,7 +192,7 @@ export interface TransformOptions {
  * sanitising first would strip the very markers the shortcode handler looks for.
  */
 export function htmlToBlocks(rawHtml: string, options: TransformOptions): ContentBlock[] {
-  const { postId, resolveImage, report } = options;
+  const { postId, report } = options;
 
   /*
    * WordPress shortcodes.
@@ -224,12 +249,57 @@ export function htmlToBlocks(rawHtml: string, options: TransformOptions): Conten
         return `<p>${url}</p>`;
       }
 
+      /*
+       * Square brackets that are not a shortcode.
+       *
+       * WordPress expands *registered* shortcodes and prints everything else verbatim,
+       * and this site registers almost none — Powerkit, whose `[powerkit_toc]` appears
+       * 40 times, is not even in `active_plugins`. So most bracket expressions in the
+       * archive are ordinary prose, and deleting them mangles real sentences:
+       *
+       *   "Eu trocava ideias com [a presidente da Lucasfilm] Kathleen Kennedy"
+       *   "eu era sincero ao pensar que era o fim [risos]"
+       *   "…Sit Down With [SPOILER]"
+       *
+       * The first is a standard journalistic interpolation, the second the Portuguese
+       * transcription marker for laughter, the third part of a headline. All three used
+       * to vanish. They are kept now, and only unambiguous shortcode *syntax* is
+       * removed — a name with an underscore or hyphen, `key="value"` attributes, or a
+       * matching closing tag.
+       */
+      if (!isShortcodeSyntax(kind, attrs, inner)) {
+        note(report, `bracket-text:${kind}`, postId, full);
+        return full;
+      }
+
       note(report, `shortcode:${kind}`, postId, full);
       return '';
     },
   );
 
-  const { html, report: sanitiseReport } = sanitizeHtml(withShortcodes);
+  /*
+   * Video iframes, before the sanitiser reaches them.
+   *
+   * The sanitiser drops `<iframe>` unconditionally and it is right to — an iframe from a
+   * ten-year archive is third-party code running on our origin. But in classic-editor
+   * content a YouTube embed *is* an iframe, and dropping it silently loses the video:
+   * 454 of them here. Rewriting the recognised providers into the bare-URL form the
+   * paragraph branch already understands keeps the video and still never emits a frame,
+   * because `EmbedBlock` renders a facade and only loads the player on a click.
+   *
+   * An iframe from anywhere else is left exactly where it is, so the sanitiser removes
+   * it and counts it. That count is the report line that says what was thrown away.
+   */
+  const withEmbeds = withShortcodes.replace(
+    /<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>(?:[\s\S]*?<\/iframe>)?/gi,
+    (full: string, rawSrc: string) => {
+      const url = safeHref(rawSrc);
+      if (!url || !embedProviderFor(url)) return full;
+      return `<p>${url}</p>`;
+    },
+  );
+
+  const { html, report: sanitiseReport } = sanitizeHtml(withEmbeds);
   for (const [tag, count] of Object.entries(sanitiseReport.droppedTags)) {
     report.droppedTags[tag] = (report.droppedTags[tag] ?? 0) + count;
   }
@@ -248,7 +318,7 @@ export function htmlToBlocks(rawHtml: string, options: TransformOptions): Conten
     const imgAttrs = match[3];
 
     if (imgAttrs !== undefined) {
-      pushImage(imgAttrs, blocks, resolveImage, report, postId);
+      pushImage(imgAttrs, blocks, options);
       continue;
     }
 
@@ -300,10 +370,24 @@ export function htmlToBlocks(rawHtml: string, options: TransformOptions): Conten
         const imgMatch = /<img\b([^>]*)\/?>/i.exec(inner);
         const caption = /<figcaption\b[^>]*>([\s\S]*?)<\/figcaption>/i.exec(inner)?.[1];
         if (!imgMatch) {
+          /*
+           * A Gutenberg embed: `wp:embed` saves the URL as text inside a `<figure>`, and
+           * the oEmbed filter turns it into an iframe only at render time. Reading raw
+           * `post_content` there is no iframe to find — just a figure with a Twitter or
+           * YouTube link in it, which used to be reported as a figure with no image and
+           * dropped. 302 of them in this archive.
+           */
+          const bare = /^https?:\/\/\S+$/.exec(toPlainText(inner).trim());
+          const url = bare ? safeHref(bare[0]) : null;
+          const provider = url ? embedProviderFor(url) : null;
+          if (url && provider) {
+            blocks.push({ type: 'embed', provider, url });
+            continue;
+          }
           note(report, 'figure:no-image', postId, inner);
           continue;
         }
-        pushImage(imgMatch[1] ?? '', blocks, resolveImage, report, postId, caption ? toPlainText(caption) : undefined);
+        pushImage(imgMatch[1] ?? '', blocks, options, caption ? toPlainText(caption) : undefined);
         continue;
       }
       case 'table': {
@@ -336,11 +420,15 @@ export function htmlToBlocks(rawHtml: string, options: TransformOptions): Conten
     }
   }
 
-  // A shortcode that reached this point was neither converted nor stripped; it would
-  // otherwise sit in the body as literal text, which is the loss this file exists to
-  // make visible.
-  for (const leftover of html.matchAll(/\[([a-z0-9_-]+)[^\]]*\]/gi)) {
-    note(report, `shortcode:unconverted:${(leftover[1] ?? '').toLowerCase()}`, postId, leftover[0]);
+  // Shortcode *syntax* that reached this point was neither converted nor stripped, and
+  // would sit in the body as literal `[name attr="x"]`. Prose in brackets is skipped by
+  // the same test used above: reporting `[risos]` here as an unconverted shortcode put
+  // 1.700 lines of ordinary Portuguese into the migration report as if they were
+  // defects, and buried the handful that are.
+  for (const leftover of html.matchAll(/\[([a-z0-9_-]+)([^\]]*)\]/gi)) {
+    const name = (leftover[1] ?? '').toLowerCase();
+    if (!isShortcodeSyntax(name, leftover[2] ?? '', undefined)) continue;
+    note(report, `shortcode:unconverted:${name}`, postId, leftover[0]);
   }
 
   if (blocks.length === 0 && toPlainText(html).trim() !== '') {
@@ -360,23 +448,49 @@ function plain(content: RichText): string {
     .trim();
 }
 
-function pushImage(
-  attrs: string,
-  blocks: ContentBlock[],
-  resolveImage: (src: string) => Image | null,
-  report: TransformReport,
-  postId: string | number,
-  caption?: string,
-): void {
+/**
+ * Why an image could not be placed.
+ *
+ * A body image the importer cannot resolve is one of two entirely different problems. If
+ * it points at the legacy site, the media library should have had it and the mapping is
+ * broken — a bug. If it points somewhere else, the article was hotlinking another
+ * publisher's file, and whether it can be carried over is a licensing decision, not an
+ * engineering one. Naming the host is what lets that decision be made.
+ */
+function unresolvedKind(src: string, siteHost?: string): string {
+  try {
+    const host = new URL(src).hostname.toLowerCase();
+    if (!siteHost || host === siteHost.toLowerCase()) return 'image:unresolved';
+    return `image:external:${host}`;
+  } catch {
+    // A rooted path or a shortcode placeholder: not a host question.
+    return 'image:unresolved';
+  }
+}
+
+function pushImage(attrs: string, blocks: ContentBlock[], options: TransformOptions, caption?: string): void {
+  const { resolveImage, report, postId, siteHost } = options;
   const src = /src\s*=\s*"([^"]*)"/.exec(attrs)?.[1];
   const alt = /alt\s*=\s*"([^"]*)"/.exec(attrs)?.[1] ?? '';
   if (!src) {
+    /*
+     * No usable `src`. The tag reaching here has already been sanitised, so a URL the
+     * sanitiser refused is indistinguishable at this point from a tag that never had
+     * one — the count that separates them is `droppedAttributes['img@src:unsafe']`.
+     *
+     * In this archive that is essentially all of them: 14.445 images carry a URL with
+     * spaces and line breaks inside the host and the path —
+     * `https://lumiere-a. akamaihd.\n\nnet/v1/images/image_49e88d01. jpeg. region=…` —
+     * damage done by whatever wrote the article. They are not recoverable without the
+     * original source, and guessing where the spaces used to be would fabricate URLs.
+     * Thirteen tags in the whole archive genuinely have `src=""`.
+     */
     note(report, 'image:no-src', postId, attrs);
     return;
   }
   const image = resolveImage(src);
   if (!image) {
-    note(report, 'image:unresolved', postId, src);
+    note(report, unresolvedKind(src, siteHost), postId, src);
     return;
   }
   if (alt.trim() === '') report.imagesMissingAlt += 1;

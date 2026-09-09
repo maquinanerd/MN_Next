@@ -12,25 +12,26 @@ que não pôde ser verificado está na seção de pendências em vez de marcado 
 
 ## 1. Gates executados
 
-| Gate                    | Comando                 | Resultado                                                    |
-| ----------------------- | ----------------------- | ------------------------------------------------------------ |
-| Formatação              | `pnpm format:check`     | ✅ _All matched files use Prettier code style_               |
-| Lint                    | `pnpm lint`             | ✅ 0 problemas                                               |
-| Tipos                   | `pnpm typecheck`        | ✅ 0 erros (`strict`, `noUncheckedIndexedAccess`, sem `any`) |
-| Unit                    | `pnpm test:unit`        | ✅ **115 passed**                                            |
-| Contrato                | `pnpm test:contract`    | ✅ **56 passed**                                             |
-| Integração              | `pnpm test:integration` | ✅ **56 passed**                                             |
-| Segurança               | `pnpm test:security`    | ✅ **42 passed**                                             |
-| **Entrega Kal El**      | `pnpm test:kalel`       | ✅ **26 passed** — a app em `CONTENT_SOURCE=kalel`           |
-| Build                   | `pnpm build`            | ✅ compila; home estática, artigo e editoria em SSG+ISR      |
-| E2E                     | `pnpm test:e2e`         | ✅ incluído nos 469 abaixo                                   |
-| Acessibilidade          | `pnpm test:a11y`        | ✅ incluído nos 469 abaixo                                   |
-| Visual                  | `pnpm test:visual`      | ✅ incluído nos 469 abaixo                                   |
-| Playwright (total)      | `npx playwright test`   | ✅ **469 passed** em 4 viewports                             |
-| Performance             | `pnpm test:performance` | ✅ JS 109 KB / 120 · CSS 14 KB / 25                          |
-| Ferramentas de migração | `--help` nas três       | ✅ exit 0                                                    |
+| Gate                    | Comando                           | Resultado                                                    |
+| ----------------------- | --------------------------------- | ------------------------------------------------------------ |
+| Formatação              | `pnpm format:check`               | ✅ _All matched files use Prettier code style_               |
+| Lint                    | `pnpm lint`                       | ✅ 0 problemas                                               |
+| Tipos                   | `pnpm typecheck`                  | ✅ 0 erros (`strict`, `noUncheckedIndexedAccess`, sem `any`) |
+| Unit                    | `pnpm test:unit`                  | ✅ **140 passed**                                            |
+| Contrato                | `pnpm test:contract`              | ✅ **56 passed**                                             |
+| Integração              | `pnpm test:integration`           | ✅ **82 passed**                                             |
+| Segurança               | `pnpm test:security`              | ✅ **42 passed**                                             |
+| **Entrega Kal El**      | `pnpm test:kalel`                 | ✅ **29 passed** — a app em `CONTENT_SOURCE=kalel`           |
+| Build                   | `pnpm build`                      | ✅ compila; home estática, artigo e editoria em SSG+ISR      |
+| E2E                     | `pnpm test:e2e`                   | ✅ incluído nos 485 abaixo                                   |
+| Acessibilidade          | `pnpm test:a11y`                  | ✅ incluído nos 485 abaixo                                   |
+| Visual                  | `pnpm test:visual`                | ✅ incluído nos 485 abaixo                                   |
+| Playwright (total)      | `npx playwright test`             | ✅ **485 passed**, 3 pulados, em 4 viewports                 |
+| Performance             | `pnpm test:performance`           | ✅ JS 109 KB / 120 · CSS 18 KB / 25                          |
+| Ferramentas de migração | `--help` nas três                 | ✅ exit 0                                                    |
+| **Arquivo WordPress**   | `pnpm wp:import --source archive` | ✅ ensaio completo sobre 41.318 posts; nada escrito          |
 
-**Total: 269 testes Node + 469 de browser fixture + 26 de browser Kal El = 764
+**Total: 320 testes Node + 485 de browser fixture + 29 de browser Kal El = 834
 verificações.**
 
 O orçamento de performance é medido sobre o bundle produzido, não por Lighthouse:
@@ -90,6 +91,46 @@ do WordPress, o Kal El falso ganhou escrita com `externalKey`, `Idempotency-Key`
 - **O comentário em `source.ts` afirmava existir um `--wxr`.** Nunca existiu. O caminho
   para um dump SQL está no runbook, com a sequência exata do inventário à verificação.
 
+### Wave 3.1 — o arquivo real, lido
+
+O backup foi entregue: `127_0_0_1.sql`, 1,66 GB, dump phpMyAdmin de 21/08/2026. Não é uma
+amostra — é o site inteiro, **41.318 posts publicados entre 03/01/2018 e 21/08/2026**,
+73.173 anexos, 8.619 categorias, 36.438 tags, 6 autores.
+
+`scripts/wp/archive.ts` lê o dump direto, sem restaurar banco nenhum e **sem abrir
+nenhuma conexão de rede**. Implementa `WpReadSource`, a mesma interface da REST — agora um
+tipo, não uma promessa em comentário.
+
+Nada abaixo foi deduzido do design. Cada item apareceu ao rodar o importador de verdade
+contra os 41.318 artigos, e teria passado despercebido em qualquer corpus sintético:
+
+| Achado                                                  | Escala                                     | O que era                                                                                                                                                             |
+| ------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **45% do arquivo é do editor clássico e não tem `<p>`** | 18.786 posts                               | O parser só lê tags de bloco. Esses artigos importariam com as figuras e **nenhuma palavra do texto**, e o relatório contaria sucesso. `wpautop` portado.             |
+| **`categories[0]` não é a editoria**                    | 32.858 de 41.318                           | O WordPress ordena por term id; a primeira categoria é `noticias` na maioria. `build-redirects.ts` usava isso e mandaria 4 em 5 redirects para uma seção inexistente. |
+| **8.619 categorias para 6 editorias**                   | 8.613 rebaixadas                           | Importar uma a uma criaria 8.613 segmentos de rota. Viram tags; nada é descartado.                                                                                    |
+| **A tabela de redirects não cabe no edge**              | 5,06 MB / 206.590 entradas                 | `middleware.ts` importa o JSON e roda a cada requisição. Virou resolução no CMS: **17 entradas** restam.                                                              |
+| **Colchetes de prosa apagados como shortcode**          | ~1.700 trechos                             | `[risos]`, `[a presidente da Lucasfilm]`, `[SPOILER]` — o WordPress imprime esses literalmente e o conversor os deletava.                                             |
+| **68% das imagens de corpo não são nossas**             | 44.304 hotlink + 14.445 com URL corrompida | Decisão de licenciamento do operador, não de engenharia. O relatório agora quebra por domínio.                                                                        |
+| **`guid` aponta para um host morto**                    | 73.173 anexos                              | `http://13.48.147.139`. Montar a URL a partir dele faria 73 mil requisições a uma máquina desligada.                                                                  |
+| **Colisão de slug**                                     | 3 posts                                    | `slugify` corta em 120 caracteres; manchetes deste jornal chegam lá.                                                                                                  |
+| **Slug com escape percent**                             | 5 posts                                    | `%e0%aa%85` virava `e0-aa-85` na URL definitiva. Decodificado antes.                                                                                                  |
+| **Vídeos perdidos na sanitização**                      | 454 iframes + 302 figuras                  | Embeds do YouTube e do X. Convertidos antes do sanitizador, que continua removendo iframe de qualquer outra origem.                                                   |
+| **`/embed/ID` do YouTube quebrava o player**            | —                                          | `frameSrc` lia o caminho inteiro como id.                                                                                                                             |
+
+O ensaio completo roda em ~3 minutos e produz `artifacts/migration/full/`:
+
+```bash
+WP_ARCHIVE_DUMP='…/127_0_0_1.sql' pnpm wp:import --source archive
+```
+
+```
+read 41318 · skipped 41020 · failed 298 · categoriesAsTags 8613 · noDesk 298 · slugCollision 3
+```
+
+**Nada foi escrito em lugar nenhum.** Sem `--apply` o cliente do Kal El nem é construído,
+e as credenciais do CMS de produção continuam ausentes.
+
 ### Wave 4 — fidelidade visual
 
 A comparação lado a lado com os `*.dc.html` mostrou que a home não estava mais pobre:
@@ -124,9 +165,10 @@ estava **incompleta**. Três módulos do protótipo não existiam. Detalhe em
 | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Scripts com help, dry-run, resume, relatório | ✅ dry run é o padrão; sem `--apply` o cliente de escrita nem é construído                                                                                |
 | Reexecução sem duplicar                      | ✅ **executado**: o CLI real, duas vezes, contra stand-ins que impõem `externalKey`, `Idempotency-Key` e `If-Match`. Segunda passada reporta `created: 0` |
-| Parser sanitiza e contabiliza desconhecidos  | ✅ 58 testes; quatro bugs reais encontrados por eles (ver §3)                                                                                             |
-| Mapa de redirects e 410                      | ✅ permalinks, `?p=`, feeds, `wp-json`; sem open redirect (19 testes)                                                                                     |
-| Amostra de URLs com zero 404                 | ❌ **não verificável**: a amostra não existe — pendência 2                                                                                                |
+| Lê o arquivo real                            | ✅ **executado sobre os 41.318 posts**: `--source archive` lê o dump de 1,66 GB sem restaurar banco e sem rede. 11 defeitos que só o corpus real expõe    |
+| Parser sanitiza e contabiliza desconhecidos  | ✅ 83 testes; onze bugs reais encontrados por eles (ver §3 e Wave 3.1)                                                                                    |
+| Mapa de redirects e 410                      | ✅ permalink confirmado (`/%postname%/`); a regra é resolvida no CMS e a tabela guarda só as **17** exceções; sem open redirect (19 testes)               |
+| Amostra de URLs com zero 404                 | ❌ **não verificável**: a amostra não existe — pendência 1                                                                                                |
 
 ### SEO, performance, segurança
 
@@ -255,6 +297,23 @@ Fechar o ciclo exigiu também um ajuste estrutural: os três scripts de migraç�
 `main()` no topo do módulo, então importar um deles para testar uma função executava a
 migração com o argv do test runner. Agora usam `runAsScript(import.meta.url, main)`.
 
+**Rodada 7 — Codex indisponível** (`artifacts/codex-reviews/wave-3-arquivo-inicial.md`).
+A CLI está instalada e autenticada, mas a conta resolve para `gpt-6-astra`, que a API
+recusa em `codex-cli 0.151.0`: _"requires a newer version of Codex"_. Quatro modelos
+alternativos foram tentados e respondem _"not supported when using Codex with a ChatGPT
+account"_. O `CLAUDE.md` cobre o caso — não instalar, não interromper, registrar e fazer a
+auditoria equivalente. A revisão substituta está no arquivo, com o log do erro ao lado, e
+**identificada como não independente**. Três achados, todos corrigidos:
+
+- **ALTO** — `lib/legacy-permalink.ts` montava o destino do 301 com dois campos vindos do
+  CMS e chamava `permanentRedirect` direto. Um slug começando com `/` produziria `//host`,
+  que o navegador lê como URL absoluta: redirecionador aberto com o Kal El como ponto de
+  injeção. Passa por `safeInternalPath` agora, como a tabela legada sempre passou.
+- **MÉDIO** — o escudo de `<pre>` no `wpautop` casava sem `\b`, então `<prefix>` engoliria
+  tudo até o próximo `</pre>` e devolveria o trecho sem parágrafo nenhum.
+- **BAIXO** — `DESK_PRECEDENCE` podia divergir de `DESK_SLUGS` sem que nada reclamasse;
+  agora um teste exige que as duas listas coincidam.
+
 > Nenhuma rodada foi simulada. Quando o revisor independente não pôde rodar, isso está
 > dito, e a revisão substituta está identificada como tal.
 
@@ -277,16 +336,19 @@ pedido e uma divergência cai no índice completo.
 
 Nenhuma é contornável por código.
 
-| #   | Pendência                             | O que bloqueia                                          | Como resolver                                                                                                 |
-| --- | ------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| 1   | Amostra de URLs de maior tráfego      | o critério **zero 404**, que é bloqueante de lançamento | exportar do Search Console para `data/import/top-urls.txt` e rodar `pnpm urls:verify`                         |
-| 2   | Padrão real de permalink do WordPress | tamanho do mapa de redirects                            | confirmar em Configurações → Links permanentes                                                                |
-| 3   | Modelo comercial no Kal El            | BuyBox e nota de review com conteúdo do CMS             | aceitar a proposta em [KAL-EL-DISCOVERY.md](./KAL-EL-DISCOVERY.md)                                            |
-| 4   | Credenciais do Kal El                 | rodar contra o CMS real                                 | `KAL_EL_BASE_URL`, `KAL_EL_SITE_ID`, `KAL_EL_SERVICE_TOKEN`, `KAL_EL_WEBHOOK_SECRET`, `KAL_EL_PREVIEW_SECRET` |
-| 5   | Endpoint interno do Cinerie           | "Onde assistir" com dado real                           | `CINERIE_INTERNAL_URL`, `CINERIE_SERVICE_TOKEN`                                                               |
-| 6   | Provedor de newsletter                | inscrição real (hoje responde 501)                      | `NEWSLETTER_PROVIDER_URL`                                                                                     |
-| 7   | Network code do GAM                   | anúncios reais                                          | reserva de espaço já implementada                                                                             |
-| 8   | CMP LGPD                              | se um CMP for exigido                                   | o banner próprio atende enquanto não houver                                                                   |
+| #   | Pendência                                  | O que bloqueia                                          | Como resolver                                                                                                   |
+| --- | ------------------------------------------ | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 1   | Amostra de URLs de maior tráfego           | o critério **zero 404**, que é bloqueante de lançamento | exportar do Search Console para `data/import/top-urls.txt` e rodar `pnpm urls:verify`                           |
+| 2   | ~~Padrão real de permalink~~ **resolvido** | —                                                       | o arquivo diz: `/%postname%/`, com `no-category-base-wpml` ativo                                                |
+| 2b  | Editoria dos 298 posts sem uma             | esses artigos não têm URL pública                       | preencher `artifacts/migration/full/unmapped-categories.json` (222 são `noticias`) e passar em `--category-map` |
+| 2c  | Destino das 44.304 imagens de terceiros    | ilustração do corpo dos artigos                         | decisão de licenciamento: hoje não são baixadas — ver [DECISIONS 4.10](./DECISIONS.md)                          |
+| 2d  | `wp-content/uploads` extraído              | transferir os bytes das mídias                          | extrair o `tar.gz` de 101 GB (19 partes) e apontar `--uploads`                                                  |
+| 3   | Modelo comercial no Kal El                 | BuyBox e nota de review com conteúdo do CMS             | aceitar a proposta em [KAL-EL-DISCOVERY.md](./KAL-EL-DISCOVERY.md)                                              |
+| 4   | Credenciais do Kal El                      | rodar contra o CMS real                                 | `KAL_EL_BASE_URL`, `KAL_EL_SITE_ID`, `KAL_EL_SERVICE_TOKEN`, `KAL_EL_WEBHOOK_SECRET`, `KAL_EL_PREVIEW_SECRET`   |
+| 5   | Endpoint interno do Cinerie                | "Onde assistir" com dado real                           | `CINERIE_INTERNAL_URL`, `CINERIE_SERVICE_TOKEN`                                                                 |
+| 6   | Provedor de newsletter                     | inscrição real (hoje responde 501)                      | `NEWSLETTER_PROVIDER_URL`                                                                                       |
+| 7   | Network code do GAM                        | anúncios reais                                          | reserva de espaço já implementada                                                                               |
+| 8   | CMP LGPD                                   | se um CMP for exigido                                   | o banner próprio atende enquanto não houver                                                                     |
 
 ## 6. Limitações declaradas
 

@@ -34,7 +34,7 @@ O que existe hoje no repositório:
 | Migração   | Importador idempotente, redirects, verificador de URLs              |
 | SEO        | Metadata, JSON-LD, sitemaps paginados, news sitemap, RSS            |
 | Segurança  | HMAC de webhook, anti-replay, fronteira cliente/servidor, CSP, SSRF |
-| Testes     | 236 testes Node + 469 de browser = **705 verificações**             |
+| Testes     | 320 testes Node + 514 de browser = **834 verificações**             |
 | Operação   | CI, runbook, orçamento de performance, 6 documentos de migração     |
 
 E o que **não** foi feito, deliberadamente: nenhum deploy, nenhuma mudança de DNS, nenhuma
@@ -179,7 +179,7 @@ Linhas por área:
 | `packages/`                |       64 | 10.661 |
 | `tests/`                   |       16 |  3.227 |
 | `app/`                     |       37 |  3.184 |
-| `scripts/`                 |       10 |  2.586 |
+| `scripts/`                 |       13 |  3.765 |
 | `docs/`                    |        6 |    967 |
 | `migration-orchestration/` |       21 |    814 |
 | `lib/`                     |        7 |    387 |
@@ -263,7 +263,7 @@ um CLS garantido, e o tipo impede que alguém esqueça.
   rascunho não abre outro.
 - **`sanitize.ts`**, **`slug.ts`**, **`cache-tags.ts`**, **`sitemap-page-size.ts`**.
 
-### 4.5 Migração WordPress (`scripts/wp`, 2.586 linhas)
+### 4.5 Migração WordPress (`scripts/wp`, 3.765 linhas)
 
 Três ferramentas, **dry run por padrão**. Sem `--apply` nenhum cliente de escrita é
 sequer construído: não existe caminho de código de um ensaio até um POST.
@@ -292,6 +292,39 @@ Propriedades que o desenho garante:
 O parser de conteúdo converte shortcodes (`[caption]`, `[gallery]`, `[embed]`), preserva
 `<cite>`, e reporta qualquer coisa com forma de shortcode que tenha sobrado.
 
+#### Duas origens
+
+`WpReadSource` é a interface; a REST (`source.ts`) e o arquivo SQL (`archive.ts`) são as
+implementações. Nenhum consumidor sabe qual recebeu — `import.ts` e `build-redirects.ts`
+falam com a interface, e a única linha que diferencia é a que constrói uma das duas.
+
+O leitor de arquivo lê `.sql` e `.sql.gz`, nos dois dialetos (phpMyAdmin nomeia as colunas
+e põe uma tupla por linha; `mysqldump` não nomeia nenhuma e põe o insert inteiro numa
+linha só), **sem restaurar banco nenhum e sem abrir nenhuma conexão de rede**. Os bytes
+das mídias vêm de um `wp-content/uploads` extraído.
+
+#### O que rodar contra 41.318 artigos reais mostrou
+
+O importador tinha sido executado ponta a ponta contra stand-ins. Contra o arquivo de
+verdade, onze defeitos apareceram — e a maioria era invisível por construção em qualquer
+corpus sintético, porque um corpus sintético é escrito por quem escreveu o parser.
+
+O maior: **45% do arquivo é do editor clássico e não tem uma única tag `<p>`.** A REST
+devolve conteúdo renderizado, então o parser nunca tinha visto conteúdo cru; ele casa tags
+de bloco e ignora o resto. Sem `wpautop`, 18.786 artigos importariam com as figuras e
+nenhuma palavra do texto, e o relatório contaria 41.318 sucessos.
+
+Os outros dez estão na tabela de [FINAL-VERIFICATION §Wave 3.1](./FINAL-VERIFICATION.md),
+com escala medida. Os três que mudaram decisões de arquitetura:
+
+- **8.619 categorias, 6 editorias.** Uma categoria vira editoria se o slug for uma das
+  seis, e tag caso contrário. `noticias`, em 32.781 posts, vira tag e continua em todos.
+- **`categories[0]` não é a editoria** em 32.858 dos 41.318 posts. O construtor de
+  redirects usava isso.
+- **A tabela de redirects não cabe no edge.** 41.318 entradas são 5,06 MB de JSON dentro
+  do bundle do middleware. A regra passou a ser resolvida no CMS pela própria rota
+  `/[categoria]`, e a tabela ficou com 17 exceções.
+
 ### 4.6 SEO (`packages/seo`)
 
 Metadata por template, JSON-LD (`NewsArticle`, `BreadcrumbList`, `Organization`,
@@ -315,18 +348,18 @@ Metadata por template, JSON-LD (`NewsArticle`, `BreadcrumbList`, `Organization`,
 | Abuso de rota       | rate limit por instância                                           |
 | Injeção de header   | `TRUST_PROXY` explícito e obrigatório em produção                  |
 
-### 4.8 Testes (705 verificações)
+### 4.8 Testes (834 verificações)
 
-**236 no Node**, por vitest:
+**320 no Node**, por vitest:
 
 | Suíte         | Casos | Cobre                                                     |
 | ------------- | ----: | --------------------------------------------------------- |
-| `unit`        |   113 | slug, sanitização, redirects, parser WordPress            |
-| `contract`    |    45 | adaptador Kal El contra o contrato real, incluindo hostil |
-| `integration` |    46 | repositórios contra CMS simulado, pipeline de mídia       |
-| `security`    |    32 | env, HMAC, preview, fronteira cliente/servidor            |
+| `unit`        |   140 | slug, sanitização, redirects, parser WordPress, wpautop   |
+| `contract`    |    56 | adaptador Kal El contra o contrato real, incluindo hostil |
+| `integration` |    82 | repositórios, mídia, leitor de dump SQL, CLI real         |
+| `security`    |    42 | env, HMAC, preview, fronteira cliente/servidor            |
 
-**469 no browser**, por Playwright, em 4 viewports (390/768/1024/1440) × 2 temas:
+**514 no browser** — 485 com fixtures e 29 contra um Kal El de contrato — por Playwright, em 4 viewports (390/768/1024/1440) × 2 temas:
 comportamento das superfícies, axe-core, teclado, alvos de toque, movimento reduzido, e
 **160 baselines visuais** versionadas — sem elas no repositório o gate visual não prova
 nada.
@@ -499,12 +532,12 @@ usam `runAsScript(import.meta.url, main)`.
 | Lint                    | `pnpm lint`             | ✅ 0 problemas                                               |
 | Tipos                   | `pnpm typecheck`        | ✅ 0 erros, `strict` + `noUncheckedIndexedAccess`, sem `any` |
 | Unit                    | `pnpm test:unit`        | ✅ 113 passed                                                |
-| Contrato                | `pnpm test:contract`    | ✅ 45 passed                                                 |
-| Integração              | `pnpm test:integration` | ✅ 46 passed                                                 |
-| Segurança               | `pnpm test:security`    | ✅ 32 passed                                                 |
+| Contrato                | `pnpm test:contract`    | ✅ 56 passed                                                 |
+| Integração              | `pnpm test:integration` | ✅ 82 passed                                                 |
+| Segurança               | `pnpm test:security`    | ✅ 42 passed                                                 |
 | Build                   | `pnpm build`            | ✅ compilado em 6,8 s, 38 páginas geradas                    |
-| Playwright              | `npx playwright test`   | ✅ 469 passed, 3 skipped, 3,6 min                            |
-| Performance             | `pnpm test:performance` | ✅ JS 109 KB / 120 · CSS 14 KB / 25                          |
+| Playwright              | `npx playwright test`   | ✅ 485 passed, 3 skipped, 5,7 min                            |
+| Performance             | `pnpm test:performance` | ✅ JS 109 KB / 120 · CSS 18 KB / 25                          |
 | Ferramentas de migração | `--help` nas três       | ✅ exit 0                                                    |
 
 `git status` limpo. Branch empurrada para `origin/chore/maquina-nerd-kalel-migration`.

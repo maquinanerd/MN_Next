@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { ContentBlock, Image } from '@mn/content';
-import { slugify, toPlainText } from '@mn/content';
+import { DESK_SLUGS, slugify, toPlainText } from '@mn/content';
 
 import {
   COMMON_FLAGS,
@@ -16,9 +16,19 @@ import {
   type RunSummary,
 } from './cli';
 import { idempotencyKey, loadState, mappingKey, saveState, type RunState } from './state';
-import { ALLOWED_ASSET_TYPES, WordPressSource, detectImageType, type WpMedia, type WpPost } from './source';
+import {
+  ALLOWED_ASSET_TYPES,
+  WordPressSource,
+  detectImageType,
+  type WpMedia,
+  type WpPost,
+  wpSlug,
+  type WpReadSource,
+} from './source';
+import { WordPressArchive } from './archive';
 import { isLoopbackHost } from '@mn/content/security/address';
 import { KalElTarget } from './target';
+import { classifyCategory, deskOf, deskFor, loadCategoryMap, type CategoryMap } from './taxonomy';
 import { emptyReport, htmlToBlocks, shortcodeAssetRef, type TransformReport } from './transform';
 
 /**
@@ -55,6 +65,21 @@ const FLAGS = [
     type: 'boolean' as const,
     default: false,
   },
+  {
+    name: 'source',
+    description: 'where WordPress is read from: rest (a live site) or archive (a .sql dump)',
+    type: 'string' as const,
+    default: 'rest',
+  },
+  { name: 'dump', description: 'archive source: path to the .sql or .sql.gz dump', type: 'string' as const },
+  { name: 'uploads', description: 'archive source: extracted wp-content/uploads', type: 'string' as const },
+  { name: 'table-prefix', description: 'archive source: WordPress table prefix', type: 'string' as const },
+  {
+    name: 'category-map',
+    description: 'JSON of "wp-category-slug": "desk-slug" overrides',
+    type: 'string' as const,
+    default: 'data/import/category-map.json',
+  },
 ];
 
 /**
@@ -76,6 +101,13 @@ export interface Indexes {
   categoryBySlug: Map<string, string>;
   tagBySlug: Map<string, string>;
   authorBySlug: Map<string, string>;
+  /**
+   * WordPress category id -> the desk it stands for.
+   *
+   * Only the categories that became desks are here. The other 8.613 became tags, and
+   * this map is how a post's desk is found among its average of 2,8 categories.
+   */
+  deskSlugByWpId: Map<number, string>;
   /** WordPress media id -> Kal El media id. */
   mediaByWpId: Map<number, string>;
   /** Legacy asset URL -> Kal El image, for rewriting `<img src>` in bodies. */
@@ -90,9 +122,26 @@ export function emptyIndexes(): Indexes {
     categoryBySlug: new Map(),
     tagBySlug: new Map(),
     authorBySlug: new Map(),
+    deskSlugByWpId: new Map(),
     mediaByWpId: new Map(),
     imageByUrl: new Map(),
   };
+}
+
+/**
+ * A post that cannot be filed anywhere.
+ *
+ * Carries the categories it *did* have, so the run can end with a list of the WordPress
+ * categories that need a home rather than 298 identical error lines. That list is the
+ * document the operator turns into `--category-map`.
+ */
+export class MissingDeskError extends CliError {
+  constructor(
+    message: string,
+    readonly categories: number[],
+  ) {
+    super(message);
+  }
 }
 
 /** WordPress serves several sizes of the same asset; they all map to one original. */
@@ -120,12 +169,33 @@ async function main(): Promise<void> {
     tool: 'wp:import',
     runId: state.runId,
     applied: apply,
-    counts: new Counter(['read', 'created', 'updated', 'skipped', 'failed', 'mediaTransferred', 'mediaReused']),
+    counts: new Counter([
+      'read',
+      'created',
+      'updated',
+      'skipped',
+      'failed',
+      'mediaTransferred',
+      'mediaReused',
+      'categoriesAsTags',
+      'noDesk',
+      'slugCollision',
+    ]),
     failures: [],
     artefacts: [],
   };
 
+  const sourceKind = String(values.source);
+  if (sourceKind !== 'rest' && sourceKind !== 'archive') {
+    throw new CliError(`--source must be "rest" or "archive", not "${sourceKind}"`);
+  }
+
   const allowPrivateHosts = values['allow-private-assets'] === true;
+  // Meaningless for an archive: that reader opens no sockets, so there is no address
+  // check to relax. Accepting the flag there would suggest otherwise.
+  if (allowPrivateHosts && sourceKind === 'archive') {
+    throw new CliError('--allow-private-assets is for --source rest; the archive reader makes no network requests');
+  }
   if (allowPrivateHosts) {
     // The flag only means anything when the whole run is local. Refusing it otherwise is
     // what stops it from becoming a way to point a production import at an internal
@@ -159,7 +229,41 @@ async function main(): Promise<void> {
     console.log('[wp:import] asset host check relaxed — local rehearsal only');
   }
 
-  const source = WordPressSource.fromEnv({ requestsPerSecond: Number(values.rate), allowPrivateHosts });
+  const archive =
+    sourceKind === 'archive'
+      ? WordPressArchive.fromEnv({
+          ...(values.dump ? { dumpPath: String(values.dump) } : {}),
+          ...(values.uploads ? { uploadsDir: String(values.uploads) } : {}),
+          ...(values['table-prefix'] ? { tablePrefix: String(values['table-prefix']) } : {}),
+        })
+      : null;
+  const source: WpReadSource =
+    archive ?? WordPressSource.fromEnv({ requestsPerSecond: Number(values.rate), allowPrivateHosts });
+
+  if (archive) {
+    const facts = await archive.prepare();
+    console.log(
+      `[wp:import] archive: ${facts.counts.posts} posts, ${facts.counts.attachments} attachments, ` +
+        `${facts.counts.categories} categories, ${facts.counts.tags} tags, ${facts.counts.authors} authors`,
+    );
+    console.log(`[wp:import] archive: ${facts.siteUrl} with permalinks ${facts.permalinkStructure || '(none)'}`);
+  }
+
+  // The legacy site's own hostname, so the report can separate a broken media mapping
+  // from an image that was always somebody else's.
+  const legacyBase = archive ? (await archive.prepare()).siteUrl : process.env.WP_BASE_URL;
+  let siteHost: { siteHost?: string } = {};
+  try {
+    if (legacyBase) siteHost = { siteHost: new URL(legacyBase).hostname };
+  } catch {
+    siteHost = {};
+  }
+
+  const categoryOverrides: CategoryMap = await loadCategoryMap(String(values['category-map']));
+  if (categoryOverrides.size > 0) {
+    console.log(`[wp:import] ${categoryOverrides.size} category overrides from ${String(values['category-map'])}`);
+  }
+
   // Constructed only when applying: a dry run has no client that could write.
   const target = apply ? KalElTarget.fromEnv() : null;
   const indexes = emptyIndexes();
@@ -222,16 +326,48 @@ async function main(): Promise<void> {
     summary.failures.push({ id: `${kind}:${wpId}`, reason: res.error ?? 'unknown' });
   }
 
+  /*
+   * A WordPress category is a desk, or it is a tag.
+   *
+   * The archive has 8.619 categories and the portal has six desks, so a one-to-one
+   * import would invent 8.613 route segments that no template, no navigation and no
+   * design has ever had. `taxonomy.ts` holds the rule and the evidence for it; here the
+   * demoted ones simply go through the tag path, which means they keep their name, keep
+   * their articles and stop pretending to be sections.
+   */
+  /** WordPress category id -> its slug, so an unfiled post can be reported by name. */
+  const categorySlugByWpId = new Map<number, string>();
+  /** WordPress categories that left posts with nowhere to go, and how many each. */
+  const orphanCategories = new Map<string, number>();
+
   for await (const batch of source.categories()) {
     for (const term of batch) {
       const slug = slugify(term.slug || term.name);
+      categorySlugByWpId.set(term.id, slug);
+      if (classifyCategory(slug, categoryOverrides) === 'tag') {
+        summary.counts.inc('categoriesAsTags');
+        await ensureTerm(
+          'tag',
+          term.id,
+          slug,
+          () => target!.createTag({ name: term.name, slug }, idempotencyKey('tag', term.id)),
+          indexes.tagByWpId,
+          indexes.tagBySlug,
+          existingBySlug.tags,
+        );
+        continue;
+      }
+
+      const desk = deskOf(slug, categoryOverrides) as string;
+      indexes.deskSlugByWpId.set(term.id, desk);
+      categorySlugByWpId.set(term.id, slug);
       await ensureTerm(
         'category',
         term.id,
-        slug,
+        desk,
         () =>
           target!.createCategory(
-            { name: term.name, slug, description: term.description || null },
+            { name: term.name, slug: desk, description: term.description || null },
             idempotencyKey('category', term.id),
           ),
         indexes.categoryByWpId,
@@ -290,16 +426,45 @@ async function main(): Promise<void> {
   const since = values.since ? String(values.since) : undefined;
   let processed = 0;
 
+  /*
+   * Two articles cannot share a URL.
+   *
+   * `slugify` truncates at 120 characters and drops everything outside `[a-z0-9-]`, and
+   * this newsroom writes headlines long enough for that to bite: two posts whose titles
+   * agree for their first 120 characters produce one slug. Kal El would refuse the
+   * second write, which is the right outcome and a terrible way to find out — so the
+   * rehearsal counts them, and the report names them, before anything is written.
+   */
+  const slugsSeen = new Map<string, number>();
+
   outer: for await (const batch of source.posts(since)) {
     for (const post of batch) {
       if (limit > 0 && processed >= limit) break outer;
       processed += 1;
       summary.counts.inc('read');
 
+      const finalSlug = slugify(wpSlug(post.slug));
+      const owner = slugsSeen.get(finalSlug);
+      if (owner !== undefined) {
+        summary.counts.inc('slugCollision');
+        summary.failures.push({
+          id: `wp:post:${post.id}`,
+          reason: `slug "${finalSlug}" is already taken by wp:post:${owner}`,
+        });
+      } else {
+        slugsSeen.set(finalSlug, post.id);
+      }
+
       try {
-        const result = await importPost(post, { target, indexes, report, state });
+        const result = await importPost(post, { target, indexes, report, state, summary, ...siteHost });
         summary.counts.inc(result);
       } catch (err) {
+        if (err instanceof MissingDeskError) {
+          for (const id of err.categories) {
+            const slug = categorySlugByWpId.get(id);
+            if (slug) orphanCategories.set(slug, (orphanCategories.get(slug) ?? 0) + 1);
+          }
+        }
         summary.counts.inc('failed');
         summary.failures.push({ id: `wp:post:${post.id}`, reason: err instanceof Error ? err.message : String(err) });
       }
@@ -323,7 +488,9 @@ async function main(): Promise<void> {
       {
         runId: state.runId,
         applied: apply,
+        source: sourceKind,
         counts: summary.counts.toJSON(),
+        ...(archive ? { archive: archive.stats() } : {}),
         unknownBlocks: report.unknown,
         droppedTags: report.droppedTags,
         droppedAttributes: report.droppedAttributes,
@@ -335,9 +502,34 @@ async function main(): Promise<void> {
     ),
     'utf8',
   );
+  /*
+   * The categories that left posts with nowhere to go.
+   *
+   * 298 posts in this archive resolve to no desk, and reporting them one line at a time
+   * says almost nothing: what the operator needs is the handful of *categories* behind
+   * them — `noticias` on 219, `trailers` on 12, and the theme's demo content on 40 —
+   * ordered by how many posts each would rescue. Written in the shape `--category-map`
+   * reads, so answering the question is filling in the destinations.
+   */
+  const unmappedPath = path.join(outDir, 'unmapped-categories.json');
+  await writeFile(
+    unmappedPath,
+    JSON.stringify(
+      {
+        note: 'Categorias do WordPress que deixaram artigos sem editoria. Preencha com uma das seis e passe em --category-map.',
+        desks: DESK_SLUGS,
+        categories: [...orphanCategories.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([slug, posts]) => ({ slug, posts, desk: null })),
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  );
   await saveState(statePath, state);
 
-  summary.artefacts = [reportPath, unknownPath, statePath];
+  summary.artefacts = [reportPath, unknownPath, unmappedPath, statePath];
   printSummary(summary);
 
   if (exitCodeFor(apply, summary) === 1) process.exit(1);
@@ -522,6 +714,44 @@ interface ImportContext {
   indexes: Indexes;
   report: TransformReport;
   state: RunState;
+  summary: RunSummary;
+  /** The legacy site's hostname, so an unresolved image can name the publisher it came from. */
+  siteHost?: string;
+}
+
+/**
+ * One desk, and every tag the post carries — including the categories that became tags.
+ *
+ * A WordPress post in this archive averages 2,8 categories. Exactly one of them can be
+ * the desk, because the desk is the article's URL; the rest are perfectly good tags and
+ * are kept as such, so `noticias` survives on all 32.781 posts that had it instead of
+ * being thrown away for not being a section.
+ *
+ * The desks a post carries but does not get filed under — 190 posts, always a second
+ * desk — are dropped rather than tagged: a tag called "Filmes" sitting next to the desk
+ * `series` reads as a section and is not one.
+ */
+export function resolveTaxonomy(post: WpPost, indexes: Indexes): { categories: string[]; tags: string[] } {
+  const deskSlugs = post.categories
+    .map((id) => indexes.deskSlugByWpId.get(id))
+    .filter((slug): slug is string => slug !== undefined);
+  const desk = deskFor(deskSlugs);
+
+  const deskId =
+    desk === null
+      ? undefined
+      : post.categories
+          .filter((id) => indexes.deskSlugByWpId.get(id) === desk)
+          .map((id) => indexes.categoryByWpId.get(id))
+          .find((id): id is string => id !== undefined);
+
+  const tags = new Set<string>();
+  for (const id of [...post.tags, ...post.categories]) {
+    const tagId = indexes.tagByWpId.get(id);
+    if (tagId) tags.add(tagId);
+  }
+
+  return { categories: deskId ? [deskId] : [], tags: [...tags] };
 }
 
 /**
@@ -534,12 +764,26 @@ interface ImportContext {
 async function importPost(post: WpPost, ctx: ImportContext): Promise<'created' | 'updated' | 'skipped'> {
   const { target, indexes, report } = ctx;
   const externalKey = `wp:post:${post.id}`;
-  const slug = slugify(post.slug);
+  const slug = slugify(wpSlug(post.slug));
+  const taxonomy = resolveTaxonomy(post, indexes);
+  if (taxonomy.categories.length === 0) {
+    // Not a warning. The portal drops an article with no desk from every listing and
+    // from the sitemap, so importing it anyway produces something that exists in the CMS
+    // and cannot be reached from the site — the failure mode that looks most like
+    // success. 298 posts in this archive land here; `--category-map` is how they are
+    // given a home.
+    ctx.summary.counts.inc('noDesk');
+    throw new MissingDeskError(
+      `post ${post.id} (${post.slug}) has no desk: its categories are not among the six, and no --category-map entry covers them`,
+      post.categories,
+    );
+  }
 
   const blocks: ContentBlock[] = htmlToBlocks(post.content, {
     postId: post.id,
     report,
     resolveImage: imageResolver(indexes),
+    ...(ctx.siteHost ? { siteHost: ctx.siteHost } : {}),
   });
 
   const document = {
@@ -557,8 +801,8 @@ async function importPost(post: WpPost, ctx: ImportContext): Promise<'created' |
     status: 'published',
     publishedAt: new Date(`${post.date_gmt}Z`).toISOString(),
     // Numeric WordPress ids, resolved through the id-keyed maps.
-    categories: post.categories.map((id) => indexes.categoryByWpId.get(id)).filter((v): v is string => Boolean(v)),
-    tags: post.tags.map((id) => indexes.tagByWpId.get(id)).filter((v): v is string => Boolean(v)),
+    categories: taxonomy.categories,
+    tags: taxonomy.tags,
     authors: [indexes.authorByWpId.get(post.author)].filter((v): v is string => Boolean(v)),
     provenance: {
       system: 'wordpress',

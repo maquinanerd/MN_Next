@@ -58,6 +58,20 @@ export type CategorySlug = keyof typeof CATEGORIES;
 export const CATEGORY_SLUGS = Object.keys(CATEGORIES) as CategorySlug[];
 
 /**
+ * Every first path segment that is an editorial desk.
+ *
+ * `CATEGORY_SLUGS` is the navigation map; this is the routing one. They differ by
+ * `reviews`, which has a static index of its own but is a real desk underneath —
+ * `/reviews/{slug}` is served by `[categoria]/[slug]` like any other.
+ *
+ * The distinction matters to anything that has to decide whether a lone segment is a
+ * section or something else: the legacy-permalink resolver treats `/{anything-else}` as
+ * a WordPress URL to be redirected, and the importer files a post under one of these or
+ * refuses to file it at all.
+ */
+export const DESK_SLUGS: readonly string[] = [...CATEGORY_SLUGS, 'reviews'];
+
+/**
  * Reserved first path segments.
  *
  * `/[categoria]` is a catch-all, so anything that is also a real route must never be
