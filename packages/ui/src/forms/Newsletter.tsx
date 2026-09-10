@@ -3,19 +3,15 @@
 import { useId, useRef, useState } from 'react';
 
 /**
- * Newsletter sign-up.
+ * Newsletter sign-up: a visible label (not a placeholder), the error bound with
+ * `aria-describedby`, focus returned to the field on an invalid submit. The server
+ * validates again and is the only side trusted. It is never an interstitial.
  *
- * A visible `<label>` (not a placeholder), the error bound with `aria-describedby`, and
- * focus moved to the field on an invalid submit - the three things the a11y doc names
- * for this form. Validation runs client-side for speed and again on the server, which is
- * the only side that is trusted.
- *
- * Never rendered as an interstitial over the article: Discover treats that as an
- * intrusive interstitial (docs/06).
+ * It promises nothing about frequency or contents: the kit forbids inventing either.
  */
-export function NewsletterForm({ variant = 'dark' }: { variant?: 'dark' | 'light' }) {
+export function NewsletterForm({ endpoint }: { endpoint: string }) {
   const fieldId = useId();
-  const errorId = `${fieldId}-error`;
+  const errorId = `${fieldId}-erro`;
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
@@ -32,7 +28,7 @@ export function NewsletterForm({ variant = 'dark' }: { variant?: 'dark' | 'light
     setError('');
     setPending(true);
     try {
-      const res = await fetch('/api/newsletter', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email: value }),
@@ -49,16 +45,18 @@ export function NewsletterForm({ variant = 'dark' }: { variant?: 'dark' | 'light
 
   if (done) {
     return (
-      <p role="status" className="mn-state__text">
+      <p role="status" className="m-0 text-14 leading-[1.5]">
         Inscrição registrada. Confira sua caixa de entrada para confirmar o e-mail.
       </p>
     );
   }
 
   return (
-    <form className="mn-newsletter__form" onSubmit={submit} noValidate>
-      <div className="mn-field">
-        <label htmlFor={fieldId}>E-mail</label>
+    <form onSubmit={submit} noValidate className="flex flex-col gap-8">
+      <label htmlFor={fieldId} className="text-12 font-semibold">
+        E-mail
+      </label>
+      <div className="flex flex-col gap-8 tab:flex-row">
         <input
           ref={inputRef}
           id={fieldId}
@@ -69,17 +67,21 @@ export function NewsletterForm({ variant = 'dark' }: { variant?: 'dark' | 'light
           placeholder="nome@exemplo.com"
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? errorId : undefined}
-          style={variant === 'light' ? { background: 'var(--mn-bg)', borderColor: 'var(--mn-line)' } : undefined}
+          className="h-44 min-w-0 flex-1 border border-control bg-white px-14 text-14 text-ink placeholder:text-muted"
         />
-        {error ? (
-          <p className="mn-field__error" id={errorId}>
-            {error}
-          </p>
-        ) : null}
+        <button
+          type="submit"
+          disabled={pending}
+          className="inline-flex h-44 cursor-pointer items-center justify-center border border-mn-red bg-mn-red px-20 text-13 font-bold text-white disabled:opacity-70"
+        >
+          {pending ? 'Enviando…' : 'Inscrever-se'}
+        </button>
       </div>
-      <button type="submit" className="mn-button mn-button--primary" disabled={pending}>
-        {pending ? 'Enviando…' : 'Assinar'}
-      </button>
+      {error ? (
+        <p id={errorId} className="m-0 text-12 text-mn-red-text">
+          {error}
+        </p>
+      ) : null}
     </form>
   );
 }

@@ -1,73 +1,107 @@
 import Link from 'next/link';
 
+import { cx } from '../lib/cx';
+import type { Paginacao } from '../model';
+
+type Item = number | 'gap';
+
 /**
- * Numbered pagination.
- *
- * Every page is its own canonical URL and page 2 never points at page 1 (docs/06), so
- * these are real links with real hrefs - not a "load more" button that leaves the
- * archive unreachable to a crawler.
- *
- * `total` is null when the CMS paginates by cursor and cannot produce a count; the
- * control then degrades to previous/next, which is honest rather than inventing a
- * last-page number.
+ * Which page numbers to show: `1 2 3 4 … 24` at the start, the current page with its
+ * neighbours in the middle, the last four at the end. With no total (cursor pagination)
+ * it shows what is knowable: the pages up to the current one, and the next if it exists.
  */
-export interface PaginationProps {
-  page: number;
-  totalPages: number | null;
-  hasNext: boolean;
-  /** `(page) => href`; page 1 must map to the unpaginated URL. */
-  hrefFor: (page: number) => string;
-}
-
-function windowed(page: number, totalPages: number): (number | 'gap')[] {
-  const pages = new Set<number>([1, totalPages, page - 1, page, page + 1]);
-  const sorted = [...pages].filter((p) => p >= 1 && p <= totalPages).sort((a, b) => a - b);
-  const out: (number | 'gap')[] = [];
-  let previous = 0;
-  for (const p of sorted) {
-    if (previous && p - previous > 1) out.push('gap');
-    out.push(p);
-    previous = p;
+export function pageItems(atual: number, total: number | null, temProxima: boolean): Item[] {
+  if (total === null) {
+    const last = temProxima ? atual + 1 : atual;
+    if (last <= 5) return Array.from({ length: last }, (_, i) => i + 1);
+    return [1, 'gap', ...Array.from({ length: last - atual + 2 }, (_, i) => atual - 1 + i)];
   }
-  return out;
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  if (atual <= 3) return [1, 2, 3, 4, 'gap', total];
+  if (atual >= total - 2) return [1, 'gap', total - 3, total - 2, total - 1, total];
+  return [1, 'gap', atual - 1, atual, atual + 1, 'gap', total];
 }
 
-export function Pagination({ page, totalPages, hasNext, hrefFor }: PaginationProps) {
-  if (totalPages !== null && totalPages <= 1) return null;
+const box = 'box-border flex h-36 items-center justify-center border text-13 font-semibold';
+
+/**
+ * Numbered pagination (kit docs/03): 36px squares, the current one filled, ellipses in
+ * `--mn-muted`, arrows either side. The current page is `aria-current="page"`; an arrow
+ * with nowhere to go is not a link. Wraps onto several lines on a phone.
+ */
+export function Pagination({
+  paginacao,
+  hrefPara,
+  cor = 'var(--color-mn-red)',
+  textoSobreCor = 'light',
+  className,
+}: {
+  paginacao: Paginacao;
+  hrefPara: (page: number) => string;
+  /** Fill of the current page: brand red on the home, the editoria's fill on an editoria. */
+  cor?: string;
+  textoSobreCor?: 'light' | 'dark';
+  className?: string;
+}) {
+  const { atual, total, temProxima } = paginacao;
+  if (atual === 1 && !temProxima) return null;
+  const items = pageItems(atual, total, temProxima);
+  const onFill = textoSobreCor === 'light' ? 'var(--color-white)' : 'var(--color-ink)';
 
   return (
-    <nav className="mn-pagination" aria-label="Paginação">
-      {page > 1 ? (
-        <Link href={hrefFor(page - 1)} rel="prev" aria-label="Página anterior">
-          ←
+    <nav aria-label="Paginação" className={cx('mt-40 flex flex-wrap items-center justify-center gap-6', className)}>
+      {atual > 1 ? (
+        <Link
+          href={hrefPara(atual - 1)}
+          aria-label="Página anterior"
+          className={cx(box, 'w-36 border-control text-14 text-ink')}
+        >
+          ‹
         </Link>
-      ) : null}
-
-      {totalPages !== null ? (
-        windowed(page, totalPages).map((entry, index) =>
-          entry === 'gap' ? (
-            <span className="mn-pagination__gap" key={`gap-${index}`} aria-hidden="true">
-              …
-            </span>
-          ) : entry === page ? (
-            <span key={entry} aria-current="page">
-              {entry.toLocaleString('pt-BR')}
-            </span>
-          ) : (
-            <Link key={entry} href={hrefFor(entry)}>
-              {entry.toLocaleString('pt-BR')}
-            </Link>
-          ),
-        )
       ) : (
-        <span aria-current="page">{page.toLocaleString('pt-BR')}</span>
+        <span aria-hidden="true" className={cx(box, 'w-36 border-control text-14 text-muted')}>
+          ‹
+        </span>
       )}
-
-      {hasNext ? (
-        <Link href={hrefFor(page + 1)} rel="next" aria-label="Próxima página">
-          →
+      {items.map((item, index) =>
+        item === 'gap' ? (
+          <span
+            key={`gap-${index}`}
+            aria-hidden="true"
+            className={cx(box, 'min-w-36 border-transparent px-10 text-muted')}
+          >
+            …
+          </span>
+        ) : item === atual ? (
+          <span
+            key={item}
+            aria-current="page"
+            className={cx(box, 'min-w-36 px-10')}
+            style={{ background: cor, borderColor: cor, color: onFill }}
+          >
+            <span className="sr-only">Página </span>
+            {item}
+          </span>
+        ) : (
+          <Link key={item} href={hrefPara(item)} className={cx(box, 'min-w-36 border-control px-10 text-ink')}>
+            <span className="sr-only">Página </span>
+            {item}
+          </Link>
+        ),
+      )}
+      {temProxima ? (
+        <Link
+          href={hrefPara(atual + 1)}
+          aria-label="Próxima página"
+          className={cx(box, 'w-36 border-control text-14 text-ink')}
+        >
+          ›
         </Link>
-      ) : null}
+      ) : (
+        <span aria-hidden="true" className={cx(box, 'w-36 border-control text-14 text-muted')}>
+          ›
+        </span>
+      )}
     </nav>
   );
 }
