@@ -1,32 +1,34 @@
 import type { Metadata } from 'next';
+import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import { safeSlugParam } from '@mn/content';
-import { ArticleGrid, Breadcrumbs, Editorial, EmptyState, Pagination, SectionHeading } from '@mn/ui';
-import { JsonLd, breadcrumbNode, buildGraph, listingMetadata, personPageNode, absolute } from '@mn/seo';
+import { EmptyState } from '@mn/ui';
+import { JsonLd, absolute, breadcrumbNode, buildGraph, listingMetadata, personPageNode } from '@mn/seo';
 
-import { repo } from '../../../lib/content';
+import { Header } from '../../../components/Chrome';
+import { FeedSection } from '../../../components/Feed';
+import { agora, listView, parsePageQuery, repo } from '../../../lib/content';
 import { seoContext } from '../../../lib/seo-context';
 
 /**
- * Author page.
- *
- * Indexable: an author archive is an E-E-A-T surface and Google reads it to attribute
- * expertise to the byline. Its `ProfilePage` node links the person to the organisation.
+ * Author page — no prototype, composed from the editoria header and the RowCard list.
+ * Indexable: an author archive is where Google attributes expertise to a byline, and the
+ * `ProfilePage` node links the person to the organisation.
  */
 export const revalidate = 300;
 
 type Params = { slug: string };
+type Search = { page?: string | string[] };
 
 export async function generateMetadata({
   params,
   searchParams,
 }: {
   params: Promise<Params>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<Search>;
 }): Promise<Metadata> {
-  const { slug: raw } = await params;
-  const { page } = await searchParams;
-  const slug = safeSlugParam(raw);
+  const slug = safeSlugParam((await params).slug);
+  const page = parsePageQuery((await searchParams).page);
   if (!slug) return { title: 'Autor não encontrado', robots: { index: false } };
   const result = await repo()
     .getAuthor(slug, 1)
@@ -36,7 +38,7 @@ export async function generateMetadata({
     title: result.author.name,
     description: result.author.bio ?? `Matérias assinadas por ${result.author.name} no Máquina Nerd.`,
     path: `/autor/${slug}`,
-    page: Number(page ?? 1) || 1,
+    page,
     pagination: 'query',
   });
 }
@@ -46,68 +48,53 @@ export default async function AuthorPage({
   searchParams,
 }: {
   params: Promise<Params>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<Search>;
 }) {
-  const { slug: raw } = await params;
-  const { page: rawPage } = await searchParams;
-  const page = Number(rawPage ?? 1) || 1;
-  const slug = safeSlugParam(raw);
+  const slug = safeSlugParam((await params).slug);
   if (!slug) notFound();
+  const page = parsePageQuery((await searchParams).page);
 
   const result = await repo().getAuthor(slug, page);
   if (!result) notFound();
+  if (page > 1 && result.items.length === 0) notFound();
 
   const ctx = seoContext();
-  const url = absolute(ctx, `/autor/${slug}`);
-  const crumbs = [{ label: 'Home', href: '/' }, { label: result.author.name }];
+  const view = listView(result);
+  const { author } = result;
 
   return (
     <>
-      <JsonLd graph={buildGraph(ctx, [personPageNode(ctx, result.author, url), breadcrumbNode(ctx, crumbs)])} />
-
-      <Editorial>
-        <Breadcrumbs items={crumbs} />
-
-        <header className="mn-cathead">
-          <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span
-              className="mn-authorbox__avatar"
-              style={{ background: result.author.avatarColor, width: 64, height: 64, fontSize: 20 }}
-              aria-hidden="true"
-            >
-              {result.author.initials}
+      <JsonLd
+        graph={buildGraph(ctx, [
+          personPageNode(ctx, author, absolute(ctx, `/autor/${slug}`)),
+          breadcrumbNode(ctx, [{ label: 'Home', href: '/' }, { label: author.name }]),
+        ])}
+      />
+      <Header />
+      <main id="conteudo" className="wrap pt-20 tab:pt-32">
+        <div className="flex items-center gap-20 border-b border-line pb-20">
+          {author.avatar ? (
+            <span className="relative block size-64 flex-none overflow-hidden rounded-full bg-media">
+              <Image src={author.avatar.url} alt="" fill sizes="64px" className="object-cover" />
             </span>
-            <div>
-              <h1 className="mn-cathead__title" style={{ fontSize: 'var(--fs-h1)' }}>
-                {result.author.name}
-              </h1>
-              {result.author.role ? <p className="mn-stat__label">{result.author.role}</p> : null}
-            </div>
+          ) : null}
+          <div>
+            <h1 className="m-0 text-25 leading-none font-extrabold tracking-[-0.03em] tab:text-34">{author.name}</h1>
+            {author.role ? <p className="mt-8 mb-0 text-12 text-muted">{author.role}</p> : null}
+            {author.bio ? (
+              <p className="mt-12 mb-0 max-w-[68ch] text-14 leading-[1.5] text-ink-3">{author.bio}</p>
+            ) : null}
           </div>
-          {result.author.bio ? <p className="mn-cathead__desc">{result.author.bio}</p> : null}
-        </header>
-
-        <div className="mn-section">
-          {result.items.length === 0 ? (
-            <EmptyState
-              title="Nenhuma matéria publicada ainda"
-              description={`${result.author.name} ainda não tem matérias publicadas neste portal.`}
-              action={{ label: 'Ver a home', href: '/' }}
-            />
-          ) : (
-            <>
-              <SectionHeading label="Últimas matérias" />
-              <ArticleGrid articles={result.items} columns={3} showExcerpt />
-              <Pagination
-                page={page}
-                totalPages={result.totalPages}
-                hasNext={result.hasNext}
-                hrefFor={(n) => (n === 1 ? `/autor/${slug}` : `/autor/${slug}?page=${n}`)}
-              />
-            </>
-          )}
         </div>
-      </Editorial>
+        <FeedSection
+          titulo={{ forte: 'Matérias', fraco: `de ${author.name}` }}
+          itens={view.lista}
+          paginacao={view.paginacao}
+          hrefPara={(n) => (n === 1 ? `/autor/${slug}` : `/autor/${slug}?page=${n}`)}
+          now={agora()}
+          vazio={<EmptyState titulo="Nenhuma matéria publicada ainda" acao={{ rotulo: 'Ver a home', href: '/' }} />}
+        />
+      </main>
     </>
   );
 }

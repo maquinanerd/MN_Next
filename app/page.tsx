@@ -1,240 +1,185 @@
-import Link from 'next/link';
 import type { Metadata } from 'next';
-import { CATEGORY_SLUGS, CATEGORIES } from '@mn/content';
 import {
   AdSlot,
-  AD_SLOTS,
-  ArticleCard,
-  ArticleGrid,
-  Editorial,
-  MnImage,
-  MostRead,
-  NewsletterForm,
-  SIZES,
-  SectionHeading,
-  Shell,
-  WhereToWatch,
-  articleHref,
-  AuthorByline,
-  HomeBannerBand,
-  HomeSpecialFeature,
-  HomeMoreGrid,
+  BigCard,
+  FeatureVideoCard,
+  HeroCard,
+  OverlayCard,
+  SectionTitle,
+  SideList,
+  StandardCard,
+  VideoCard,
 } from '@mn/ui';
 import { JsonLd, buildGraph, collectionNode } from '@mn/seo';
 
-import { repo } from '../lib/content';
+import { Header } from '../components/Chrome';
+import { FeedSection } from '../components/Feed';
+import { Opening } from '../components/Opening';
+import { data, rotulo, rotuloComposto, tempo } from '../components/meta';
+import { EDITORIAS, agora, homeView } from '../lib/content';
 import { seoContext } from '../lib/seo-context';
-import { HomePoll } from '../components/HomePoll';
 
 /**
- * Home.
+ * Home (Máquina Nerd Template.dc.html), in the prototype's order.
  *
- * ISR at 60 seconds plus `revalidateTag('home')` on publication (docs/08): the short
- * window bounds staleness if a webhook is ever missed, and the tag makes a breaking
- * story appear immediately rather than up to a minute late.
+ * ISR at 60 seconds plus `revalidateTag('home')` on publication: the tag makes a new
+ * story appear at once, the window bounds staleness if a webhook is ever lost.
  */
 export const revalidate = 60;
 
 export async function generateMetadata(): Promise<Metadata> {
   const ctx = seoContext();
   return {
-    title: 'Máquina Nerd — cinema, séries, quadrinhos, games e animes',
+    title: { absolute: 'Máquina Nerd — cinema, séries, games, quadrinhos e animes' },
     alternates: { canonical: `${ctx.siteUrl}/` },
   };
 }
 
+const section = 'mt-36 border-t border-line pt-48 tab:mt-56';
+const scroller =
+  'no-scrollbar flex gap-12 overflow-x-auto *:flex-[0_0_62%] tab:grid tab:gap-40 tab:overflow-visible tab:*:flex-auto';
+
 export default async function HomePage() {
   const ctx = seoContext();
-  const home = await repo().getHome();
-  // Every summary the repository returns has a desk, so a href is always available; the
-  // fallback keeps this honest if that ever changes.
-  const leadHref = home.lead ? (articleHref(home.lead) ?? '/') : '/';
+  const now = agora();
+  const home = await homeView();
 
   const graph = buildGraph(ctx, [
     collectionNode(ctx, {
       name: 'Máquina Nerd',
-      description: 'Notícias de cinema, séries, quadrinhos, games e animes.',
+      description: 'Notícias de cinema, séries, games, quadrinhos e animes.',
       url: `${ctx.siteUrl}/`,
-      items: [home.lead, ...home.secondary].filter((a): a is NonNullable<typeof a> => a !== null),
+      items: home.itens,
     }),
   ]);
+
+  const [c0, c1, c2, c3, c4, c5] = home.cinema;
 
   return (
     <>
       <JsonLd graph={graph} />
+      <Header ativo="Notícias" />
+      <main id="conteudo" className="wrap pt-20 tab:pt-40">
+        <h1 className="sr-only">Máquina Nerd — notícias de cinema, séries, games, quadrinhos e animes</h1>
 
-      <Shell>
-        <h1 className="mn-visually-hidden">Máquina Nerd — notícias de cinema, séries, quadrinhos, games e animes</h1>
-        <section className="mn-home__hero" aria-label="Destaques">
-          <div>
-            {home.lead ? (
-              <div className="mn-home__lead">
-                <div className="mn-home__leadtext">
-                  {home.lead.category ? (
-                    <Link className="mn-card__kicker mn-kicker--pill" href={`/${home.lead.category.slug}`}>
-                      {home.lead.category.name}
-                    </Link>
-                  ) : null}
-                  <h2>
-                    <Link href={leadHref}>{home.lead.title}</Link>
-                  </h2>
-                  <AuthorByline
-                    authors={home.lead.authors}
-                    date={home.lead.publishedAt ?? home.lead.updatedAt}
-                    suffix={`${home.lead.readingMinutes} min`}
-                  />
-                  <p className="mn-card__excerpt">
-                    {home.lead.excerpt} <Link href={leadHref}>Ler mais</Link>
-                  </p>
-                </div>
-                {home.lead.cover ? (
-                  <Link className="mn-home__leadmedia" href={leadHref} tabIndex={-1} aria-hidden="true">
-                    <MnImage image={home.lead.cover} alt="" sizes={SIZES.hero} priority />
-                  </Link>
-                ) : null}
-              </div>
-            ) : null}
+        <Opening {...home.abertura} now={now} modo="home" ordemAnuncio={1} />
 
-            {home.secondary.length > 0 ? (
-              <div className="mn-home__secondary">
-                {home.secondary.slice(0, 2).map((article) => (
-                  <ArticleCard key={article.id} article={article} size="lg" showExcerpt showKicker={false} />
-                ))}
-              </div>
-            ) : null}
-          </div>
-
-          <aside className="mn-home__aside" aria-label="Mais destaques">
-            {home.aside[0] ? <ArticleCard article={home.aside[0]} size="md" showMeta /> : null}
-            <AdSlot id="ad-home-sidebar" {...AD_SLOTS.sidebar} sticky targeting={{ brand: 'mn', template: 'home' }} />
-          </aside>
-        </section>
-      </Shell>
-
-      <Shell>
-        <div className="mn-section--tight">
-          <AdSlot id="ad-home-leaderboard" {...AD_SLOTS.leaderboard} targeting={{ brand: 'mn', template: 'home' }} />
-        </div>
-      </Shell>
-
-      {/*
-       * The full-width band, third module on the approved front page.
-       *
-       * Its absence was the single largest departure from the design: the page went from
-       * hero to grid to grid with nothing to break the rhythm, which is what made it read
-       * as a wireframe rather than as a front page.
-       */}
-      {home.banner ? (
-        <Shell>
-          <div className="mn-section">
-            <HomeBannerBand banner={home.banner} />
-          </div>
-        </Shell>
-      ) : null}
-
-      {home.sections[0] ? (
-        <Shell>
-          <section className="mn-section" aria-label={home.sections[0].label}>
-            <SectionHeading label={home.sections[0].label} href={home.sections[0].href} />
-            <ArticleGrid articles={home.sections[0].articles.slice(0, 3)} columns={3} showExcerpt />
+        {home.cinema.length > 0 ? (
+          <section aria-labelledby="h-cinema" className={section}>
+            <SectionTitle id="h-cinema" forte="Notícias" fraco="de cinema" className="mb-28" />
+            <div className="grid grid-cols-1 gap-14 tab:grid-cols-4 tab:gap-40">
+              {c0 ? <StandardCard chamada={c0} kicker={rotulo(c0)} meta={tempo(c0, now)} /> : null}
+              {c1 ? <StandardCard chamada={c1} kicker={rotulo(c1)} meta={tempo(c1, now)} /> : null}
+              {c2 ? <BigCard chamada={c2} kicker={rotulo(c2)} meta={tempo(c2, now)} /> : null}
+              {c3 ? <StandardCard chamada={c3} kicker={rotulo(c3)} meta={tempo(c3, now)} /> : null}
+              {c4 ? <StandardCard chamada={c4} kicker={rotulo(c4)} meta={tempo(c4, now)} /> : null}
+              {c5 ? <BigCard chamada={c5} kicker={rotulo(c5)} meta={tempo(c5, now)} /> : null}
+            </div>
           </section>
-        </Shell>
-      ) : null}
+        ) : null}
 
-      <Shell>
-        <div className="mn-section">
-          <WhereToWatch titles={home.whereToWatch} />
-        </div>
-      </Shell>
-
-      {home.poll ? (
-        <Shell>
-          <div className="mn-section">
-            <SectionHeading label="Enquete" />
-            <HomePoll poll={home.poll} />
-          </div>
-        </Shell>
-      ) : null}
-
-      {home.sections[1] ? (
-        <Shell>
-          <section className="mn-section" aria-label={home.sections[1].label}>
-            <SectionHeading label={home.sections[1].label} href={home.sections[1].href} />
-            <ArticleGrid articles={home.sections[1].articles.slice(0, 4)} columns={4} size="sm" showMeta={false} />
-          </section>
-        </Shell>
-      ) : null}
-
-      {home.special ? (
-        <Shell>
-          <HomeSpecialFeature special={home.special} />
-        </Shell>
-      ) : null}
-
-      <section className="mn-videoband" aria-label="Galeria de vídeos">
-        <Shell>
-          <SectionHeading label="Galeria de vídeos" tone="dark" href="/videos" linkLabel="Mais vídeos" />
-          <div className="mn-videoband__grid">
-            {home.sections[2]?.articles[0] ? (
-              <ArticleCard article={home.sections[2].articles[0]} size="lg" showExcerpt headingLevel="h3" />
-            ) : null}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-              {(home.sections[2]?.articles ?? []).slice(1, 3).map((article) => (
-                <ArticleCard key={article.id} article={article} size="sm" layout="horizontal" showMeta={false} />
+        {home.games.length > 0 ? (
+          <section aria-labelledby="h-games" className={section}>
+            <SectionTitle
+              id="h-games"
+              forte="Games"
+              acao={{ rotulo: 'Ver Games', href: EDITORIAS.games.href }}
+              className="mb-28"
+            />
+            <div className={`${scroller} tab:grid-cols-4`}>
+              {home.games.map((c) => (
+                <StandardCard key={c.id} chamada={c} meta={tempo(c, now)} showExcerpt={false} />
               ))}
             </div>
-          </div>
-        </Shell>
-      </section>
-
-      <Shell>
-        <section className="mn-section" aria-label="Mais lidas">
-          <SectionHeading label="Mais lidas" />
-          <MostRead items={home.mostRead} />
-        </section>
-      </Shell>
-
-      {home.more.length > 0 ? (
-        <Shell>
-          <HomeMoreGrid label="Mais, mais, mais" articles={home.more} />
-        </Shell>
-      ) : null}
-
-      {home.sections[3] ? (
-        <Shell>
-          <section className="mn-section" aria-label={home.sections[3].label}>
-            <SectionHeading label={home.sections[3].label} href={home.sections[3].href} />
-            <ArticleGrid articles={home.sections[3].articles} columns={3} size="sm" />
           </section>
-        </Shell>
-      ) : null}
+        ) : null}
 
-      <Editorial>
-        <section className="mn-section" aria-label="Editorias">
-          <SectionHeading label="Editorias" />
-          <div className="mn-grid mn-grid--3">
-            {CATEGORY_SLUGS.map((slug) => (
-              <Link className="mn-card" key={slug} href={`/${slug}`}>
-                <span className="mn-card__kicker">Editoria</span>
-                <span className="mn-card__title">{CATEGORIES[slug].name}</span>
-              </Link>
-            ))}
-          </div>
+        <section aria-label="Publicidade" className="mt-36 border-t border-line pt-32 tab:mt-56">
+          <AdSlot formato="970x250" />
         </section>
-      </Editorial>
 
-      <Editorial>
-        <section className="mn-section" aria-label="Newsletter">
-          <div className="mn-newsletter">
-            <span className="mn-newsletter__eyebrow">Toda sexta</span>
-            <h2 className="mn-newsletter__title">A semana nerd em 5 minutos</h2>
-            <p className="mn-wheretowatch__intro">
-              O que importou em cinema, séries, quadrinhos e games, sem enrolação. Cancele quando quiser.
-            </p>
-            <NewsletterForm />
-          </div>
-        </section>
-      </Editorial>
+        {home.series.manchete ? (
+          <section aria-labelledby="h-series" className={section}>
+            <SectionTitle id="h-series" forte="Notícias" fraco="de Séries e TV" className="mb-28" />
+            <div className="grid grid-cols-1 items-start gap-14 tab:grid-cols-4 tab:gap-40">
+              <div className="flex flex-col gap-14 tab:col-span-3 tab:gap-24">
+                <HeroCard
+                  chamada={home.series.manchete}
+                  kicker={home.series.manchete.editoria.nome}
+                  meta={data(home.series.manchete)}
+                  variante="pick"
+                  as="h3"
+                />
+                <div className="grid grid-cols-1 gap-14 tab:grid-cols-3 tab:gap-24">
+                  {home.series.destaques.map((c) => (
+                    <OverlayCard key={c.id} chamada={c} kicker={c.editoria.nome} meta={tempo(c, now)} />
+                  ))}
+                </div>
+              </div>
+              {home.quadrinhos.length > 0 ? (
+                <SideList
+                  titulo={['Últimas de', `${EDITORIAS.quadrinhos.nome}:`]}
+                  itens={home.quadrinhos}
+                  kicker={rotulo}
+                  meta={(c) => tempo(c, now)}
+                  ordemAnuncio={2}
+                />
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {home.animes.length > 0 ? (
+          <section aria-labelledby="h-animes" className={section}>
+            <SectionTitle
+              id="h-animes"
+              forte="Animes"
+              fraco="| Especiais"
+              acao={{ rotulo: 'Ver Animes', href: EDITORIAS.animes.href }}
+              className="mb-28"
+            />
+            <div className={`${scroller} tab:grid-cols-3`}>
+              {home.animes.map((c) => (
+                <StandardCard key={c.id} chamada={c} kicker={rotuloComposto(c)} meta={data(c)} />
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {home.videos.destaque ? (
+          <section aria-labelledby="h-videos" className={section}>
+            <SectionTitle id="h-videos" forte="Vídeo" fraco="em destaque" className="mb-28" />
+            <FeatureVideoCard chamada={home.videos.destaque} kicker={rotuloComposto(home.videos.destaque)} />
+            {home.videos.clipes.length > 0 ? (
+              <>
+                <div className="mt-16 flex items-center border-b border-line">
+                  <span
+                    className="-mb-px border-b-2 py-10 text-12"
+                    style={{ color: EDITORIAS.videos.corTexto, borderColor: EDITORIAS.videos.cor }}
+                  >
+                    Recentes
+                  </span>
+                </div>
+                <div className={`${scroller} mt-28 tab:grid-cols-4`}>
+                  {home.videos.clipes.map((c) => (
+                    <VideoCard key={c.id} chamada={c} kicker={rotulo(c)} />
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </section>
+        ) : null}
+
+        <FeedSection
+          titulo={{ forte: 'Mais', fraco: 'do Máquina Nerd' }}
+          itens={home.feed}
+          paginacao={home.paginacao}
+          hrefPara={(n) => (n === 1 ? '/' : `/page/${n}`)}
+          now={now}
+          anunciosACada3
+          primeiraOrdem={3}
+        />
+      </main>
     </>
   );
 }

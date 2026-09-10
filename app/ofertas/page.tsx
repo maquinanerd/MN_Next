@@ -1,34 +1,39 @@
 import type { Metadata } from 'next';
-import { AdSlot, AD_SLOTS, ArticleGrid, Breadcrumbs, Editorial, EmptyState, Pagination, SectionHeading } from '@mn/ui';
-import { JsonLd, breadcrumbNode, buildGraph, collectionNode, listingMetadata, absolute } from '@mn/seo';
+import { notFound } from 'next/navigation';
+import { EmptyState } from '@mn/ui';
+import { JsonLd, absolute, breadcrumbNode, buildGraph, collectionNode, listingMetadata } from '@mn/seo';
 
-import { repo } from '../../lib/content';
+import { Header } from '../../components/Chrome';
+import { FeedSection } from '../../components/Feed';
+import { agora, listView, parsePageQuery, repo } from '../../lib/content';
 import { seoContext } from '../../lib/seo-context';
 
-/** Offers index. Every item here is commercial and says so. */
+/**
+ * Offers index. No prototype: the editoria header and its list, as the kit asks for
+ * surfaces it does not draw. Every item here is an affiliate page and says so on the page.
+ */
 export const revalidate = 300;
 
-export async function generateMetadata({
-  searchParams,
-}: {
-  searchParams: Promise<{ page?: string }>;
-}): Promise<Metadata> {
-  const { page } = await searchParams;
+type Search = { page?: string | string[] };
+
+export async function generateMetadata({ searchParams }: { searchParams: Promise<Search> }): Promise<Metadata> {
+  const page = parsePageQuery((await searchParams).page);
   return listingMetadata(seoContext(), {
     title: 'Ofertas',
-    description: 'Ofertas de quadrinhos, colecionáveis e hardware filtradas pela redação, com preço verificado.',
+    description: 'Ofertas selecionadas pela redação do Máquina Nerd, com links de afiliados.',
     path: '/ofertas',
-    page: Number(page ?? 1) || 1,
+    page,
     pagination: 'query',
   });
 }
 
-export default async function OffersPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
-  const { page: rawPage } = await searchParams;
-  const page = Number(rawPage ?? 1) || 1;
+export default async function OffersPage({ searchParams }: { searchParams: Promise<Search> }) {
+  const page = parsePageQuery((await searchParams).page);
+  const result = await repo().listOffers(page, { perPage: 10 });
+  // Page 1 may be empty and says so; a page past the end is not a page.
+  if (page > 1 && result.items.length === 0) notFound();
+  const view = listView(result);
   const ctx = seoContext();
-  const result = await repo().listOffers(page);
-  const crumbs = [{ label: 'Home', href: '/' }, { label: 'Ofertas' }];
 
   return (
     <>
@@ -36,53 +41,39 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
         graph={buildGraph(ctx, [
           collectionNode(ctx, {
             name: 'Ofertas',
-            description: 'Ofertas com preço verificado.',
+            description: 'Ofertas selecionadas pela redação.',
             url: absolute(ctx, '/ofertas'),
             items: result.items,
           }),
-          breadcrumbNode(ctx, crumbs),
+          breadcrumbNode(ctx, [{ label: 'Home', href: '/' }, { label: 'Ofertas' }]),
         ])}
       />
-
-      <Editorial>
-        <Breadcrumbs items={crumbs} />
-        <header className="mn-cathead">
-          <h1 className="mn-cathead__title">Ofertas</h1>
-          <p className="mn-cathead__desc">
-            Seleção da redação, com preço e data de verificação visíveis. Os links de compra são de afiliados e podem
-            gerar comissão, sem alterar o valor final para você.
+      <Header />
+      <main id="conteudo" className="wrap pt-20 tab:pt-32">
+        <div className="border-b border-line pb-20">
+          <h1 className="m-0 text-25 leading-none font-extrabold tracking-[-0.03em] text-mn-red-text tab:text-34">
+            Ofertas
+          </h1>
+          <p className="mt-12 mb-0 max-w-[68ch] text-13 leading-[1.5] text-ink-3">
+            Os links de compra destas páginas são de afiliados: o Máquina Nerd pode receber uma comissão, sem custo
+            adicional para você.
           </p>
-        </header>
-
-        <div className="mn-section">
-          {result.items.length === 0 ? (
+        </div>
+        <FeedSection
+          titulo={{ forte: 'Todas', fraco: 'as ofertas' }}
+          itens={view.lista}
+          paginacao={view.paginacao}
+          hrefPara={(n) => (n === 1 ? '/ofertas' : `/ofertas?page=${n}`)}
+          now={agora()}
+          vazio={
             <EmptyState
-              title="Nenhuma oferta ativa no momento"
-              description="Quando a redação encontrar um preço que vale a pena, ele aparece aqui."
-              action={{ label: 'Ver reviews', href: '/reviews' }}
+              titulo="Nenhuma oferta publicada no momento"
+              descricao="Quando a redação encontrar um preço que vale a pena, ele aparece aqui."
+              acao={{ rotulo: 'Ver a home', href: '/' }}
             />
-          ) : (
-            <>
-              <SectionHeading label="Ofertas ativas" />
-              <ArticleGrid articles={result.items} columns={3} showExcerpt />
-              <Pagination
-                page={page}
-                totalPages={result.totalPages}
-                hasNext={result.hasNext}
-                hrefFor={(n) => (n === 1 ? '/ofertas' : `/ofertas?page=${n}`)}
-              />
-            </>
-          )}
-        </div>
-
-        <div className="mn-section--tight">
-          <AdSlot
-            id="ad-offers-leaderboard"
-            {...AD_SLOTS.leaderboard}
-            targeting={{ brand: 'mn', template: 'ofertas' }}
-          />
-        </div>
-      </Editorial>
+          }
+        />
+      </main>
     </>
   );
 }

@@ -1,41 +1,39 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { safeSlugParam } from '@mn/content';
-import { ArticleGrid, Breadcrumbs, Editorial, EmptyState, Pagination, SectionHeading } from '@mn/ui';
+import { isReservedTag, safeSlugParam } from '@mn/content';
+import { EmptyState } from '@mn/ui';
 import { JsonLd, breadcrumbNode, buildGraph, listingMetadata, noindexMetadata } from '@mn/seo';
 
-import { repo } from '../../../lib/content';
+import { Header } from '../../../components/Chrome';
+import { FeedSection } from '../../../components/Feed';
+import { agora, listView, parsePageQuery, repo } from '../../../lib/content';
 import { seoContext } from '../../../lib/seo-context';
 
 /**
- * Tag archive.
- *
- * Page 1 is indexable - a tag is a real topic hub. Paginated tag pages are
- * `noindex, follow`: they are thin, near-duplicate slices that dilute the hub without
- * adding anything a crawler needs (docs/06).
+ * Tag archive — where an editoria's subject filters lead ("Marvel", "Streaming"). Page 1
+ * is an indexable topic hub; deeper pages are `noindex, follow`, thin slices that would
+ * dilute the hub. Reserved tags (layout switches) have no public archive.
  */
 export const revalidate = 300;
 
 type Params = { slug: string };
+type Search = { page?: string | string[] };
 
 export async function generateMetadata({
   params,
   searchParams,
 }: {
   params: Promise<Params>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<Search>;
 }): Promise<Metadata> {
-  const { slug: raw } = await params;
-  const { page: rawPage } = await searchParams;
-  const page = Number(rawPage ?? 1) || 1;
-  const slug = safeSlugParam(raw);
+  const slug = safeSlugParam((await params).slug);
+  const page = parsePageQuery((await searchParams).page);
   const ctx = seoContext();
-  if (!slug) return { title: 'Tag não encontrada', robots: { index: false } };
+  if (!slug || isReservedTag(slug)) return { title: 'Tag não encontrada', robots: { index: false } };
   const result = await repo()
     .getTag(slug, 1)
     .catch(() => null);
   if (!result) return { title: 'Tag não encontrada', robots: { index: false } };
-
   if (page > 1) {
     return noindexMetadata(
       ctx,
@@ -56,52 +54,45 @@ export default async function TagPage({
   searchParams,
 }: {
   params: Promise<Params>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<Search>;
 }) {
-  const { slug: raw } = await params;
-  const { page: rawPage } = await searchParams;
-  const page = Number(rawPage ?? 1) || 1;
-  const slug = safeSlugParam(raw);
-  if (!slug) notFound();
+  const slug = safeSlugParam((await params).slug);
+  if (!slug || isReservedTag(slug)) notFound();
+  const page = parsePageQuery((await searchParams).page);
 
   const result = await repo().getTag(slug, page);
   if (!result) notFound();
+  if (page > 1 && result.items.length === 0) notFound();
 
   const ctx = seoContext();
-  const crumbs = [{ label: 'Home', href: '/' }, { label: result.tag.name }];
+  const view = listView(result);
 
   return (
     <>
-      <JsonLd graph={buildGraph(ctx, [breadcrumbNode(ctx, crumbs)])} />
-
-      <Editorial>
-        <Breadcrumbs items={crumbs} />
-        <header className="mn-cathead">
-          <p className="mn-sectionheading__label">Tag</p>
-          <h1 className="mn-cathead__title">{result.tag.name}</h1>
-        </header>
-
-        <div className="mn-section">
-          {result.items.length === 0 ? (
-            <EmptyState
-              title="Nenhuma matéria com esta tag"
-              description="Talvez o assunto ainda não tenha sido coberto, ou a tag tenha sido renomeada."
-              action={{ label: 'Buscar no site', href: '/busca' }}
-            />
-          ) : (
-            <>
-              <SectionHeading label="Matérias" />
-              <ArticleGrid articles={result.items} columns={3} showExcerpt />
-              <Pagination
-                page={page}
-                totalPages={result.totalPages}
-                hasNext={result.hasNext}
-                hrefFor={(n) => (n === 1 ? `/tag/${slug}` : `/tag/${slug}?page=${n}`)}
-              />
-            </>
-          )}
+      <JsonLd
+        graph={buildGraph(ctx, [breadcrumbNode(ctx, [{ label: 'Home', href: '/' }, { label: result.tag.name }])])}
+      />
+      <Header />
+      <main id="conteudo" className="wrap pt-20 tab:pt-32">
+        <div className="border-b border-line pb-20">
+          <p className="m-0 mb-10 text-12 font-bold text-muted">Assunto</p>
+          <h1 className="m-0 text-25 leading-none font-extrabold tracking-[-0.03em] tab:text-34">{result.tag.name}</h1>
         </div>
-      </Editorial>
+        <FeedSection
+          titulo={{ forte: 'Notícias', fraco: `sobre ${result.tag.name}` }}
+          itens={view.lista}
+          paginacao={view.paginacao}
+          hrefPara={(n) => (n === 1 ? `/tag/${slug}` : `/tag/${slug}?page=${n}`)}
+          now={agora()}
+          vazio={
+            <EmptyState
+              titulo="Nenhuma matéria com este assunto"
+              descricao="Talvez o assunto ainda não tenha sido coberto."
+              acao={{ rotulo: 'Buscar no site', href: '/busca' }}
+            />
+          }
+        />
+      </main>
     </>
   );
 }

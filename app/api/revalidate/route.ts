@@ -1,6 +1,15 @@
 import { revalidateTag } from 'next/cache';
 import { NextResponse } from 'next/server';
-import { TAG, articleSlugTag, articleTag, authorTag, categoryTag, isValidSlug, tagTag } from '@mn/content';
+import {
+  EDITORIA_SLUGS,
+  TAG,
+  articleSlugTag,
+  articleTag,
+  authorTag,
+  categoryTag,
+  isValidSlug,
+  tagTag,
+} from '@mn/content';
 import { serverEnv } from '@mn/content/env';
 import { MemoryNonceStore, verifyWebhook } from '@mn/content/security/webhook';
 import type { KalElArticlePublishedPayload } from '@mn/content/kalel/dto';
@@ -87,9 +96,9 @@ export async function POST(request: Request): Promise<Response> {
     for (const slug of relations.tags) tags.add(tagTag(slug));
     for (const slug of relations.authors) tags.add(authorTag(slug));
   } else {
-    // Without the relations, purge every desk: a listing showing yesterday's front page
-    // is worse than a handful of extra ISR rebuilds.
-    for (const desk of ['filmes', 'series', 'quadrinhos', 'games', 'animes']) tags.add(categoryTag(desk));
+    // Without the relations, purge every editoria: a listing showing yesterday's front
+    // page is worse than a handful of extra ISR rebuilds.
+    for (const desk of EDITORIA_SLUGS) tags.add(categoryTag(desk));
   }
 
   for (const tag of tags) revalidateTag(tag);

@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Breadcrumbs, Editorial, NewsletterForm } from '@mn/ui';
-import { JsonLd, breadcrumbNode, buildGraph, listingMetadata } from '@mn/seo';
+import { NewsletterForm } from '@mn/ui';
+import { listingMetadata } from '@mn/seo';
 
+import { InstitutionalPage } from '../../components/Institutional';
 import { seoContext } from '../../lib/seo-context';
 
 export const revalidate = 3600;
@@ -10,41 +11,28 @@ export const revalidate = 3600;
 export async function generateMetadata(): Promise<Metadata> {
   return listingMetadata(seoContext(), {
     title: 'Newsletter',
-    description: 'A semana nerd em 5 minutos: cinema, séries, quadrinhos e games, toda sexta no seu e-mail.',
+    description: 'Receba a newsletter do Máquina Nerd no seu e-mail.',
     path: '/newsletter',
   });
 }
 
+/**
+ * Newsletter. It promises no frequency and no contents — the provider and the editorial
+ * format are not decided yet, and the kit forbids inventing either.
+ */
 export default function NewsletterPage() {
-  const ctx = seoContext();
-  const crumbs = [{ label: 'Home', href: '/' }, { label: 'Newsletter' }];
-
   return (
-    <>
-      <JsonLd graph={buildGraph(ctx, [breadcrumbNode(ctx, crumbs)])} />
-
-      <Editorial>
-        <Breadcrumbs items={crumbs} />
-        <header className="mn-cathead">
-          <h1 className="mn-cathead__title">A semana nerd em 5 minutos</h1>
-          <p className="mn-cathead__desc">
-            Toda sexta-feira, o que realmente importou em cinema, séries, quadrinhos, games e animes. Sem clickbait, sem
-            corrente de e-mail, e com um link de cancelamento em toda edição.
-          </p>
-        </header>
-
-        <div className="mn-section">
-          <div className="mn-newsletter">
-            <span className="mn-newsletter__eyebrow">Inscrição</span>
-            <h2 className="mn-newsletter__title">Receber a newsletter</h2>
-            <NewsletterForm />
-            <p className="mn-wheretowatch__intro" style={{ marginBottom: 0 }}>
-              Usamos seu e-mail apenas para enviar esta newsletter. Detalhes na{' '}
-              <Link href="/politica-de-privacidade">política de privacidade</Link>.
-            </p>
-          </div>
-        </div>
-      </Editorial>
-    </>
+    <InstitutionalPage
+      titulo="Newsletter"
+      intro="Receba no seu e-mail uma seleção de notícias de cinema, séries e TV, games, quadrinhos e animes do Máquina Nerd."
+    >
+      <div className="border border-line p-20 tab:p-28">
+        <NewsletterForm endpoint="/api/newsletter" />
+      </div>
+      <p className="text-13">
+        Usamos seu e-mail apenas para enviar a newsletter, com link de cancelamento em toda edição. Detalhes na{' '}
+        <Link href="/politica-de-privacidade">política de privacidade</Link>.
+      </p>
+    </InstitutionalPage>
   );
 }

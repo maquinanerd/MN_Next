@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { Editorial } from '@mn/ui';
+
+import { Header } from '../components/Chrome';
+import { EDITORIAS } from '../lib/content/editorias';
 
 export const metadata: Metadata = {
   title: 'Página não encontrada',
@@ -8,47 +10,48 @@ export const metadata: Metadata = {
 };
 
 /**
- * 404.
- *
- * `follow` without `index`: the page itself should not be indexed, but a crawler that
- * lands here should still follow the desk links out, so the archive stays reachable from
- * a stale inbound link.
+ * 404 — a real 404 status (no route-level `loading.tsx` exists to turn it into a 200).
+ * `follow` without `index`: a crawler arriving from a stale link still follows the
+ * editorias out, so the archive stays reachable.
  */
 export default function NotFound() {
   return (
-    <Editorial>
-      <div style={{ paddingBlock: 80, display: 'flex', flexDirection: 'column', gap: 20, maxWidth: '68ch' }}>
-        <p className="mn-sectionheading__label">Erro 404</p>
-        <h1 className="mn-cathead__title">Essa página não existe mais</h1>
-        <p className="mn-cathead__desc">
-          O endereço pode ter mudado, ou a matéria pode ter sido removida. As editorias abaixo continuam no mesmo lugar.
+    <>
+      <Header />
+      <main id="conteudo" className="wrap py-48 tab:py-80">
+        <p className="m-0 text-12 font-bold text-muted">Erro 404</p>
+        <h1 className="mt-12 mb-0 text-25 leading-[1.12] font-extrabold tracking-[-0.035em] tab:text-34">
+          Essa página não existe mais
+        </h1>
+        <p className="mt-16 mb-0 max-w-[60ch] text-15 leading-[1.5] text-ink-3">
+          O endereço pode ter mudado, ou a matéria pode ter sido removida. As editorias continuam no mesmo lugar.
         </p>
-        <nav aria-label="Editorias" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Link className="mn-tag" href="/filmes">
-            Filmes
-          </Link>
-          <Link className="mn-tag" href="/series">
-            Séries
-          </Link>
-          <Link className="mn-tag" href="/quadrinhos">
-            Quadrinhos
-          </Link>
-          <Link className="mn-tag" href="/games">
-            Games
-          </Link>
-          <Link className="mn-tag" href="/animes">
-            Animes
-          </Link>
+        <nav aria-label="Editorias do site" className="mt-24 flex flex-wrap gap-6">
+          {Object.values(EDITORIAS).map((e) => (
+            <Link
+              key={e.slug}
+              href={e.href}
+              className="border border-control px-14 py-7 text-12 font-semibold text-ink"
+            >
+              {e.nome}
+            </Link>
+          ))}
         </nav>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Link className="mn-button mn-button--primary" href="/">
+        <div className="mt-24 flex flex-wrap gap-8">
+          <Link
+            href="/"
+            className="inline-flex h-44 items-center border border-mn-red bg-mn-red px-20 text-13 font-bold text-white hover:text-white"
+          >
             Ir para a home
           </Link>
-          <Link className="mn-button" href="/busca">
+          <Link
+            href="/busca"
+            className="inline-flex h-44 items-center border border-control px-20 text-13 font-bold text-ink"
+          >
             Buscar no site
           </Link>
         </div>
-      </div>
-    </Editorial>
+      </main>
+    </>
   );
 }

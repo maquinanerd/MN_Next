@@ -4,7 +4,7 @@ import type { ContentRepository } from '@mn/content';
 import { ContentError, isContentError } from '@mn/content';
 import { contentRepository } from '@mn/content/provider';
 
-import { logger } from './logger';
+import { logger } from '../logger';
 
 /**
  * Server-side content access for route handlers and pages.
@@ -98,6 +98,16 @@ export function parsePage(raw: string | undefined): number {
   if (raw === undefined) return 1;
   if (!/^[1-9][0-9]{0,3}$/.test(raw)) notFound();
   return Number(raw);
+}
+
+/**
+ * The same rule for `?page=`: a whole number from 1 to 9999, or a 404. A query value can
+ * also arrive repeated (`?page=2&page=3`), as an array — that is not a page either.
+ */
+export function parsePageQuery(raw: string | string[] | undefined): number {
+  if (raw === undefined) return 1;
+  if (typeof raw !== 'string') notFound();
+  return parsePage(raw);
 }
 
 export { ContentError, isContentError };
