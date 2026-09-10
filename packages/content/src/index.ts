@@ -3,29 +3,27 @@ export * from './repository';
 export * from './errors';
 export * from './cache-tags';
 export * from './slug';
+export * from './paths';
 export { SITEMAP_PAGE_SIZE } from './sitemap-page-size';
 export * from './sanitize';
-export { FixtureContentRepository } from './fixture/repository';
+export { FixtureContentRepository, FIXTURE_NOW } from './fixture/repository';
 export {
   fixtureArticles,
   fixtureAuthors,
   fixtureCategories,
-  fixtureLiveEvent,
-  fixturePoll,
   fixtureRedirects,
   fixtureTags,
-  fixtureWatchTitles,
   toSummary,
 } from './fixture/data';
 export {
-  CATEGORIES,
-  CATEGORY_SLUGS,
   DESK_SLUGS,
+  EDITORIA_NAMES,
+  EDITORIA_SLUGS,
+  OFFER_SEGMENT,
+  RENAMED_DESKS,
   RESERVED_SEGMENTS,
-  NAV_ITEMS,
-  FOOTER_COLUMNS,
-  SOCIAL_LINKS,
-  NETWORK_LINKS,
   SITE,
+  SOCIAL_LINKS,
+  isEditoriaSlug,
 } from './site';
-export type { NavItem, FooterColumn, SocialLink, NetworkLink, CategorySlug } from './site';
+export type { EditoriaSlug, SocialLink } from './site';

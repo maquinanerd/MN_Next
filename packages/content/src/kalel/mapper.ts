@@ -1,5 +1,3 @@
-import { authorColorVar, initialsOf } from '@mn/tokens';
-
 import type {
   Article,
   ArticleSummary,
@@ -18,6 +16,7 @@ import type {
   Tag,
 } from '../domain/types';
 import { EMBED_PROVIDERS } from '../domain/types';
+import { resolveLayout } from '../paths';
 import { readingMinutes, slugify } from '../slug';
 import { safeHref } from '../sanitize';
 import type {
@@ -35,13 +34,12 @@ import type {
 /**
  * The single place that knows Kal El's vocabulary.
  *
- * Where the CMS model is narrower than the approved front-end (Kal El has five article
- * types; the prototypes have five *templates*, two of which the CMS cannot express), the
- * gap is closed here by reserved taxonomy slugs rather than by inventing CMS fields.
- * Every such convention is listed in `docs/migration/KAL-EL-DISCOVERY.md`.
+ * Where the CMS model is narrower than the approved front end — no page-layout field, no
+ * product model — the gap is closed by reserved taxonomy slugs rather than by inventing
+ * CMS fields. Every convention is listed in `docs/migration/KAL-EL-DISCOVERY.md`.
  */
 
-/** Reserved tag slugs that carry presentation intent Kal El has no column for. */
+/** Reserved tag slugs that carry editorial intent Kal El has no column for. */
 export const RESERVED_TAGS = {
   longform: 'longform',
   urgent: 'ao-vivo',
@@ -55,6 +53,9 @@ export const RESERVED_TAGS = {
 
 /** Reserved entity types the mapper reads for commercial metadata. */
 export const RESERVED_ENTITY_TYPES = { brand: 'brand', product: 'product' } as const;
+
+/** An edit this soon after publication or import is part of publishing, not an update. */
+const EDIT_GRACE_MS = 10 * 60 * 1000;
 
 export interface MapperContext {
   /** Resolved taxonomy, keyed by Kal El id. */
@@ -85,14 +86,13 @@ export function mapTag(dto: KalElTag): Tag {
   return { id: dto.id, slug: dto.slug, name: dto.name };
 }
 
+/** An author. A portrait only when the CMS has one — never a generated initials disc. */
 export function mapAuthor(dto: KalElAuthor, media?: Map<string, Image>): Author {
   const avatar = dto.avatarMediaId ? media?.get(dto.avatarMediaId) : undefined;
   return {
     id: dto.id,
     name: dto.name,
     slug: dto.slug,
-    initials: initialsOf(dto.name),
-    avatarColor: authorColorVar(dto.id),
     ...(dto.bio ? { bio: dto.bio } : {}),
     ...(avatar ? { avatar } : {}),
   };
@@ -194,16 +194,7 @@ export interface DocumentMapResult {
   wordCount: number;
 }
 
-/**
- * Kal El document (v2) to domain blocks.
- *
- * Two shapes are inferred rather than stored, because the CMS document model has no node
- * for either and the approved templates require both:
- *  - a two-column table whose headers read as label/value becomes a `specTable`;
- *  - a `source` node becomes a `sourceLink`, which the commercial templates render as an
- *    attributed outbound link with `rel="sponsored nofollow"` when the article is
- *    commercial.
- */
+/** Kal El document (v2) to domain blocks. */
 export function mapDocument(
   nodes: KalElDocumentNode[],
   ctx: Pick<MapperContext, 'media' | 'mediaUrl'>,
@@ -252,18 +243,6 @@ export function mapDocument(
         const headers = node.attrs.headers ?? [];
         const rows = (node.content as KalElInline[][][]).map((row) => row.map(mapInline));
         rows.forEach((row) => row.forEach((cell) => countWords(inlineToText(cell))));
-        const isSpec =
-          rows.length > 0 && rows.every((r) => r.length === 2) && (headers.length === 0 || headers.length === 2);
-        if (isSpec) {
-          blocks.push({
-            type: 'specTable',
-            rows: rows.map((r) => ({
-              label: inlineToText(r[0] as RichText).trim(),
-              value: inlineToText(r[1] as RichText).trim(),
-            })),
-          });
-          return;
-        }
         blocks.push({ type: 'table', headers, rows });
         return;
       }
@@ -305,12 +284,7 @@ export function mapDocument(
           unknown[`embed:${node.attrs.provider}`] = (unknown[`embed:${node.attrs.provider}`] ?? 0) + 1;
           return;
         }
-        blocks.push({
-          type: 'embed',
-          provider,
-          url,
-          ...(node.attrs.id ? { embedId: node.attrs.id } : {}),
-        });
+        blocks.push({ type: 'embed', provider, url, ...(node.attrs.id ? { embedId: node.attrs.id } : {}) });
         return;
       }
       case 'source': {
@@ -338,10 +312,8 @@ export function mapDocument(
 }
 
 /**
- * Kal El article type + reserved tags to the five approved templates.
- *
- * `longform` and `urgent` do not exist as CMS types; they are editorial presentations
- * flagged by a reserved tag. Everything else maps one-to-one.
+ * Kal El article type + reserved tags to a template. `longform` and `urgent` are editorial
+ * flags carried by reserved tags; the rest map one-to-one.
  */
 export function resolveTemplate(dto: KalElArticleSummary, tags: Tag[]): ArticleTemplate {
   const slugs = new Set(tags.map((t) => t.slug));
@@ -352,9 +324,6 @@ export function resolveTemplate(dto: KalElArticleSummary, tags: Tag[]): ArticleT
       return 'list';
     case 'video':
       return 'video';
-    case 'review':
-    case 'article':
-    case 'audio':
     default:
       return 'standard';
   }
@@ -414,11 +383,23 @@ function excerptFrom(dto: KalElArticleSummary): string {
 }
 
 /**
- * Article summary for cards and listings.
+ * When a reader should be told the text changed: `updatedAt`, but only when it is later
+ * than both the publication and the moment the record was created in Kal El.
  *
- * An article without a slug cannot be linked; the caller filters those out rather than
- * rendering a card that 404s. `kicker` is the primary category name, which is what the
- * prototypes paint red above a headline.
+ * The second condition is what keeps the archive honest: an imported article is created
+ * at import time, years after its publication, and its `updatedAt` is that same moment.
+ * Measured against `publishedAt` alone, every one of them would read "Atualizado em" the
+ * day of the migration.
+ */
+export function editedAt(dto: Pick<KalElArticleSummary, 'publishedAt' | 'createdAt' | 'updatedAt'>): string | null {
+  const updated = Date.parse(dto.updatedAt);
+  const baseline = Math.max(dto.publishedAt ? Date.parse(dto.publishedAt) : 0, Date.parse(dto.createdAt));
+  return Number.isFinite(updated) && updated - baseline > EDIT_GRACE_MS ? dto.updatedAt : null;
+}
+
+/**
+ * Article summary for cards and listings. An article without a slug cannot be linked;
+ * the repository filters those out rather than rendering a card that 404s.
  */
 export function mapArticleSummary(dto: KalElArticleSummary, ctx: MapperContext): ArticleSummary | null {
   if (!dto.slug) return null;
@@ -435,10 +416,10 @@ export function mapArticleSummary(dto: KalElArticleSummary, ctx: MapperContext):
     brand: 'mn',
     slug: dto.slug,
     template,
+    layout: commercialKind === 'affiliate' ? 'offer' : resolveLayout(tags),
     title: dto.title,
     ...(dto.dek ? { subtitle: dto.dek } : {}),
     excerpt: excerptFrom(dto),
-    ...(category ? { kicker: category.name } : {}),
     cover,
     authors,
     category,
@@ -446,8 +427,8 @@ export function mapArticleSummary(dto: KalElArticleSummary, ctx: MapperContext):
     publishedAt: dto.publishedAt,
     updatedAt: dto.updatedAt,
     status: dto.status,
-    // A summary has no body; the list endpoint does not return one. Reading time is
-    // recomputed from the full document when the article itself is fetched.
+    // A summary has no body; reading time is recomputed from the document when the
+    // article itself is fetched.
     readingMinutes: readingMinutes(excerptFrom(dto).split(/\s+/).filter(Boolean).length * 12),
     ...(commercialKind ? { commercialKind } : {}),
   };
@@ -474,6 +455,7 @@ export function mapArticle(dto: KalElArticle, ctx: MapperContext): MapArticleRes
     readingMinutes: readingMinutes(doc.wordCount),
     body: doc.blocks,
     seo: mapSeo(dto.seo, { title: dto.title, excerpt: summary.excerpt, cover: summary.cover, schemaType }, ctx.media),
+    editedAt: editedAt(dto),
     ...(commercial ? { commercial } : {}),
   };
 
@@ -481,12 +463,10 @@ export function mapArticle(dto: KalElArticle, ctx: MapperContext): MapArticleRes
 }
 
 /**
- * Commercial metadata, assembled from what Kal El can express today.
- *
- * Kal El has no offer/price model, so `offers` is left undefined and the BuyBox does not
- * render for CMS-authored content; the WordPress importer carries the offers it finds
- * into `sourceLink` blocks so nothing is lost. The gap, and the minimal CMS change that
- * would close it, are recorded in `docs/migration/KAL-EL-DISCOVERY.md`.
+ * Commercial metadata, from what Kal El can express today: the kind (a reserved tag) and
+ * the brand (an entity of type `brand`). Kal El has no product or price model, so no
+ * product box and no price is ever derived — the gap and the CMS change that would close
+ * it are in `docs/migration/KAL-EL-DISCOVERY.md`.
  */
 function buildCommercial(
   dto: KalElArticle,

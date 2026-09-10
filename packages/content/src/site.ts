@@ -1,34 +1,11 @@
 /**
- * Site chrome that is editorial policy, not CMS content: the navigation, the footer
- * columns and the network links the prototypes render on every page.
+ * Site policy that is structural rather than CMS content: the editorias and the reserved
+ * route segments. Changing any of it changes URLs, so it lives in code, next to the
+ * redirects that have to follow it.
  *
- * Kept here rather than in `@mn/ui` so a component never hard-codes a route, and here
- * rather than in the CMS because these are structural decisions with a redirect
- * consequence - changing them changes URLs.
+ * Presentation (colours, subjects, the nav and footer links) belongs to the front end and
+ * lives in `lib/content/editorias.ts`.
  */
-
-export interface NavItem {
-  label: string;
-  href: string;
-}
-
-export interface FooterColumn {
-  title: string;
-  links: NavItem[];
-}
-
-export interface SocialLink {
-  network: 'facebook' | 'instagram' | 'x' | 'youtube';
-  href: string;
-  label: string;
-}
-
-export interface NetworkLink {
-  brand: 'mn' | 'cinerie';
-  label: string;
-  description: string;
-  href: string;
-}
 
 export const SITE = {
   name: 'Máquina Nerd',
@@ -38,125 +15,93 @@ export const SITE = {
   publisherLogo: '/brand/mn-logo-on-light.png',
 } as const;
 
-/** Editorial desks. Sub-desks are tags, never route segments (docs/04). */
-export const CATEGORIES = {
-  filmes: { name: 'Filmes', subs: ['Marvel', 'DC', 'Star Wars', 'Terror', 'Animação', 'Bilheteria', 'Trailers'] },
-  series: {
-    name: 'Séries de TV',
-    subs: ['HBO Max', 'Netflix', 'Disney+', 'Prime Video', 'Renovações', 'Audiência', 'Trailers'],
-  },
-  quadrinhos: {
-    name: 'Quadrinhos',
-    subs: ['Marvel Comics', 'DC Comics', 'Mangá', 'Independentes', 'Encadernados', 'Adaptações'],
-  },
-  games: { name: 'Games', subs: [] as string[] },
-  animes: { name: 'Animes', subs: [] as string[] },
-} as const;
+/** The seven editorias and their slugs (kit docs/03). The home is "Notícias". */
+export const EDITORIA_SLUGS = [
+  'cinema',
+  'series-e-tv',
+  'games',
+  'quadrinhos',
+  'animes',
+  'videos',
+  'especiais',
+] as const;
 
-export type CategorySlug = keyof typeof CATEGORIES;
+export type EditoriaSlug = (typeof EDITORIA_SLUGS)[number];
 
-export const CATEGORY_SLUGS = Object.keys(CATEGORIES) as CategorySlug[];
+export const EDITORIA_NAMES: Record<EditoriaSlug, string> = {
+  cinema: 'Cinema',
+  'series-e-tv': 'Séries e TV',
+  games: 'Games',
+  quadrinhos: 'Quadrinhos',
+  animes: 'Animes',
+  videos: 'Vídeos',
+  especiais: 'Especiais',
+};
+
+export function isEditoriaSlug(slug: string): slug is EditoriaSlug {
+  return (EDITORIA_SLUGS as readonly string[]).includes(slug);
+}
 
 /**
- * Every first path segment that is an editorial desk.
- *
- * `CATEGORY_SLUGS` is the navigation map; this is the routing one. They differ by
- * `reviews`, which has a static index of its own but is a real desk underneath —
- * `/reviews/{slug}` is served by `[categoria]/[slug]` like any other.
- *
- * The distinction matters to anything that has to decide whether a lone segment is a
- * section or something else: the legacy-permalink resolver treats `/{anything-else}` as
- * a WordPress URL to be redirected, and the importer files a post under one of these or
- * refuses to file it at all.
+ * Every first path segment that is an editoria — the routing map. The legacy-permalink
+ * resolver treats `/{anything-else}` as a WordPress URL, and the importer files a post
+ * under one of these or refuses to file it.
  */
-export const DESK_SLUGS: readonly string[] = [...CATEGORY_SLUGS, 'reviews'];
+export const DESK_SLUGS: readonly string[] = EDITORIA_SLUGS;
+
+/** Offer pages live under their own segment, whatever their editoria (kit docs/03). */
+export const OFFER_SEGMENT = 'ofertas';
 
 /**
- * Reserved first path segments.
- *
- * `/[categoria]` is a catch-all, so anything that is also a real route must never be
- * treated as a desk; otherwise `/busca` would resolve as a category named "busca".
+ * Desk slugs the previous build and the WordPress archive used, and where they went.
+ * Answered by the edge redirect table; kept here so the importer and the redirects share
+ * one list.
+ */
+export const RENAMED_DESKS: Record<string, string> = {
+  filmes: '/cinema',
+  series: '/series-e-tv',
+  noticias: '/',
+  reviews: '/tag/reviews',
+};
+
+/**
+ * Reserved first path segments. `/[categoria]` is a catch-all, so anything that is also a
+ * real route must never be read as an editoria — `/busca` is not an editoria named "busca".
  */
 export const RESERVED_SEGMENTS = new Set([
-  'especiais',
-  'ao-vivo',
-  // 'reviews' is deliberately absent: it is a real desk served by [categoria]/[slug].
-  // The static /reviews index shadows the listing, but /reviews/{slug} must resolve as
-  // an article — routing it through a dedicated redirect made it point at itself.
-  'ofertas',
+  OFFER_SEGMENT,
   'autor',
   'tag',
   'busca',
   'newsletter',
   'sobre',
+  'anuncie',
+  'politica-de-afiliados',
   'politica-de-privacidade',
+  'termos-de-uso',
+  'cookies',
+  'acessibilidade',
   'publicidade',
+  'page',
   'preview',
   'media',
   'api',
   'feed.xml',
   'news-sitemap.xml',
   'sitemap.xml',
+  'sitemap',
   'robots.txt',
 ]);
 
-export const NAV_ITEMS: NavItem[] = [
-  { label: 'Notícias', href: '/noticias' },
-  { label: 'Filmes', href: '/filmes' },
-  { label: 'Séries de TV', href: '/series' },
-  { label: 'Quadrinhos', href: '/quadrinhos' },
-  { label: 'Games', href: '/games' },
-  { label: 'Reviews', href: '/reviews' },
-];
-
-export const FOOTER_COLUMNS: FooterColumn[] = [
-  {
-    title: 'Editorias',
-    links: [
-      { label: 'Filmes', href: '/filmes' },
-      { label: 'Séries', href: '/series' },
-      { label: 'Quadrinhos', href: '/quadrinhos' },
-      { label: 'Games', href: '/games' },
-      { label: 'Animes', href: '/animes' },
-    ],
-  },
-  {
-    title: 'Institucional',
-    links: [
-      { label: 'Quem somos', href: '/sobre' },
-      { label: 'Política de privacidade', href: '/politica-de-privacidade' },
-      { label: 'Política de afiliados', href: '/publicidade#afiliados' },
-      { label: 'Publicidade e parcerias', href: '/publicidade' },
-    ],
-  },
-  {
-    title: 'Contato',
-    links: [
-      { label: SITE.contactEmail, href: `mailto:${SITE.contactEmail}` },
-      { label: 'Newsletter', href: '/newsletter' },
-      { label: 'Correções', href: '/sobre#correcoes' },
-    ],
-  },
-];
+export interface SocialLink {
+  network: 'facebook' | 'instagram' | 'x' | 'youtube';
+  href: string;
+  label: string;
+}
 
 export const SOCIAL_LINKS: SocialLink[] = [
   { network: 'facebook', href: 'https://www.facebook.com/maquinanerd', label: 'Máquina Nerd no Facebook' },
-  { network: 'instagram', href: 'https://www.instagram.com/maquinanerd', label: 'Máquina Nerd no Instagram' },
   { network: 'x', href: 'https://x.com/maquinanerd', label: 'Máquina Nerd no X' },
+  { network: 'instagram', href: 'https://www.instagram.com/maquinanerd', label: 'Máquina Nerd no Instagram' },
   { network: 'youtube', href: 'https://www.youtube.com/@maquinanerd', label: 'Máquina Nerd no YouTube' },
-];
-
-export const NETWORK_LINKS: NetworkLink[] = [
-  {
-    brand: 'mn',
-    label: 'Máquina Nerd',
-    description: 'Cultura pop',
-    href: 'https://www.maquinanerd.com.br/',
-  },
-  {
-    brand: 'cinerie',
-    label: 'Cinerie',
-    description: 'Cinema e séries',
-    href: 'https://cinerie.com/',
-  },
 ];

@@ -1,9 +1,10 @@
 /**
  * Máquina Nerd domain model.
  *
- * This is the only content vocabulary the routes and components are allowed to know.
- * Kal El field names, endpoint shapes and document node types stop at the mapper
- * (`packages/content/src/kalel/mapper.ts`); nothing above it imports a CMS DTO.
+ * The content vocabulary every source must produce. Kal El field names, endpoint shapes
+ * and document node types stop at the mapper (`packages/content/src/kalel/mapper.ts`);
+ * the view model the components render (`@mn/ui` model, built by `lib/content/`) is
+ * derived from this, never from a CMS DTO.
  */
 
 export type ID = string;
@@ -22,20 +23,16 @@ export interface Image {
   /** Legally required for agency photography. */
   credit?: string;
   focalPoint?: { x: number; y: number };
-  blurDataURL?: string;
 }
 
 export interface Author {
   id: ID;
   name: string;
   slug: string;
-  /** Avatar initials, as the prototypes render them. */
-  initials: string;
-  /** CSS custom-property reference, assigned by deterministic hash of `id`. */
-  avatarColor: string;
   bio?: string;
   role?: string;
-  social?: { x?: string; instagram?: string };
+  social?: { site?: string; facebook?: string; instagram?: string; x?: string };
+  /** A real portrait only. Without one the byline shows the name alone. */
   avatar?: Image;
 }
 
@@ -54,6 +51,12 @@ export interface Tag {
 }
 
 export type ArticleTemplate = 'standard' | 'longform' | 'urgent' | 'video' | 'list';
+
+/**
+ * How the article page is composed (kit docs/03): the standard page with the author rail,
+ * the full-bleed cover, or the affiliate/offer page. An editorial choice per article.
+ */
+export type ArticleLayout = 'standard' | 'overlay' | 'offer';
 
 export type SchemaType = 'NewsArticle' | 'Article' | 'Review' | 'LiveBlogPosting' | 'ItemList';
 
@@ -74,7 +77,7 @@ export interface Offer {
   /** Always rendered with `rel="sponsored nofollow"`. */
   url: string;
   inStock: boolean;
-  /** Displayed next to the price. A price without a date is a reader complaint. */
+  /** A price without a date is a reader complaint. */
   verifiedAt: ISODate;
   coupon?: string;
   listPrice?: number;
@@ -85,20 +88,9 @@ export type CommercialKind = 'branded-content' | 'affiliate' | 'review-sample' |
 export interface CommercialMeta {
   kind: CommercialKind;
   brandName: string;
-  brandLogo?: Image;
   /** Server-rendered text. Never generated on the client. */
   disclosure: string;
   offers?: Offer[];
-  campaignId?: string;
-  /**
-   * The terms a seasonal campaign runs across its landing — free shipping, a coupon, a
-   * verification time, a stock warning.
-   *
-   * Authored, not derived: these are commitments the sales desk makes, and deriving them
-   * from offer data would mean inventing a promise nobody made. The CMS has no commercial
-   * model at all, so Kal El leaves this undefined and the strip does not render.
-   */
-  campaignTerms?: string[];
 }
 
 export interface ReviewData {
@@ -106,20 +98,24 @@ export interface ReviewData {
   product: { name: string; brand?: string; image?: Image };
   /** 0-10, one decimal. */
   score: number;
-  breakdown?: { label: string; value: number }[];
   pros: string[];
   cons: string[];
   verdict: string;
 }
 
-export interface ComparisonItem {
-  rank: number;
+export type Retailer = 'Amazon' | 'Shopee' | 'Mercado Livre' | 'Magalu' | 'KaBuM!';
+
+/** A product box on an offer page (kit docs/04, `Produto`). */
+export interface Product {
   name: string;
-  image?: Image;
-  score?: number;
-  highlight?: string;
-  offer?: Offer;
-  specs?: { label: string; value: string }[];
+  image: Image;
+  description: string;
+  /** Formatted for display. Never invented: absent means no price is shown. */
+  price?: string;
+  listPrice?: string;
+  /** True when the price is a demonstration value, which the page must say. */
+  demo: boolean;
+  offers: { retailer: Retailer; url: string; price?: string }[];
 }
 
 export interface InlineMark {
@@ -138,21 +134,16 @@ export const EMBED_PROVIDERS = ['youtube', 'x', 'instagram', 'tiktok', 'vimeo', 
 export type EmbedProvider = (typeof EMBED_PROVIDERS)[number];
 
 export type ContentBlock =
-  | { type: 'paragraph'; content: RichText; dropcap?: boolean }
+  | { type: 'paragraph'; content: RichText }
   | { type: 'heading'; level: 2 | 3 | 4; text: string; id: string }
-  | { type: 'image'; image: Image; size?: 'inline' | 'wide' | 'full' }
+  | { type: 'image'; image: Image; size?: 'inline' | 'wide' }
   | { type: 'gallery'; images: Image[] }
   | { type: 'quote'; content: RichText; attribution?: string }
   | { type: 'list'; style: 'bullet' | 'number'; items: RichText[] }
   | { type: 'table'; headers: string[]; rows: RichText[][] }
-  | { type: 'callout'; title?: string; content: RichText; tone: 'neutral' | 'warning' }
-  | { type: 'embed'; provider: EmbedProvider; url: string; embedId?: string; aspect?: string }
+  | { type: 'embed'; provider: EmbedProvider; url: string; embedId?: string }
   | { type: 'sourceLink'; label: string; url: string; kind?: string }
-  | { type: 'specTable'; rows: { label: string; value: string }[] }
-  | { type: 'comparison'; items: ComparisonItem[] }
-  | { type: 'buyBox'; offers: Offer[]; disclosure: string }
-  | { type: 'ad'; slot: string }
-  | { type: 'whereToWatch'; titles: WatchTitle[] };
+  | { type: 'product'; product: Product };
 
 export type ContentBlockType = ContentBlock['type'];
 
@@ -163,11 +154,10 @@ export interface ArticleSummary {
   brand: Brand;
   slug: string;
   template: ArticleTemplate;
+  layout: ArticleLayout;
   title: string;
   subtitle?: string;
   excerpt: string;
-  /** The red label above a card headline ("Séries", "Audiência"). */
-  kicker?: string;
   cover: Image | null;
   authors: Author[];
   category: Category | null;
@@ -185,89 +175,14 @@ export interface Article extends ArticleSummary {
   seo: SeoFields;
   commercial?: CommercialMeta;
   review?: ReviewData;
-  relatedIds?: ID[];
-  liveEventId?: ID;
-  videoId?: string;
-}
-
-export interface TimelineEntry {
-  label: string;
-  date?: ISODate;
-  text: string;
-}
-
-export interface Franchise {
-  id: ID;
-  slug: string;
-  name: string;
-  cover: Image | null;
-  description: string;
-  timeline?: TimelineEntry[];
-}
-
-export interface Chapter {
-  id: ID;
-  title: string;
-  blocks: ContentBlock[];
-}
-
-export interface Dossier {
-  id: ID;
-  slug: string;
-  franchiseId: ID;
-  title: string;
-  kicker: string;
-  cover: Image | null;
-  chapters: Chapter[];
-}
-
-export interface LiveEntry {
-  id: ID;
-  time: ISODate;
-  title?: string;
-  text: string;
-  important?: boolean;
-}
-
-export interface LiveEvent {
-  id: ID;
-  slug: string;
-  title: string;
-  status: 'live' | 'ended';
-  entries: LiveEntry[];
-  startedAt: ISODate;
-  endedAt?: ISODate;
-}
-
-export interface PollOption {
-  id: ID;
-  label: string;
-  image?: Image;
-  votes: number;
-}
-
-export interface Poll {
-  id: ID;
-  question: string;
-  status: 'open' | 'closed';
-  options: PollOption[];
-  totalVotes: number;
-  /** `cinerie` when the sibling desk owns the poll. */
-  source?: Brand;
-}
-
-export interface WatchTitle {
-  id: ID;
-  cinerieSlug: string;
-  title: string;
-  /** 2:3 poster. */
-  poster: Image;
-  /** 16:9 still used by the home module. */
-  still?: Image;
-  kind: 'movie' | 'series';
-  availability: { platform: string; type: 'stream' | 'rent' | 'buy' | 'theater'; note?: string }[];
-  updatedAt: ISODate;
-  url: string;
+  /**
+   * When the text was last *edited*, as a reader understands it — null when it never was.
+   *
+   * Not `updatedAt`: an imported article's record is written at import time, so its
+   * `updatedAt` is the day of the migration, and printing "Atualizado em" with that date
+   * under 41 thousand articles would be false on every one of them.
+   */
+  editedAt: ISODate | null;
 }
 
 export interface Page<T> {
@@ -280,74 +195,8 @@ export interface Page<T> {
   hasNext: boolean;
 }
 
-export interface HomeSection {
-  key: string;
-  label: string;
-  href?: string;
-  articles: ArticleSummary[];
-}
-
-/**
- * The three-part word lockup the approved home banner uses.
- *
- * Presentational, and deliberately data rather than a string split: the design sets
- * "Saga do / Infinito / Explicada" in three different weights and letter-spacings, and
- * deriving that from a title by guessing where to cut would break on the first headline
- * that did not fit the pattern. When a source cannot supply it — the CMS has no dossier
- * model — the banner renders the title on one line instead of inventing a split.
- */
-export interface BannerLockup {
-  over: string;
-  main: string;
-  under: string;
-}
-
-/** A full-width promotional banner at the top of the home. */
-export interface HomeBanner {
-  href: string;
-  /** The badge in the corner: "Documentário", "Dossiê", "Especial". */
-  label: string;
-  title: string;
-  image: Image | null;
-  lockup: BannerLockup | null;
-  /** Short context words along the bottom edge — franchise, platform, universe. */
-  tags: string[];
-}
-
-/** A franchise feature: one article given the room the design gives it. */
-export interface HomeSpecial {
-  slug: string;
-  name: string;
-  lead: ArticleSummary;
-}
-
-export interface HomePage {
-  lead: ArticleSummary | null;
-  secondary: ArticleSummary[];
-  aside: ArticleSummary[];
-  sections: HomeSection[];
-  mostRead: ArticleSummary[];
-  /** Null when the Cinerie service is unavailable - the module simply does not render. */
-  whereToWatch: WatchTitle[] | null;
-  poll: Poll | null;
-  /** Null when nothing is promoted; the banner simply does not render. */
-  banner: HomeBanner | null;
-  /** Null when no franchise has a lead article to feature. */
-  special: HomeSpecial | null;
-  /** The compact tail of the front page: many items, small, with covers. */
-  more: ArticleSummary[];
-  updatedAt: ISODate;
-}
-
 export interface SearchResult extends ArticleSummary {
   highlight?: string;
-}
-
-export interface Special {
-  franchise: Franchise;
-  dossiers: Dossier[];
-  articles: ArticleSummary[];
-  liveEvent?: LiveEvent | null;
 }
 
 export type SitemapKind = 'articles' | 'categories' | 'tags' | 'authors' | 'news';
