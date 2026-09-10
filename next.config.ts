@@ -76,6 +76,16 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  /*
+   * Standalone output is what the container image runs (Dockerfile): a self-contained
+   * `server.js` with only the traced dependencies. It is opt-in through `NEXT_OUTPUT`
+   * because the trace step creates symlinks, which Windows refuses without Developer
+   * Mode — leaving it on would break `pnpm build` on a developer machine.
+   */
+  ...(process.env.NEXT_OUTPUT === 'standalone' ? { output: 'standalone' as const } : {}),
+  // The repository root, stated: inferred from lockfiles it picks a parent checkout when
+  // this one is a nested worktree, and the standalone trace then misses files.
+  outputFileTracingRoot: process.cwd(),
   transpilePackages: ['@mn/ui', '@mn/content', '@mn/seo', '@mn/tokens'],
   // Lint is its own gate (`pnpm lint`); running it twice only slows the build.
   eslint: { ignoreDuringBuilds: true },

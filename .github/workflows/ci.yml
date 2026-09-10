@@ -116,6 +116,7 @@ jobs:
       - run: pnpm wp:import --help
       - run: pnpm redirects:build --help
       - run: pnpm urls:verify --help
+      - run: pnpm kalel:provision --help
 
   # Nothing that must never be committed may enter the tree.
   hygiene:
@@ -127,7 +128,8 @@ jobs:
       - name: Refuse forbidden paths
         run: |
           set -euo pipefail
-          bad=$(git ls-files | grep -E '(^|/)\.env($|\.)|\.zip$|^\.next/|^artifacts/|^\.migration-reference/|^uploads/' || true)
+          # `.env.example` is the one env file that belongs in the tree: names, no values.
+          bad=$(git ls-files | grep -E '(^|/)\.env($|\.)|\.zip$|^\.next/|^artifacts/|^\.migration-reference/|^maquina-nerd-kit/|^uploads/' | grep -vE '(^|/)\.env\.example$' || true)
           if [ -n "$bad" ]; then
             echo "These files must never be committed:"
             echo "$bad"
