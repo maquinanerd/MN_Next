@@ -1,73 +1,45 @@
 /**
- * TypeScript mirror of the CSS tokens. Only values that code genuinely needs to compute
- * with live here (breakpoints for `sizes`, aspect ratios, the author palette). Colour
- * belongs in CSS: duplicating a hex in TS is how a component ends up knowing it is red.
+ * TypeScript mirror of the CSS tokens. Only what code has to compute with lives here —
+ * breakpoints for `next/image` `sizes`, and the ad formats. Colour stays in CSS: a hex in
+ * TypeScript is how a component ends up knowing it is red.
  */
 
-export type Appearance = 'light' | 'dark';
-export type Brand = 'mn' | 'cinerie';
+/** Viewports the design is verified at (kit docs/06 and the Definition of Done). */
+export const VIEWPORTS = { mobile: 390, tablet: 768, laptop: 1024, desktop: 1440 } as const;
 
-export const APPEARANCES = ['light', 'dark'] as const;
-export const BRANDS = ['mn', 'cinerie'] as const;
+/** The prototypes' container-query thresholds, as the first width *above* each one. */
+export const BREAKPOINTS = { tab: 761, desk: 901, lg: 1101, nav: 1181, wide: 1241 } as const;
 
-export const THEME_COOKIE = 'mn-theme';
-
-/** Viewports the design is verified at (docs/08-definition-of-done.md). */
-export const BREAKPOINTS = { mobile: 390, tablet: 768, laptop: 1024, desktop: 1440 } as const;
-
-export const SHELL_MAX = 1440;
-export const EDITORIAL_MAX = 1240;
-
-/** Card image ratios taken from the prototypes. */
-export const RATIOS = {
-  hero: '576 / 324',
-  card: '343 / 193',
-  cardSm: '307 / 172',
-  cardXs: '288 / 162',
-  wide: '16 / 9',
-  ultrawide: '21 / 9',
-  poster: '2 / 3',
-} as const;
-
-export type Ratio = keyof typeof RATIOS;
+/** Canvas: 1500px max, 68px margins (16px on mobile), 40px grid gap. */
+export const CANVAS = { max: 1500, margin: 68, marginMobile: 16, gap: 40 } as const;
 
 /**
- * Author avatar colour, assigned by a deterministic hash so SSR and the client agree.
- * A per-render random colour flickers on hydration.
+ * `sizes` for each image role, derived from the grid: a 1500px canvas less 136px of margin
+ * is 1364px of content; a 4-column grid with 40px gaps makes one column ~311px.
  */
-export const AUTHOR_COLOR_VARS = [
-  'var(--mn-author-1)',
-  'var(--mn-author-2)',
-  'var(--mn-author-3)',
-  'var(--mn-author-4)',
-  'var(--mn-author-5)',
-] as const;
-
-export function authorColorVar(id: string): string {
-  let hash = 0;
-  for (let i = 0; i < id.length; i += 1) {
-    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-  }
-  return AUTHOR_COLOR_VARS[hash % AUTHOR_COLOR_VARS.length] as string;
-}
-
-export function initialsOf(name: string): string {
-  const parts = name
-    .trim()
-    .split(/\s+/)
-    .filter((p) => p.length > 0);
-  if (parts.length === 0) return '?';
-  if (parts.length === 1) return (parts[0] as string).slice(0, 2).toUpperCase();
-  return `${(parts[0] as string)[0]}${(parts[parts.length - 1] as string)[0]}`.toUpperCase();
-}
-
-/** Ad slot space reservations, in px. `minHeight` is a required prop of `<AdSlot />`. */
-export const AD_RESERVATION = {
-  leaderboard: 90,
-  'sidebar-sticky': 600,
-  'in-article': 250,
-  feed: 250,
-  'mobile-anchor': 50,
+export const SIZES = {
+  hero: '(max-width: 760px) 100vw, (max-width: 1500px) 75vw, 1100px',
+  overlay: '(max-width: 760px) 100vw, (max-width: 1500px) 25vw, 360px',
+  big: '(max-width: 760px) 100vw, (max-width: 1500px) 50vw, 660px',
+  card: '(max-width: 760px) 100vw, (max-width: 1500px) 25vw, 320px',
+  row: '(max-width: 760px) 100vw, 296px',
+  video: '(max-width: 760px) 62vw, (max-width: 1500px) 25vw, 320px',
+  feature: '(max-width: 1500px) 100vw, 1364px',
+  cover: '100vw',
+  figure: '(max-width: 900px) 100vw, 944px',
+  related: '(max-width: 760px) 100vw, 280px',
+  product: '(max-width: 900px) 100vw, 200px',
+  avatar: '52px',
 } as const;
 
-export type AdSlotName = keyof typeof AD_RESERVATION;
+export type ImageRole = keyof typeof SIZES;
+
+/** Ad formats in use (kit docs/05). The reserved box keeps these dimensions even empty. */
+export const AD_FORMATS = {
+  '728x90': { width: 728, height: 90 },
+  '300x250': { width: 300, height: 250 },
+  '300x600': { width: 300, height: 600 },
+  '970x250': { width: 970, height: 250 },
+} as const;
+
+export type AdFormato = keyof typeof AD_FORMATS;

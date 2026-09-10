@@ -2,6 +2,7 @@ packages:
   - 'packages/*'
 
 allowBuilds:
+  '@tailwindcss/oxide': false
   esbuild: true
   sharp: true
   unrs-resolver: true
