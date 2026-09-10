@@ -67,7 +67,7 @@ describe('media index pages by offset, not by cursor', () => {
       return new Response('', { status: 404 });
     });
 
-    await repo.getHome();
+    await repo.listLatest(1);
     expect(seenOffsets).toEqual([0, 200, 400]);
   });
 
@@ -78,8 +78,8 @@ describe('media index pages by offset, not by cursor', () => {
       if (url.pathname.endsWith('/articles')) return json({ items: [], nextCursor: null });
       return new Response('', { status: 404 });
     });
-    const home = await repo.getHome();
-    expect(home.lead).toBeNull();
+    const latest = await repo.listLatest(1);
+    expect(latest.items).toEqual([]);
   });
 });
 
@@ -215,8 +215,8 @@ describe('articles with no desk have no public URL', () => {
       if (url.pathname.endsWith('/articles')) return json({ items: [orphan, ARTICLE_SUMMARY], nextCursor: null });
       return new Response('', { status: 404 });
     });
-    const home = await repo.getHome();
-    const ids = [home.lead, ...home.secondary, ...home.aside].filter(Boolean).map((a) => a?.id);
+    const latest = await repo.listLatest(1);
+    const ids = latest.items.map((a) => a.id);
     expect(ids).not.toContain(orphan.id);
   });
 });
@@ -252,9 +252,9 @@ describe('preview grants are scoped to one article', () => {
 describe('relationsFor drives targeted invalidation', () => {
   it('reports the desks, tags and authors an article belongs to', async () => {
     const repo = new FixtureContentRepository();
-    const article = await repo.getArticleBySlug('resident-evil-2026-revela-mudanca-em-monstro-classico');
+    const article = await repo.getArticleBySlug('resident-evil-de-2026-revela-mudanca-em-monstro-classico');
     const relations = await repo.relationsFor(article?.id ?? '');
-    expect(relations.categories).toContain('series');
+    expect(relations.categories).toContain('cinema');
     expect(relations.tags).toContain('terror');
     expect(relations.authors).toContain('rafael-lima');
   });

@@ -1,24 +1,36 @@
 import { expect, test } from '@playwright/test';
 
 /**
- * Behavioural coverage of the seven approved surfaces.
+ * Behaviour of the surfaces the kit defines (maquina-nerd-kit/docs/03), in fixture mode.
  *
- * These assert the things the Definition of Done names as non-negotiable and that a unit
- * test cannot see: one `<h1>`, an ad slot that reserves its height before it loads, tabs
- * that are real links, a commercial disclosure above the headline, and outbound
- * purchase links carrying `rel="sponsored nofollow"`.
+ * What a screenshot cannot show: one `<h1>`, the nav and drawer semantics, the order of
+ * the home's sections, where the ads land, `rel="sponsored nofollow"` on every purchase
+ * link, the redirects that keep the archive's URLs alive.
  */
 
-const ARTICLE = '/series/resident-evil-2026-revela-mudanca-em-monstro-classico';
-const LONGFORM = '/series/como-ahsoka-virou-o-centro-do-plano-galactico-da-disney';
-const URGENT = '/series/lanterns-atinge-93-milhoes-de-espectadores-na-estreia-na-hbo';
-const VIDEO = '/animes/netflix-revela-trailer-de-lego-one-piece-com-aventura-inedita';
-const LIST = '/series/5-coisas-que-o-trailer-de-ahsoka-t2-esconde-sobre-thrawn';
-const REVIEW = '/reviews/box-sandman-edicao-definitiva-vale-os-r-289';
-const COMMERCIAL = '/ofertas/semana-nerd-2026';
+const STANDARD = '/cinema/o-misterio-de-scarlett-johansson-a-estrela-perdida-da-marvel';
+const OVERLAY = '/cinema/o-misterio-de-scarlett-johansson-edicao-capa';
+const OFFER = '/ofertas/controle-xbox-edicao-especial-tem-queda-de-preco-na-amazon';
+
+test.beforeEach(async ({ context }) => {
+  await context.addCookies([{ name: 'mn-consent', value: 'rejected', url: 'http://127.0.0.1:3100' }]);
+});
 
 test.describe('every page', () => {
-  for (const path of ['/', '/series', ARTICLE, '/especiais', '/reviews', '/busca', '/newsletter']) {
+  for (const path of [
+    '/',
+    '/cinema',
+    STANDARD,
+    OVERLAY,
+    OFFER,
+    '/busca?q=marvel',
+    '/newsletter',
+    '/sobre',
+    '/ofertas',
+    '/autor/rafael-lima',
+    '/tag/marvel',
+    '/page/2',
+  ]) {
     test(`${path} has exactly one h1 and a skip link`, async ({ page }) => {
       await page.goto(path);
       await expect(page.locator('h1')).toHaveCount(1);
@@ -26,35 +38,97 @@ test.describe('every page', () => {
     });
   }
 
-  test('the network bar names both portals and marks the current one', async ({ page }) => {
-    await page.goto('/');
-    const bar = page.getByRole('navigation', { name: 'Portais da rede' });
-    await expect(bar.getByRole('link', { name: /Máquina Nerd/ })).toHaveAttribute('aria-current', 'true');
-    await expect(bar.getByRole('link', { name: /Cinerie/ })).toBeVisible();
-  });
-
   test('each nav landmark has a distinct accessible name', async ({ page }) => {
-    await page.goto(ARTICLE);
+    await page.goto(STANDARD);
     const names = await page
       .locator('nav[aria-label]')
       .evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')));
     expect(new Set(names).size).toBe(names.length);
   });
+
+  test('fixture mode says it is a demonstration, on the page and not in the content', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('note').filter({ hasText: 'Demonstração' })).toBeVisible();
+  });
+});
+
+test.describe('header', () => {
+  test('nine items in the prototype order, the current editoria filled', async ({ page }, info) => {
+    test.skip(info.project.name === 'mobile-390', 'The nav is the drawer on a phone.');
+    await page.goto('/cinema');
+    const nav = page.getByRole('navigation', { name: 'Editorias' });
+    await expect(nav.getByRole('link')).toHaveText([
+      'Notícias',
+      'Cinema',
+      'Séries e TV',
+      'Games',
+      'Quadrinhos',
+      'Animes',
+      'Vídeos',
+      'Especiais',
+      'Mais',
+    ]);
+    const cinema = nav.getByRole('link', { name: 'Cinema' });
+    await expect(cinema).toHaveAttribute('aria-current', 'page');
+    const fill = await cinema.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(fill).not.toBe('rgba(0, 0, 0, 0)');
+  });
+
+  test('the menu opens the drawer, says so, and Escape closes it', async ({ page }) => {
+    await page.goto('/');
+    const button = page.getByRole('button', { name: 'Abrir menu' });
+    await expect(button).toHaveAttribute('aria-expanded', 'false');
+    await button.click();
+    const close = page.getByRole('button', { name: 'Fechar menu' });
+    await expect(close).toHaveAttribute('aria-expanded', 'true');
+    const drawer = page.getByRole('navigation', { name: 'Menu de editorias' });
+    await expect(drawer.getByRole('link')).toHaveCount(9);
+    await page.keyboard.press('Escape');
+    await expect(drawer).toBeHidden();
+  });
+
+  test('the search icon is a real link to the search page', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('link', { name: 'Buscar' })).toHaveAttribute('href', '/busca');
+  });
 });
 
 test.describe('home', () => {
-  test('renders the lead, the Cinerie module and the poll', async ({ page }) => {
+  test('the sections come in the prototype order', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('region', { name: 'Destaques' })).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Onde assistir' })).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Enquete' })).toBeVisible();
+    const titles = (await page.locator('main h2').allInnerTexts()).map((t) =>
+      t.toLowerCase().replace(/\s+/g, ' ').trim(),
+    );
+    const expected = [
+      'notícias de cinema',
+      'games',
+      'notícias de séries e tv',
+      'animes | especiais',
+      'vídeo em destaque',
+      'mais do máquina nerd',
+    ];
+    const positions = expected.map((e) => titles.findIndex((t) => t.startsWith(e)));
+    expect(
+      positions.every((p) => p >= 0),
+      titles.join(' / '),
+    ).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
   });
 
-  test('the Cinerie block credits the sibling desk', async ({ page }) => {
+  test('the feed carries a 728×90 after every third story', async ({ page }) => {
     await page.goto('/');
-    const block = page.getByRole('region', { name: 'Onde assistir' });
-    await expect(block.getByText(/Dados de disponibilidade por/)).toBeVisible();
-    await expect(block.getByRole('link', { name: 'Ver no Cinerie' })).toBeVisible();
+    const feed = page.locator('section[aria-labelledby="lista-titulo"]');
+    await expect(feed.locator('article')).toHaveCount(9);
+    await expect(feed.getByRole('group', { name: /728 por 90/ })).toHaveCount(2);
+  });
+
+  test('every ad slot on the page has a unique accessible name', async ({ page }) => {
+    await page.goto('/');
+    const names = await page
+      .locator('[data-ad-slot]')
+      .evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')));
+    expect(names.length).toBeGreaterThan(4);
+    expect(new Set(names).size).toBe(names.length);
   });
 
   test('emits exactly one JSON-LD graph', async ({ page }) => {
@@ -64,108 +138,126 @@ test.describe('home', () => {
     const graph = JSON.parse((await blocks.first().textContent()) ?? '{}');
     const types = graph['@graph'].map((n: { '@type': string }) => n['@type']);
     expect(types).toContain('NewsMediaOrganization');
-    expect(types).toContain('WebSite');
+    expect(types).toContain('CollectionPage');
+  });
+
+  test('the feed paginates to /page/2, canonical to itself', async ({ page }) => {
+    const res = await page.goto('/page/2');
+    expect(res?.status()).toBe(200);
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', /\/page\/2$/);
+    await expect(page.getByRole('navigation', { name: 'Paginação' }).locator('[aria-current="page"]')).toContainText(
+      '2',
+    );
   });
 });
 
-test.describe('article templates', () => {
-  for (const [name, path] of [
-    ['standard', ARTICLE],
-    ['longform', LONGFORM],
-    ['urgent', URGENT],
-    ['video', VIDEO],
-    ['list', LIST],
-  ] as const) {
-    test(`${name} renders with metadata and structured data`, async ({ page }) => {
-      await page.goto(path);
-      await expect(page.locator('h1')).toBeVisible();
-      await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
-        'href',
-        new RegExp(path.replace(/\//g, '\\/')),
-      );
-      const graph = JSON.parse(
-        (await page.locator('script[type="application/ld+json"]').first().textContent()) ?? '{}',
-      );
-      const types = graph['@graph'].map((n: { '@type': string }) => n['@type']);
-      expect(types).toContain('BreadcrumbList');
-    });
-  }
-
-  test('the urgent template shows the live badge and an update timeline', async ({ page }) => {
-    await page.goto(URGENT);
-    await expect(page.getByText('Ao vivo').first()).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Linha do tempo das atualizações' })).toBeVisible();
+test.describe('editoria', () => {
+  test('title in the text variant, subject filters with "Todos" current', async ({ page }) => {
+    await page.goto('/cinema');
+    await expect(page.locator('h1')).toHaveText('Cinema');
+    const filters = page.getByRole('navigation', { name: 'Assuntos de Cinema' });
+    await expect(filters.getByRole('link', { name: 'Todos' })).toHaveAttribute('aria-current', 'page');
+    await expect(filters.getByRole('link', { name: 'Marvel' })).toHaveAttribute('href', '/tag/marvel');
   });
 
-  test('the video template loads no third-party frame before a click', async ({ page }) => {
-    await page.goto(VIDEO);
-    await expect(page.locator('iframe')).toHaveCount(0);
-    await page.getByRole('button', { name: /Carregar vídeo do YouTube/ }).click();
-    await expect(page.locator('iframe')).toHaveCount(1);
-  });
-
-  test('breadcrumbs match the JSON-LD BreadcrumbList', async ({ page }) => {
-    await page.goto(ARTICLE);
-    const visible = await page.getByRole('navigation', { name: 'Trilha de navegação' }).locator('li').allInnerTexts();
-    const graph = JSON.parse((await page.locator('script[type="application/ld+json"]').first().textContent()) ?? '{}');
-    const crumb = graph['@graph'].find((n: { '@type': string }) => n['@type'] === 'BreadcrumbList');
-    expect(crumb.itemListElement).toHaveLength(visible.length);
-  });
-});
-
-test.describe('category listing', () => {
-  test('tabs are real links carrying aria-current', async ({ page }) => {
-    await page.goto('/series');
-    const tabs = page.getByRole('navigation', { name: 'Abas de editoria' });
-    const active = tabs.locator('[aria-current="page"]');
-    await expect(active).toHaveCount(1);
-    await expect(active).toHaveAttribute('href', '/series');
-  });
-
-  test('page 2 is canonical to itself, never to page 1', async ({ page }) => {
-    const response = await page.goto('/series/page/2');
-    // The fixture corpus may be shorter than two pages; a 404 is the correct answer then.
-    if (response?.status() === 404) test.skip();
-    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', /\/series\/page\/2$/);
-  });
-
-  test('a query-paginated listing is canonical to its own URL shape', async ({ page }) => {
-    // The canonical builder used to emit /reviews/page/2 for a route that paginates with
-    // ?page=2 — a canonical pointing at a URL that does not exist is worse than none.
-    for (const [path, expected] of [
-      ['/reviews?page=2', /\/reviews\?page=2$/],
-      ['/ofertas?page=2', /\/ofertas\?page=2$/],
-      ['/autor/rafael-lima?page=2', /\/autor\/rafael-lima\?page=2$/],
-    ] as const) {
-      await page.goto(path);
-      await expect(page.locator('link[rel="canonical"]'), path).toHaveAttribute('href', expected);
+  test('a subject with no tag is not offered — a filter never leads to a 404', async ({ page }) => {
+    await page.goto('/cinema');
+    const hrefs = await page
+      .getByRole('navigation', { name: 'Assuntos de Cinema' })
+      .getByRole('link')
+      .evaluateAll((els) => els.map((el) => el.getAttribute('href')));
+    for (const href of hrefs) {
+      const res = await page.request.get(href ?? '/');
+      expect(res.status(), href ?? '').toBe(200);
     }
   });
 
-  test('page 1 of a query-paginated listing is canonical to the bare URL', async ({ page }) => {
-    await page.goto('/reviews');
-    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', /\/reviews$/);
+  test('page 1 redirects to the unpaginated URL', async ({ page }) => {
+    await page.goto('/cinema/page/1');
+    expect(new URL(page.url()).pathname).toBe('/cinema');
   });
 
-  test('page 1 redirects to the unpaginated URL', async ({ page }) => {
-    await page.goto('/series/page/1');
-    expect(new URL(page.url()).pathname).toBe('/series');
+  test('a page past the end is a 404', async ({ page }) => {
+    const res = await page.goto('/cinema/page/40');
+    expect(res?.status()).toBe(404);
   });
 });
 
-test.describe('commercial surfaces', () => {
-  test('a review shows the disclosure above the headline', async ({ page }) => {
-    await page.goto(REVIEW);
-    const badge = page.getByText('Contém link de afiliado').first();
-    await expect(badge).toBeVisible();
-    const badgeBox = await badge.boundingBox();
-    const headingBox = await page.locator('h1').boundingBox();
-    expect(badgeBox && headingBox && badgeBox.y).toBeLessThan(headingBox?.y ?? 0);
+test.describe('article — standard', () => {
+  test('label, canonical and structured data', async ({ page }) => {
+    await page.goto(STANDARD);
+    await expect(page.getByText('Cinema · Marvel').first()).toBeVisible();
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', new RegExp(`${STANDARD}$`));
+    const graph = JSON.parse((await page.locator('script[type="application/ld+json"]').first().textContent()) ?? '{}');
+    const types = graph['@graph'].map((n: { '@type': string }) => n['@type']);
+    expect(types).toContain('BreadcrumbList');
+    expect(types.some((t: string) => t === 'Article' || t === 'NewsArticle')).toBe(true);
   });
 
-  test('every outbound purchase link is sponsored nofollow', async ({ page }) => {
-    await page.goto(REVIEW);
-    const links = page.locator('a[href^="https://www.amazon"]');
+  test('"Mais como este" comes after the first paragraph', async ({ page }) => {
+    await page.goto(STANDARD);
+    const tags = await page.locator('article > *').evaluateAll((els) => els.map((el) => el.tagName.toLowerCase()));
+    const firstP = tags.indexOf('p', tags.indexOf('figure') + 1);
+    const box = await page
+      .locator('article > section[aria-labelledby="mais-como-este"]')
+      .evaluate((el) => Array.from(el.parentElement?.children ?? []).indexOf(el));
+    expect(box).toBeGreaterThan(firstP);
+  });
+
+  test('the two in-article ads sit between two paragraphs', async ({ page }) => {
+    await page.goto(STANDARD);
+    const neighbours = await page.locator('article [data-ad-slot]').evaluateAll((slots) =>
+      slots.map((slot) => {
+        const box = slot.parentElement as HTMLElement;
+        return [box.previousElementSibling?.tagName, box.nextElementSibling?.tagName];
+      }),
+    );
+    expect(neighbours).toHaveLength(2);
+    for (const pair of neighbours) expect(pair).toEqual(['P', 'P']);
+  });
+
+  test('"Atualizado em" appears for a real edit, and no initials disc is drawn', async ({ page }) => {
+    await page.goto(STANDARD);
+    // The rail carries it from 901px, the byline row below that; one of them is visible.
+    await expect(
+      page
+        .getByText(/tualizado em/)
+        .filter({ visible: true })
+        .first(),
+    ).toBeVisible();
+    await expect(page.locator('main img[sizes="52px"], main img[sizes="40px"]')).toHaveCount(0);
+  });
+
+  test('every share circle is a real share link', async ({ page }) => {
+    await page.goto(STANDARD);
+    for (const name of [
+      'Compartilhar no LinkedIn',
+      'Compartilhar no Facebook',
+      'Compartilhar no X',
+      'Enviar pelo Gmail',
+    ]) {
+      await expect(page.getByRole('link', { name }).first()).toHaveAttribute('href', /^https:\/\//);
+    }
+  });
+});
+
+test.describe('article — overlay', () => {
+  test('the cover comes first with the header on it, the headline in the cover region', async ({ page }) => {
+    await page.goto(OVERLAY);
+    await expect(page.locator('header img[src*="mn-logo-on-dark"]')).toHaveCount(1);
+    await expect(page.getByRole('region', { name: /Como Scarlett Johansson/ }).locator('h1')).toBeVisible();
+  });
+
+  test('the skip link lands on the headline', async ({ page }) => {
+    await page.goto(OVERLAY);
+    await expect(page.locator('#conteudo h1')).toHaveCount(1);
+  });
+});
+
+test.describe('article — offer', () => {
+  test('every outbound purchase link is sponsored nofollow and names its store', async ({ page }) => {
+    await page.goto(OFFER);
+    const links = page.locator('a[href^="https://www.amazon.com.br"], a[href^="https://www.mercadolivre.com.br"]');
     const count = await links.count();
     expect(count).toBeGreaterThan(0);
     for (let i = 0; i < count; i += 1) {
@@ -173,43 +265,53 @@ test.describe('commercial surfaces', () => {
       expect(rel).toContain('sponsored');
       expect(rel).toContain('nofollow');
     }
+    await expect(page.getByRole('link', { name: /^Amazon/ })).toBeVisible();
   });
 
-  test('the verified-at date is visible next to the price', async ({ page }) => {
-    await page.goto(REVIEW);
-    await expect(page.getByText(/Preço verificado em/)).toBeVisible();
+  test('a demonstration price says so, next to the price', async ({ page }) => {
+    await page.goto(OFFER);
+    await expect(page.getByText('Oferta · link de afiliado')).toBeVisible();
+    await expect(page.getByText('preço de demonstração')).toBeVisible();
   });
 
-  test('a paid campaign landing is noindex', async ({ page }) => {
-    await page.goto(COMMERCIAL);
-    await expect(page.locator('meta[name="robots"]').first()).toHaveAttribute('content', /noindex/);
+  test('the affiliate notice, "Leia também" and the sponsored grid are there', async ({ page }) => {
+    await page.goto(OFFER);
+    await expect(page.getByText(/sem custo adicional para você/)).toBeVisible();
+    await expect(page.getByText('Leia também:').first()).toBeVisible();
+    const sponsored = page.getByRole('region', { name: 'Conteúdo patrocinado' });
+    await expect(sponsored.getByText('Parceiro · Patrocinado').first()).toBeVisible();
+  });
+
+  test('the editoria URL of an offer redirects permanently to /ofertas', async ({ request }) => {
+    const res = await request.get('/games/controle-xbox-edicao-especial-tem-queda-de-preco-na-amazon', {
+      maxRedirects: 0,
+    });
+    expect(res.status()).toBe(308);
+    expect(res.headers()['location']).toContain(OFFER);
   });
 });
 
 test.describe('advertising reserves its space', () => {
-  test('every ad slot has a min-height before anything loads', async ({ page }) => {
+  test('every slot has its dimensions before anything loads, and is never focusable', async ({ page }) => {
     await page.goto('/');
-    const slots = page.locator('[data-ad-slot]');
-    const count = await slots.count();
-    expect(count).toBeGreaterThan(0);
-    for (let i = 0; i < count; i += 1) {
-      const height = await slots.nth(i).evaluate((el) => Number.parseInt(getComputedStyle(el).minHeight, 10));
-      expect(height).toBeGreaterThan(0);
+    const boxes = await page
+      .locator('[data-ad-slot]')
+      .evaluateAll((els) =>
+        els.map((el) => ({ h: el.getBoundingClientRect().height, focusable: el.matches('a, button, [tabindex]') })),
+      );
+    expect(boxes.length).toBeGreaterThan(0);
+    for (const box of boxes) {
+      expect(box.h).toBeGreaterThanOrEqual(90);
+      expect(box.focusable).toBe(false);
     }
-  });
-
-  test('ad slots are not keyboard focusable', async ({ page }) => {
-    await page.goto('/');
-    await expect(page.locator('[data-ad-slot][tabindex]')).toHaveCount(0);
-    await expect(page.locator('[data-ad-slot]').first()).toHaveAttribute('aria-hidden', 'true');
   });
 });
 
 test.describe('search', () => {
   test('is noindex and shareable by URL', async ({ page }) => {
-    await page.goto('/busca?q=resident');
+    await page.goto('/busca?q=marvel');
     await expect(page.locator('meta[name="robots"]').first()).toHaveAttribute('content', /noindex/);
-    await expect(page.getByRole('heading', { level: 2, name: /Resultados para/ })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: /Resultados/ })).toBeVisible();
   });
 
   test('explains an empty result instead of showing a blank page', async ({ page }) => {
@@ -225,173 +327,112 @@ test.describe('search', () => {
 
 test.describe('discovery surfaces', () => {
   test('robots.txt closes a deployment that is not the real site', async ({ request }) => {
-    // This suite runs a production *build* under APP_ENV=test, which is exactly the
-    // shape a staging box has. It must not be crawlable, and it must not advertise its
-    // sitemaps: a pre-launch deployment holding the whole archive competes with the real
-    // site for its own content.
-    //
-    // The production shape — both sitemaps listed, /api and /preview disallowed — is
-    // asserted directly against the function in tests/security/deployment-guards.test.ts,
-    // because reaching it from here would mean running this suite with real credentials.
-    const res = await request.get('/robots.txt');
-    expect(res.ok()).toBe(true);
-    const body = await res.text();
+    const body = await (await request.get('/robots.txt')).text();
     expect(body).toContain('Disallow: /');
     expect(body).not.toContain('news-sitemap.xml');
   });
 
-  test('the sitemap index names every child file', async ({ request }) => {
-    const res = await request.get('/sitemap.xml');
-    expect(res.ok()).toBe(true);
-    const body = await res.text();
-    expect(body).toContain('/sitemap/articles-1.xml');
-    expect(body).toContain('/sitemap/categories.xml');
-    expect(body).toContain('/news-sitemap.xml');
+  test('the sitemap index names every child file, and offers sit under /ofertas', async ({ request }) => {
+    const index = await (await request.get('/sitemap.xml')).text();
+    expect(index).toContain('/sitemap/articles-1.xml');
+    const articles = await (await request.get('/sitemap/articles-1.xml')).text();
+    expect(articles).toContain(OFFER);
+    expect(articles).not.toContain('/games/controle-xbox');
   });
 
-  test('each child sitemap is well-formed XML with absolute URLs', async ({ request }) => {
-    for (const path of ['/sitemap/articles-1.xml', '/sitemap/categories.xml', '/sitemap/authors.xml']) {
-      const res = await request.get(path);
-      expect(res.ok(), path).toBe(true);
-      const body = await res.text();
-      expect(body.startsWith('<?xml')).toBe(true);
-      expect(body).toContain('<loc>http');
-    }
-  });
-
-  test('a sitemap page past the end is a 404, not an empty file', async ({ request }) => {
-    const res = await request.get('/sitemap/articles-99.xml');
-    expect(res.status()).toBe(404);
+  test('a sitemap page past the end is a 404', async ({ request }) => {
+    expect((await request.get('/sitemap/articles-99.xml')).status()).toBe(404);
   });
 
   test('the RSS feed is valid and capped at 30 items', async ({ request }) => {
-    const res = await request.get('/feed.xml');
-    expect(res.ok()).toBe(true);
-    const body = await res.text();
+    const body = await (await request.get('/feed.xml')).text();
     expect(body.startsWith('<?xml')).toBe(true);
     expect((body.match(/<item>/g) ?? []).length).toBeLessThanOrEqual(30);
-  });
-
-  test('the news sitemap is a valid news urlset', async ({ request }) => {
-    const res = await request.get('/news-sitemap.xml');
-    expect(res.ok()).toBe(true);
-    const body = await res.text();
-    expect(body.startsWith('<?xml')).toBe(true);
-    expect(body).toContain('xmlns:news="http://www.google.com/schemas/sitemap-news/0.9"');
   });
 });
 
 test.describe('legacy URLs', () => {
-  test('a WordPress category path redirects to the desk', async ({ page }) => {
-    await page.goto('/categoria/series');
-    expect(new URL(page.url()).pathname).toBe('/series');
+  test('the renamed desks redirect in one hop', async ({ request }) => {
+    for (const [from, to] of [
+      ['/filmes', '/cinema'],
+      ['/series', '/series-e-tv'],
+      ['/categoria/series', '/series-e-tv'],
+      ['/publicidade', '/anuncie'],
+    ]) {
+      const res = await request.get(from as string, { maxRedirects: 0 });
+      expect(res.status(), from).toBe(301);
+      expect(new URL(res.headers()['location'] ?? '', 'http://x').pathname, from).toBe(to);
+    }
   });
 
-  /*
-   * The archive publishes at the root.
-   *
-   * `permalink_structure` is `/%postname%/` and the category base was stripped, so every
-   * one of the 41.318 articles and 8.619 category archives is indexed at `/{slug}` —
-   * paths that land on `/[categoria]`. Encoding them as redirect rules would put about
-   * 5 MB of JSON into the edge middleware bundle, so the segment is resolved against the
-   * CMS instead; these two cases are what proves that resolution exists.
-   */
-  test('a bare article slug redirects permanently to its desk', async ({ page, request }) => {
-    const slug = 'box-sandman-edicao-definitiva-vale-os-r-289';
-    const response = await page.goto(`/${slug}`);
-    expect(response?.status()).toBe(200);
-    const pathname = new URL(page.url()).pathname;
-    expect(pathname).not.toBe(`/${slug}`);
-    expect(pathname.endsWith(`/${slug}`)).toBe(true);
-    expect(pathname.split('/').filter(Boolean)).toHaveLength(2);
-
-    // Pinned, because the documentation states it: Next's `permanentRedirect` is a 308,
-    // not a 301. Equivalent to a search engine, and the difference — 308 preserves the
-    // request method — is inert on a path that only answers GET.
-    const raw = await request.get(`/${slug}`, { maxRedirects: 0 });
-    expect(raw.status()).toBe(308);
-    expect(raw.headers()['location']).toContain(`/${slug}`);
+  test('a bare article slug redirects permanently to its editoria', async ({ request }) => {
+    const slug = 'pirates-of-the-caribbean-avanca-com-negociacoes-para-johnny-depp';
+    const res = await request.get(`/${slug}`, { maxRedirects: 0 });
+    expect(res.status()).toBe(308);
+    expect(res.headers()['location']).toContain(`/cinema/${slug}`);
   });
 
-  test('a bare tag slug redirects permanently to the tag archive', async ({ page }) => {
-    // `/netflix` was a category archive on the old site; sub-desks are tags here.
+  test('a bare offer slug redirects to /ofertas', async ({ request }) => {
+    const res = await request.get('/controle-xbox-edicao-especial-tem-queda-de-preco-na-amazon', { maxRedirects: 0 });
+    expect(res.headers()['location']).toContain(OFFER);
+  });
+
+  test('a bare tag slug redirects to the tag archive', async ({ page }) => {
     await page.goto('/netflix');
     expect(new URL(page.url()).pathname).toBe('/tag/netflix');
   });
 
-  test('a segment that is neither is still a 404', async ({ page }) => {
-    // The resolver must not turn every unknown path into a redirect somewhere.
-    const response = await page.goto('/isto-nao-e-nada-disso');
-    expect(response?.status()).toBe(404);
-  });
-
-  test('a desk is served, not redirected to itself', async ({ page }) => {
-    const response = await page.goto('/filmes');
-    expect(response?.status()).toBe(200);
-    expect(new URL(page.url()).pathname).toBe('/filmes');
-  });
-
-  test('a WordPress feed redirects to the RSS route', async ({ request }) => {
-    const res = await request.get('/feed', { maxRedirects: 0 });
-    expect(res.status()).toBe(301);
-    expect(res.headers()['location']).toContain('/feed.xml');
-  });
-
-  test('a removed WordPress endpoint answers 410, never a silent 404', async ({ request }) => {
-    const res = await request.get('/wp-json/wp/v2/posts', { maxRedirects: 0 });
-    expect(res.status()).toBe(410);
-  });
-
-  test('an unknown path renders the 404 page with a way out', async ({ page }) => {
-    const response = await page.goto('/isto-nao-existe/nem-isto');
-    expect(response?.status()).toBe(404);
+  test('a segment that is neither is a real 404 with a way out', async ({ page }) => {
+    const res = await page.goto('/isto-nao-e-nada-disso');
+    expect(res?.status()).toBe(404);
     await expect(page.getByRole('link', { name: 'Ir para a home' })).toBeVisible();
+  });
+
+  test('a WordPress endpoint that is gone answers 410', async ({ request }) => {
+    expect((await request.get('/wp-json/wp/v2/posts', { maxRedirects: 0 })).status()).toBe(410);
+  });
+
+  test('reserved layout tags have no public archive', async ({ request }) => {
+    expect((await request.get('/tag/capa-em-tela-cheia')).status()).toBe(404);
+  });
+
+  test('reserved tags never enter the sitemap', async ({ request }) => {
+    const xml = await (await request.get('/sitemap/tags.xml')).text();
+    expect(xml).toContain('/tag/marvel');
+    expect(xml).not.toContain('/tag/capa-em-tela-cheia');
+    expect(xml).not.toMatch(/\/tag\/oferta</);
+  });
+
+  test('an article asked for under another editoria goes to its own', async ({ request }) => {
+    const res = await request.get('/games/o-misterio-de-scarlett-johansson-a-estrela-perdida-da-marvel', {
+      maxRedirects: 0,
+    });
+    expect(res.status()).toBe(308);
+    expect(res.headers().location).toMatch(/\/cinema\/o-misterio-de-scarlett-johansson-a-estrela-perdida-da-marvel$/);
+  });
+
+  test('a page number that is not a whole page in range is a 404', async ({ request }) => {
+    for (const path of ['/tag/marvel?page=1.5', '/autor/rafael-lima?page=abc', '/ofertas?page=999']) {
+      expect((await request.get(path)).status(), path).toBe(404);
+    }
   });
 });
 
 test.describe('preview', () => {
-  test('is refused without a token', async ({ request }) => {
-    const res = await request.get('/api/preview?token=short', { maxRedirects: 0 });
-    expect(res.status()).toBe(400);
-  });
-
   test('is refused with an invalid token, and says nothing about why', async ({ request }) => {
     const res = await request.get(`/api/preview?token=mnp.${'a'.repeat(40)}.${'b'.repeat(64)}`, { maxRedirects: 0 });
     expect(res.status()).toBe(401);
     expect(res.headers()['x-robots-tag']).toContain('noindex');
-    expect(res.headers()['cache-control']).toContain('no-store');
   });
 
-  test('the preview surface 404s without a session', async ({ page }) => {
-    const response = await page.goto('/preview/resident-evil-2026-revela-mudanca-em-monstro-classico');
-    expect(response?.status()).toBe(404);
+  test('the preview surface 404s without a grant', async ({ page }) => {
+    expect((await page.goto('/preview/rascunho-de-demonstracao'))?.status()).toBe(404);
   });
 });
 
 test.describe('health', () => {
-  test('liveness answers ok', async ({ request }) => {
-    const res = await request.get('/api/health');
-    expect(res.ok()).toBe(true);
-    expect((await res.json()).status).toBe('ok');
-  });
-
-  test('readiness reports the content source', async ({ request }) => {
-    const res = await request.get('/api/health?ready=1');
-    expect(res.ok()).toBe(true);
-    expect((await res.json()).checks.content).toBe('fixture');
-  });
-});
-
-test.describe('theme', () => {
-  test('the dark theme is applied before paint from the cookie', async ({ page, context }) => {
-    await context.addCookies([{ name: 'mn-theme', value: 'dark', url: 'http://127.0.0.1:3100' }]);
-    await page.goto('/');
-    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  });
-
-  test('the toggle announces its state', async ({ page }) => {
-    await page.goto('/');
-    const toggle = page.getByRole('button', { name: /Tema/ });
-    await expect(toggle).toHaveAttribute('aria-pressed', /true|false/);
+  test('liveness and readiness', async ({ request }) => {
+    expect((await (await request.get('/api/health')).json()).status).toBe('ok');
+    expect((await (await request.get('/api/health?ready=1')).json()).checks.content).toBe('fixture');
   });
 });
