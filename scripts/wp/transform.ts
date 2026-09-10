@@ -401,17 +401,8 @@ export function htmlToBlocks(rawHtml: string, options: TransformOptions): Conten
           note(report, 'table:empty', postId, inner);
           continue;
         }
-        // Two-column tables are almost always spec sheets in this archive.
-        if (rows.every((r) => r.length === 2)) {
-          blocks.push({
-            type: 'specTable',
-            rows: rows.map((r) => ({
-              label: plain(r[0] as RichText),
-              value: plain(r[1] as RichText),
-            })),
-          });
-          continue;
-        }
+        // A two-column table is often a spec sheet in this archive; it stays a table, which
+        // is what the CMS stores and what the article template renders.
         blocks.push({ type: 'table', headers, rows });
         continue;
       }
@@ -439,13 +430,6 @@ export function htmlToBlocks(rawHtml: string, options: TransformOptions): Conten
   }
 
   return blocks;
-}
-
-function plain(content: RichText): string {
-  return content
-    .map((n) => (n.type === 'text' ? n.text : ' '))
-    .join('')
-    .trim();
 }
 
 /**
