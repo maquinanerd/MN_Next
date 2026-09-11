@@ -8,3 +8,5 @@ playwright-report
 test-results
 migration-orchestration
 *.zip
+# The editor's local preview configuration (launch.json), written by the app, not the project.
+.claude
