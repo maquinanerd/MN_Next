@@ -146,21 +146,29 @@ export const NAV: NavItem[] = [
 
 export const CINERIE_URL = 'https://cinerie.com/';
 
-/** Footer links, in the prototype's order. Podcast is left out: there is no podcast page. */
-export function footerProps(ativo?: string): SiteFooterProps {
+/**
+ * Footer links, in the prototype's order. Podcast is left out: there is no podcast page.
+ * Each editoria carries its text colour, which the footer uses for the reader's section.
+ */
+export function footerProps(): SiteFooterProps {
+  const ed = (slug: EditoriaSlug): FooterLink => ({
+    rotulo: EDITORIAS[slug].nome,
+    href: EDITORIAS[slug].href,
+    cor: EDITORIAS[slug].corTexto,
+  });
   const explorar: FooterLink[] = [
-    { rotulo: 'Games', href: '/games' },
-    { rotulo: 'Animes', href: '/animes' },
-    { rotulo: 'Especiais', href: '/especiais' },
-    { rotulo: 'Vídeos', href: '/videos' },
+    ed('games'),
+    ed('animes'),
+    ed('especiais'),
+    ed('videos'),
     { rotulo: 'Cinerie', href: CINERIE_URL, externo: true },
-    { rotulo: 'Notícias', href: '/' },
-    { rotulo: 'Cinema', href: '/cinema' },
-    { rotulo: 'Séries e TV', href: '/series-e-tv' },
-    { rotulo: 'Quadrinhos', href: '/quadrinhos' },
+    { rotulo: NOTICIAS.nome, href: '/', cor: NOTICIAS.corTexto },
+    ed('cinema'),
+    ed('series-e-tv'),
+    ed('quadrinhos'),
     { rotulo: 'Reviews', href: '/tag/reviews' },
     { rotulo: 'Newsletter', href: '/newsletter' },
-  ].map((l) => ({ ...l, ativo: l.rotulo === ativo }));
+  ];
 
   const social = (network: 'facebook' | 'x' | 'instagram') => {
     const link = SOCIAL_LINKS.find((s) => s.network === network);

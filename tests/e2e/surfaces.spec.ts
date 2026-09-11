@@ -430,6 +430,19 @@ test.describe('preview', () => {
   });
 });
 
+test.describe('footer', () => {
+  test('marks the reader’s section, in the section’s own colour', async ({ page }) => {
+    await page.goto('/cinema/o-misterio-de-scarlett-johansson-a-estrela-perdida-da-marvel');
+    const cinema = page.getByRole('contentinfo').getByRole('link', { name: 'Cinema', exact: true });
+    await expect(cinema).toHaveAttribute('aria-current', 'true');
+    await expect(cinema).toHaveCSS('color', 'rgb(122, 33, 219)');
+
+    await page.goto('/');
+    const noticias = page.getByRole('contentinfo').getByRole('link', { name: 'Notícias', exact: true });
+    await expect(noticias).toHaveAttribute('aria-current', 'page');
+  });
+});
+
 test.describe('health', () => {
   test('liveness and readiness', async ({ request }) => {
     expect((await (await request.get('/api/health')).json()).status).toBe('ok');

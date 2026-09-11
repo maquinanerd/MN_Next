@@ -13,6 +13,7 @@ export function Header({ ativo, tema = 'light' }: { ativo?: string; tema?: 'ligh
   return <SiteHeader nav={NAV} ativo={ativo} tema={tema} inicioHref="/" buscaHref="/busca" logo={LOGO} />;
 }
 
-export function Footer({ ativo }: { ativo?: string }) {
-  return <SiteFooter {...footerProps(ativo)} />;
+/** The footer marks the reader's section itself, from the route (`FooterExplore`). */
+export function Footer() {
+  return <SiteFooter {...footerProps()} />;
 }

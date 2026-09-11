@@ -1,11 +1,13 @@
 import Link from 'next/link';
 
 import { FacebookIcon, InstagramIcon, XIcon } from '../primitives/icons';
+import { FooterExplore } from './FooterExplore';
 
 export interface FooterLink {
   rotulo: string;
   href: string;
-  ativo?: boolean;
+  /** Text colour when this is the reader's section (an editoria's `corTexto`). */
+  cor?: string;
   externo?: boolean;
 }
 
@@ -20,33 +22,26 @@ export interface SiteFooterProps {
 
 const ICON = { facebook: FacebookIcon, x: XIcon, instagram: InstagramIcon } as const;
 
-function FooterAnchor({ link, className }: { link: FooterLink; className?: string }) {
+function FooterAnchor({ link }: { link: FooterLink }) {
   if (link.externo || link.href.startsWith('mailto:')) {
     return (
-      <a href={link.href} className={className} {...(link.externo ? { rel: 'noopener' } : {})}>
+      <a href={link.href} {...(link.externo ? { rel: 'noopener' } : {})}>
         {link.rotulo}
       </a>
     );
   }
-  return (
-    <Link
-      href={link.href}
-      className={className}
-      style={link.ativo ? { color: 'var(--color-mn-red-text)' } : undefined}
-      aria-current={link.ativo ? 'page' : undefined}
-    >
-      {link.rotulo}
-    </Link>
-  );
+  return <Link href={link.href}>{link.rotulo}</Link>;
 }
 
 /**
  * SiteFooter (kit docs/02).
  *
- * Block 1: "Explore o Máquina Nerd" and the editoria links, six columns (two on a phone).
+ * Block 1: "Explore o Máquina Nerd" and the editoria links, six columns (two on a phone),
+ * the reader's section in its colour.
  * Block 2: the social links and four columns — three of institutional/legal links, the
  * fourth the closing notice, which names the Cinerie network. At ≤900px each block
- * becomes one column and the link grids two.
+ * becomes one column and the link grids two, the notice beside the last column, as the
+ * home prototype draws it.
  */
 export function SiteFooter({ explorar, colunas, redes, aviso }: SiteFooterProps) {
   return (
@@ -54,16 +49,10 @@ export function SiteFooter({ explorar, colunas, redes, aviso }: SiteFooterProps)
       <div className="wrap pt-40 pb-48">
         <div className="grid grid-cols-1 items-start gap-20 desk:grid-cols-4 desk:gap-40">
           <h2 className="m-0 text-16 leading-[1.35] font-extrabold tracking-[-0.02em]">Explore o Máquina Nerd</h2>
-          <ul className="m-0 grid list-none grid-cols-2 gap-x-20 gap-y-14 p-0 text-12 desk:col-span-3 desk:grid-cols-6 desk:gap-y-16">
-            {explorar.map((link) => (
-              <li key={link.href} className="leading-[1.4] desk:leading-[1.35]">
-                <FooterAnchor link={link} />
-              </li>
-            ))}
-          </ul>
+          <FooterExplore links={explorar} />
         </div>
 
-        <div className="mt-32 grid grid-cols-1 items-start gap-20 desk:mt-56 desk:grid-cols-4 desk:items-end desk:gap-40">
+        <div className="mt-16 grid grid-cols-1 items-start gap-6 desk:mt-56 desk:grid-cols-4 desk:items-end desk:gap-40">
           <ul aria-label="Redes sociais" className="m-0 flex list-none p-0 text-byline desk:gap-14">
             {redes.map((rede) => {
               const Icon = ICON[rede.tipo];
@@ -91,7 +80,7 @@ export function SiteFooter({ explorar, colunas, redes, aviso }: SiteFooterProps)
                 ))}
               </ul>
             ))}
-            <p className="col-span-2 m-0 text-9 leading-[1.6] text-muted desk:col-span-1">{aviso}</p>
+            <p className="m-0 text-9 leading-[1.6] text-muted">{aviso}</p>
           </div>
         </div>
       </div>
