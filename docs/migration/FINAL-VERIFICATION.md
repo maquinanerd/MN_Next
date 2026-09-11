@@ -30,6 +30,7 @@ coberto pelos mesmos testes, que seguem na suíte.
 | Entrega Kal El                            | `pnpm test:kalel`                                                  | ✅ **33 passed** — a app em `CONTENT_SOURCE=kalel`, incluindo layout por tag e tag reservada     |
 | Script oficial                            | `Run-Quality-Gates.ps1`                                            | ✅ _Todos os gates concluídos com sucesso_ — 13 gates; a11y 92, e2e 334, visual 64 no browser    |
 | Kal El (repositório do CMS)               | suíte vitest de `apps/api`, branch `feat/delivery-published-order` | ✅ **179/179** (24 arquivos, Postgres local); `article-list-order` + `article-slug-filter` 26/26 |
+| CI no GitHub (PR #1)                      | `.github/workflows/ci.yml`                                         | ✅ **8/8 jobs** (run 34650786964): visual em `windows-latest`, os demais em Linux                |
 
 O script oficial roda com o mesmo ambiente do bloco `env:` da CI (`APP_ENV=test`,
 `CONTENT_SOURCE=fixture`, `NEXT_PUBLIC_SITE_URL=https://www.maquinanerd.test` e os dois
@@ -118,6 +119,12 @@ O `ci.yml` nunca tinha rodado: até esta rodada o repositório não tinha remoto
      quebra de linha muda com a rasterização. As baselines são do Windows, onde o projeto é
      desenvolvido, então o job visual passou a rodar em `windows-latest`; os demais seguem
      em Linux.
+3. **Terceira execução (`51d3ef1`): os 8 jobs verdes**
+   ([run 34650786964](https://github.com/maquinanerd/MN_Next/actions/runs/34650786964)) —
+   hygiene, static, build, migration-tools, a11y, e2e e kalel em Linux, visual em Windows.
+
+O e2e no Linux é o gate que vale a pena manter assim: foi ele que achou um desvio que
+nenhuma execução em Windows mostraria, e que o leitor veria.
 
 ## 5. Variáveis que o operador precisa fornecer
 
