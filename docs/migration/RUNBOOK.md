@@ -393,10 +393,12 @@ curl -fsS 'http://127.0.0.1:3002/api/health?ready=1'
 
 ## 5. Virada
 
-0. **Kal El pronto.** Mergear e publicar no CMS as branches `feat/article-slug-filter` e
-   `feat/delivery-published-order`, rodando a migração `0006` (índice por data de
-   publicação; ver [KAL-EL-DISCOVERY.md](./KAL-EL-DISCOVERY.md)). Depois
-   `pnpm kalel:provision --apply --new-token` contra o site de produção.
+0. **Kal El pronto.** Mergear e publicar no CMS os PRs
+   [kal-el#6](https://github.com/maquinanerd/kal-el/pull/6) (filtro `?slug=`) e
+   [kal-el#7](https://github.com/maquinanerd/kal-el/pull/7) (ordem por publicação), nessa
+   ordem, rodando a migração `0006` — o `CREATE INDEX` trava escrita em `articles` enquanto
+   constrói, então rode fora do pico (ver [KAL-EL-DISCOVERY.md](./KAL-EL-DISCOVERY.md)).
+   Depois `pnpm kalel:provision --apply --new-token` contra o site de produção.
 1. **Staging com `noindex`.** `APP_ENV=staging` e um host que não seja o de produção — o
    `robots.ts` já devolve `Disallow: /` para host de staging. Aberto à redação por uma
    semana.

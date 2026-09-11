@@ -145,7 +145,8 @@ legítimo de um rascunho abriria **qualquer** slug não publicado que alguém ad
 ## Mudança aplicada no Kal El
 
 Uma única mudança, isolada, testada e em **commit separado no repositório do Kal El**
-(branch `feat/article-slug-filter`, commit `83ad1e8`):
+(branch `feat/article-slug-filter`, commit `83ad1e8`,
+[PR #6](https://github.com/maquinanerd/kal-el/pull/6)):
 
 - `slug` em `articleListQuerySchema`;
 - uma condição `eq(articles.slug, …)` em `listArticles`;
@@ -168,8 +169,8 @@ página (`/cinema/page/3`, `/page/2`) e ordena por data de publicação. A API s
 cursor opaco em `updatedAt DESC`: corrigir um erro de digitação numa matéria de 2019 a
 trazia para o topo da home, e a página 40 exigia percorrer as 39 anteriores.
 
-Branch `feat/delivery-published-order` (sobre `feat/article-slug-filter`), commit local
-`89c9eeb`, **sem push**:
+Branch `feat/delivery-published-order` (sobre `feat/article-slug-filter`), commit `89c9eeb`,
+[PR #7](https://github.com/maquinanerd/kal-el/pull/7):
 
 | Parte                                                                     | O que muda                                                                                                                                                                                                                                                                 |
 | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

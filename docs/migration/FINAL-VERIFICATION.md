@@ -69,10 +69,12 @@ com o Kal El diretamente. Detalhes e porquês em [DECISIONS.md §7](./DECISIONS.
 `docker-compose.prod.yml`, `pnpm kalel:provision` (editorias, tags reservadas, webhook e
 token no Kal El, idempotente, dry run por padrão) e o [RUNBOOK](./RUNBOOK.md) §1, §4.5 e §5.
 
-**No Kal El:** branch `feat/delivery-published-order`, commit local `89c9eeb`, sem push —
-ordem por publicação, página por offset com `total`, tags e entidades na listagem, índice
-novo (migração `0006`). O portal funciona sem ela (cai no cursor), mas com ordem certa e
-página O(1) só com ela. Ver [KAL-EL-DISCOVERY.md](./KAL-EL-DISCOVERY.md).
+**No Kal El:** dois PRs encadeados —
+[#6](https://github.com/maquinanerd/kal-el/pull/6) (filtro `?slug=`) e
+[#7](https://github.com/maquinanerd/kal-el/pull/7) (ordem por publicação, página por offset
+com `total`, tags e entidades na listagem, índice novo na migração `0006`). O portal
+funciona sem eles (cai no cursor), mas com ordem certa e página O(1) só com eles. Ver
+[KAL-EL-DISCOVERY.md](./KAL-EL-DISCOVERY.md).
 
 ## 3. Cobertura das regras invioláveis do kit
 
@@ -202,5 +204,7 @@ Nenhuma é contornável por código.
 Ignorados deliberadamente: os ZIPs de entrada (intactos, hashes em
 [INPUT-INVENTORY.md](./INPUT-INVENTORY.md)), `maquina-nerd-kit/`, `.migration-reference/`,
 `artifacts/` (capturas, relatórios de revisão), `.next/`, `node_modules/` e todo `.env*`
-exceto `.env.example`. Versionadas de propósito: as 48 baselines visuais. Nada foi enviado
-(sem push) nem implantado.
+exceto `.env.example`. Versionadas de propósito: as 48 baselines visuais. O portal está no
+[PR #1](https://github.com/maquinanerd/MN_Next/pull/1) e as duas mudanças do CMS nos PRs
+[kal-el#6](https://github.com/maquinanerd/kal-el/pull/6) e
+[kal-el#7](https://github.com/maquinanerd/kal-el/pull/7); nada foi mesclado nem implantado.
