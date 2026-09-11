@@ -141,7 +141,8 @@ jobs:
           # `ke_st.` is the Kal El service-token prefix. Test fixtures use an obvious
           # placeholder, which this pattern deliberately still catches — a token-shaped
           # string does not belong in the tree either way.
-          if git grep -nE 'ke_st\.[A-Za-z0-9]{16,}' -- ':!tests' ':!docs' ; then
+          # `playwright.kalel.config.ts` hands the stand-in CMS an all-zero fake token.
+          if git grep -nE 'ke_st\.[A-Za-z0-9]{16,}' -- ':!tests' ':!docs' ':!playwright.kalel.config.ts' ; then
             echo "A Kal El service token appears in source."
             exit 1
           fi
