@@ -50,7 +50,10 @@ jobs:
   # and split by suite so the report says which gate failed rather than "e2e".
   browser:
     name: ${{ matrix.gate }}
-    runs-on: ubuntu-latest
+    # The visual baselines are rendered on Windows, where the project is developed, and
+    # glyph rasterisation moves line breaks between platforms: a Linux render of the same
+    # page comes out taller. The visual gate runs where its baselines were made.
+    runs-on: ${{ matrix.gate == 'visual' && 'windows-latest' || 'ubuntu-latest' }}
     timeout-minutes: 30
     needs: static
     strategy:

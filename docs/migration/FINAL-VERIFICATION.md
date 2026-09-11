@@ -99,6 +99,26 @@ Nove achados (2 altos, 5 médios, 2 baixos). Oito aceitos e corrigidos com teste
 regressão; um mantido com motivo (escopos do token, limitação do Kal El). Lista e decisões
 em [DECISIONS.md §7.12](./DECISIONS.md) e `artifacts/codex-reviews/kit-*.md`.
 
+## 4.1 A primeira CI no GitHub (PR #1)
+
+O `ci.yml` nunca tinha rodado: até esta rodada o repositório não tinha remoto. Ao abrir o
+[PR #1](https://github.com/maquinanerd/MN_Next/pull/1):
+
+1. **Setup.** `pnpm/action-setup@v4` recusou `version: 11` junto com
+   `packageManager: pnpm@11.15.1`. O `packageManager` virou a fonte única (`6b126ec`).
+2. **Segunda execução: 6 de 8 jobs verdes** (hygiene, static, build, migration-tools, a11y,
+   kalel). As duas falhas eram reais, e nenhuma é contornada:
+   - **e2e — o menu andava 19,4px em relação à coluna no Linux.** A coluna de texto tinha
+     largura fixa medida no Windows; o menu, com a largura do próprio texto, muda com a
+     rasterização de cada sistema. Um leitor em Linux, Mac ou Android veria o desvio.
+     Correção: os nove itens preenchem uma caixa da mesma largura fixa e crescem para
+     ocupá-la ([DECISIONS §7.7](./DECISIONS.md)). No Windows a sobra é zero e as baselines
+     não mudam.
+   - **visual — no Linux as páginas saem mais altas** (ex.: matéria 5430 → 5485px): a
+     quebra de linha muda com a rasterização. As baselines são do Windows, onde o projeto é
+     desenvolvido, então o job visual passou a rodar em `windows-latest`; os demais seguem
+     em Linux.
+
 ## 5. Variáveis que o operador precisa fornecer
 
 | Variável                                                         | Onde                               | Para quê                                                              |
