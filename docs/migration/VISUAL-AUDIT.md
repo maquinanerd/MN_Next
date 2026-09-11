@@ -13,7 +13,10 @@ foi substituída pelo kit.
    diz se o site **é** o desenho.
 2. **Baselines de regressão** (`pnpm test:visual`, 48 PNGs em
    `tests/e2e/__screenshots__/`): 12 superfícies × 4 viewports. Provam que o site **não
-   mudou** desde a última aprovação; não dizem nada sobre fidelidade.
+   mudou** desde a última aprovação; não dizem nada sobre fidelidade. A tolerância é de 2%
+   dos pixels da página inteira (`maxDiffPixelRatio: 0.02`): pegam deslocamento de
+   layout, não a troca de cor de uma palavra — cor é provada pelos testes e2e
+   (`toHaveCSS`) e de contraste.
 
 Evidência desta rodada: 28 capturas (7 protótipos × 4 larguras, mais as 5 rotas × 4),
 servidor em modo demonstração, `deviceScaleFactor` 1, consentimento respondido.
@@ -59,25 +62,33 @@ rótulo e título sobre a imagem, coluna de 760px com a linha de autor e compart
 flutuante, caixa de produto com preço marcado como demonstração, intertítulos em vermelho,
 aviso de afiliados, "Conteúdo patrocinado" com 300×600 e relacionadas.
 
+**Rodapé (corrigido depois da comparação em 768 e 390).** Três diferenças reais, as três
+corrigidas: o link da seção do leitor não tinha a cor da editoria (o protótipo pinta
+"Notícias" de vermelho na home e "Cinema" de roxo na matéria de Cinema) — agora
+`FooterExplore` decide pela rota, com `aria-current`; o aviso de copyright ocupava a
+largura toda em vez da segunda coluna, ao lado de "Fale com a redação"; e o espaço entre
+as editorias, os ícones sociais e os links legais era ~15px maior no celular.
+
 ## Divergências mantidas, com o motivo
 
 As de conteúdo e comportamento estão em [DECISIONS.md §7.11](./DECISIONS.md). As
 visíveis nas capturas:
 
-| Onde           | Protótipo                          | Site                               | Motivo                                                             |
-| -------------- | ---------------------------------- | ---------------------------------- | ------------------------------------------------------------------ |
-| todas          | —                                  | faixa "Demonstração" no topo       | modo fixture precisa se declarar; some com o Kal El                |
-| matéria padrão | retrato do autor no trilho         | só o nome                          | a fixture não tem retrato real; nenhum avatar é inventado          |
-| overlay        | capa com ~1000px de altura (100vh) | `clamp(360px, 62vh, 640px)`        | medida escrita no doc 02; retrato de tela inteira vetado no doc 06 |
-| overlay        | linha fina repetida dentro da capa | só abaixo, antes do texto          | evita o mesmo parágrafo duas vezes em sequência                    |
-| oferta         | 728×90 logo após a foto            | anúncios só entre dois parágrafos  | doc 05, "nunca imediatamente após uma imagem"                      |
-| home           | abas "Mais vistos / Recomendados"  | só "Recentes"                      | não há dado de audiência                                           |
-| todas          | imagens do site atual              | imagens de demonstração da fixture | as do protótipo são URLs externas, só de referência                |
+| Onde           | Protótipo                                 | Site                               | Motivo                                                             |
+| -------------- | ----------------------------------------- | ---------------------------------- | ------------------------------------------------------------------ |
+| todas          | —                                         | faixa "Demonstração" no topo       | modo fixture precisa se declarar; some com o Kal El                |
+| matéria padrão | retrato do autor no trilho                | só o nome                          | a fixture não tem retrato real; nenhum avatar é inventado          |
+| overlay        | capa com ~1000px de altura (100vh)        | `clamp(360px, 62vh, 640px)`        | medida escrita no doc 02; retrato de tela inteira vetado no doc 06 |
+| overlay        | linha fina repetida dentro da capa        | só abaixo, antes do texto          | evita o mesmo parágrafo duas vezes em sequência                    |
+| oferta         | 728×90 logo após a foto                   | anúncios só entre dois parágrafos  | doc 05, "nunca imediatamente após uma imagem"                      |
+| home           | abas "Mais vistos / Recomendados"         | só "Recentes"                      | não há dado de audiência                                           |
+| todas          | imagens do site atual                     | imagens de demonstração da fixture | as do protótipo são URLs externas, só de referência                |
+| rodapé, 768px  | seis colunas (Overlay) ou duas (Template) | duas colunas em todas as páginas   | os protótipos se contradizem; o da home define o rodapé do site    |
 
 ## O que ainda precisa de olho humano
 
-- As capturas de 768 e 1024 foram geradas e ficam para conferência par a par; a leitura
-  feita nesta rodada foi em 1440 e 390.
+- Em 768 e 1024 foram lidos home 768, overlay 768, matéria 1024 e oferta 1024; editoria
+  768/1024 e as demais combinações estão geradas e ficam para conferência par a par.
 - Estados sem protótipo (busca, autor, tag, ofertas, institucionais, 404, erro) seguem os
   componentes do kit e passam em axe, mas não têm par de comparação.
 - Com o Kal El real, a composição depende do acervo: rodar `pnpm visual:compare` contra

@@ -20,15 +20,15 @@ coberto pelos mesmos testes, que seguem na suíte.
 | Formatação                                | `pnpm format:check`                                                | ✅ _All matched files use Prettier code style_                                                   |
 | Lint                                      | `pnpm lint`                                                        | ✅ 0 problemas                                                                                   |
 | Tipos                                     | `pnpm typecheck`                                                   | ✅ 0 erros (`strict`, `noUncheckedIndexedAccess`, sem `any`)                                     |
-| Unit                                      | `pnpm test:unit`                                                   | ✅ **198 passed** (9 arquivos)                                                                   |
+| Unit                                      | `pnpm test:unit`                                                   | ✅ **201 passed** (10 arquivos)                                                                  |
 | Integração                                | `pnpm test:integration`                                            | ✅ **89 passed** (5 arquivos)                                                                    |
 | Contrato                                  | `pnpm test:contract`                                               | ✅ **62 passed**                                                                                 |
 | Segurança                                 | `pnpm test:security`                                               | ✅ **42 passed**                                                                                 |
 | Build                                     | `pnpm build`                                                       | ✅ 64 páginas; First Load JS compartilhado 102 kB                                                |
 | Performance                               | `pnpm test:performance`                                            | ✅ JS 109 KB / 120 · CSS 13 KB / 25                                                              |
-| Playwright (e2e + a11y + visual + layout) | `npx playwright test`                                              | ✅ **394 passed**, 18 pulados por viewport, 0 falhas, baselines sem atualização (4 viewports)    |
+| Playwright (e2e + a11y + visual + layout) | `npx playwright test`                                              | ✅ **398 passed**, 18 pulados por viewport, 0 falhas, baselines sem atualização (4 viewports)    |
 | Entrega Kal El                            | `pnpm test:kalel`                                                  | ✅ **33 passed** — a app em `CONTENT_SOURCE=kalel`, incluindo layout por tag e tag reservada     |
-| Script oficial                            | `Run-Quality-Gates.ps1`                                            | ✅ _Todos os gates concluídos com sucesso_ — 13 gates; a11y 92, e2e 330, visual 64 no browser    |
+| Script oficial                            | `Run-Quality-Gates.ps1`                                            | ✅ _Todos os gates concluídos com sucesso_ — 13 gates; a11y 92, e2e 334, visual 64 no browser    |
 | Kal El (repositório do CMS)               | suíte vitest de `apps/api`, branch `feat/delivery-published-order` | ✅ **179/179** (24 arquivos, Postgres local); `article-list-order` + `article-slug-filter` 26/26 |
 
 O script oficial roda com o mesmo ambiente do bloco `env:` da CI (`APP_ENV=test`,
@@ -156,8 +156,12 @@ Nenhuma é contornável por código.
   `CONTENT_SOURCE=kalel` contra um CMS que valida as próprias respostas com os schemas da
   app, e a mudança do Kal El foi testada contra Postgres real. Não substitui latência,
   volume e comportamento sob carga do CMS de produção.
-- **Build Docker não executado nesta máquina** (sem Docker). O Dockerfile segue o padrão
-  standalone do Next; o primeiro `docker compose build` em staging é o teste.
+- **Build Docker não executado nesta máquina.** O Docker Desktop 29.6 está instalado, mas o
+  WSL não tem nenhuma distribuição, e sem ela o daemon não sobe (esperado 5 minutos após
+  abrir o Docker Desktop). Instalar a distro é mudança de sistema, fora do escopo. O
+  Dockerfile segue o padrão standalone do Next; o primeiro `docker compose build` em
+  staging é o teste. Para ensaiar aqui: `wsl --install`, reiniciar, abrir o Docker Desktop
+  e rodar o build com um arquivo de ambiente em modo fixture (RUNBOOK §4.5).
 - **Tema escuro saiu.** O kit só desenha o claro; um escuro seria visual inventado
   ([DECISIONS §7.1](./DECISIONS.md)). Os tokens permitem acrescentá-lo sem mexer em
   componente.

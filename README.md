@@ -77,6 +77,10 @@ ambiente do bloco `env:` de `.github/workflows/ci.yml` (`APP_ENV=test`,
 `CONTENT_SOURCE=fixture` e os placeholders). Sem ele o `build` recusa, de propósito, um
 build de produção sem credenciais do Kal El.
 
+Pare o `pnpm dev` (ou o preview do editor) antes de rodar `pnpm build`, os gates ou o
+Playwright no mesmo checkout: os dois escrevem em `.next`, e um build feito com o dev
+server aberto sai corrompido (`TypeError: a[d] is not a function` no pré-render).
+
 ## Publicar
 
 Imagem Docker (Next standalone) e `docker-compose.prod.yml` para o mesmo tipo de host do
