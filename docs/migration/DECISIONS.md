@@ -492,6 +492,14 @@ carregamento — o que é layout shift. Aqui é uma grade fixa com os números m
 cabeçalho. `tests/e2e/layout.spec.ts` remede a nav e reprova se coluna e menu divergirem
 mais de 2px.
 
+**Os dois lados são fixos.** A primeira versão fixava só a coluna e deixava o menu com a
+largura do texto. A CI em Linux mostrou o problema: lá os rótulos saem mais estreitos e o
+menu, centralizado, andou **19,4px** em relação à coluna — o leitor em Linux, Mac ou
+Android veria o desalinhamento. Agora os nove itens preenchem uma caixa com exatamente essa
+largura (`SiteHeader`), cada um crescendo um pouco (`flex-auto`, rótulo centralizado). No
+Windows, onde os números foram medidos, a sobra é zero e nada muda; nos outros sistemas a
+diferença se distribui entre os itens, e as bordas continuam onde a coluna espera.
+
 ### 7.8 Datas: "Atualizado em" só para edição de verdade
 
 Um artigo importado é gravado no Kal El no dia da migração; `updatedAt` seria essa data em

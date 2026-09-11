@@ -63,9 +63,14 @@
  * The article text column is aligned to the header's menu (kit docs/03): it starts under
  * the first nav item and is as wide as the nine items together. The prototype measures
  * that at runtime; here it is a fixed grid with the same numbers, so nothing reflows after
- * load (no CLS). `--mn-nav-w` is the nine items' measured width at 13px/17px padding, and
- * `--mn-nav-w-sm` at 12px/12px (tests/e2e/layout.spec.ts re-measures both and fails if
- * they drift by more than 2px).
+ * load (no CLS). `--mn-nav-w` is the nine items' width at 13px/17px padding, and
+ * `--mn-nav-w-sm` at 12px/12px, as measured on Windows.
+ *
+ * Both sides are fixed, not only the column: the header gives its nine items a box of
+ * exactly that width and lets them grow to fill it (SiteHeader). Glyph widths differ by
+ * platform — on Linux the labels come out narrower and the menu, left to size itself,
+ * drifted 19px off the column — so neither edge may depend on how a label renders.
+ * tests/e2e/layout.spec.ts checks the two edges meet within 2px.
  *
  * Standard layout — the column sits right of the 200px rail, its 1px rule and 68px of air:
  *   margin-left = (P − W) / 2 − 97.17px, where P is the column's parent width.

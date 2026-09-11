@@ -3,9 +3,10 @@ import { expect, test, type Page } from '@playwright/test';
 /**
  * The text column is aligned to the header menu (kit docs/03): it starts under the first
  * nav item and is as wide as the nine items. The prototype measures that at runtime; the
- * build does it with a fixed grid (app/globals.css, `.mn-col`), so nothing reflows after
- * load. This is what keeps the fixed numbers honest: if the font, a label or a header box
- * changes, the measured nav moves and the column no longer does — and this fails.
+ * build fixes both sides instead — the column (app/globals.css, `.mn-col`) and the box the
+ * nine items fill (SiteHeader) — so nothing reflows after load and no platform's glyph
+ * widths can move one edge without the other. This keeps the shared numbers honest: if a
+ * header box, the logo or the rail changes, the nav moves and the column no longer does.
  */
 
 const STANDARD = '/cinema/o-misterio-de-scarlett-johansson-a-estrela-perdida-da-marvel';

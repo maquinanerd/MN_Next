@@ -87,47 +87,55 @@ export function SiteHeader({ nav, ativo, tema = 'light', inicioHref, buscaHref, 
             aria-label="Editorias"
             className="no-scrollbar hidden min-w-0 flex-1 justify-start overflow-x-auto tab:flex nav:justify-center"
           >
-            {nav.map((item) => {
-              const active = item.rotulo === ativo;
-              const current = pathname === item.href;
-              if (overImage) {
+            {/*
+              From 901px the nine items fill a box of the width the article column is built
+              on (--mn-nav-w-sm, then --mn-nav-w; app/globals.css), each growing a little.
+              Left to size themselves they follow the platform's glyph widths, and the
+              column edge — fixed, so nothing reflows — would no longer meet the menu's.
+            */}
+            <div className="flex shrink-0 desk:w-(--mn-nav-w-sm) nav:w-(--mn-nav-w)">
+              {nav.map((item) => {
+                const active = item.rotulo === ativo;
+                const current = pathname === item.href;
+                if (overImage) {
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      aria-current={current ? 'page' : undefined}
+                      className="flex flex-auto items-center justify-center px-12 text-12 font-semibold whitespace-nowrap text-white opacity-90 hover:text-white hover:opacity-100 nav:px-17 nav:text-13"
+                    >
+                      {item.rotulo}
+                    </Link>
+                  );
+                }
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
                     aria-current={current ? 'page' : undefined}
-                    className="flex flex-none items-center px-12 text-12 font-semibold whitespace-nowrap text-white opacity-90 hover:text-white hover:opacity-100 nav:px-17 nav:text-13"
+                    className="mn-nav-item relative flex flex-auto items-center justify-center overflow-hidden px-12 text-12 font-semibold whitespace-nowrap nav:px-17 nav:text-13"
+                    style={
+                      {
+                        '--nav-on': onColor(item),
+                        '--nav-fill': item.corFundoTexto,
+                        background: active ? item.corFundoTexto : undefined,
+                        color: active ? onColor(item) : 'var(--color-ink)',
+                      } as React.CSSProperties
+                    }
                   >
-                    {item.rotulo}
+                    <span
+                      aria-hidden="true"
+                      className="mn-nav-fill absolute inset-x-0 top-0 z-0 h-4 transition-[height,background-color] duration-320 ease-nav"
+                      style={{ background: active ? item.corFundoTexto : item.cor }}
+                    />
+                    <span className="mn-nav-label relative z-1 transition-colors delay-80 duration-200">
+                      {item.rotulo}
+                    </span>
                   </Link>
                 );
-              }
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={current ? 'page' : undefined}
-                  className="mn-nav-item relative flex flex-none items-center overflow-hidden px-12 text-12 font-semibold whitespace-nowrap nav:px-17 nav:text-13"
-                  style={
-                    {
-                      '--nav-on': onColor(item),
-                      '--nav-fill': item.corFundoTexto,
-                      background: active ? item.corFundoTexto : undefined,
-                      color: active ? onColor(item) : 'var(--color-ink)',
-                    } as React.CSSProperties
-                  }
-                >
-                  <span
-                    aria-hidden="true"
-                    className="mn-nav-fill absolute inset-x-0 top-0 z-0 h-4 transition-[height,background-color] duration-320 ease-nav"
-                    style={{ background: active ? item.corFundoTexto : item.cor }}
-                  />
-                  <span className="mn-nav-label relative z-1 transition-colors delay-80 duration-200">
-                    {item.rotulo}
-                  </span>
-                </Link>
-              );
-            })}
+              })}
+            </div>
           </nav>
 
           <Link
