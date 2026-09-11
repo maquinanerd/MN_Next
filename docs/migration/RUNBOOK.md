@@ -7,6 +7,28 @@ observar, o que fazer, e como saber que funcionou.
 
 ## 1. Provisionamento
 
+### 1.0 O atalho: `pnpm kalel:provision`
+
+Faz de uma vez, de forma idempotente, o que as seções 1.1 e 1.2 descrevem à mão: cria as
+sete editorias como categorias (slugs e nomes do kit), as tags reservadas de layout
+(`capa-em-tela-cheia`, `oferta`), o webhook de revalidação e, se pedido, o token de entrega.
+Item que já existe é deixado como está.
+
+```bash
+export KAL_EL_BASE_URL='https://<api do kal el>'
+export KAL_EL_SITE_ID='<uuid do site>'
+export KALEL_ADMIN_EMAIL='<owner do site>'
+export KALEL_ADMIN_PASSWORD='<senha>'           # só no ambiente, nunca em flag
+export PORTAL_PUBLIC_URL='https://www.maquinanerd.com.br'
+export KAL_EL_WEBHOOK_SECRET='<32+ caracteres>' # o mesmo valor que o portal recebe
+pnpm kalel:provision                            # ensaio: diz o que faria
+pnpm kalel:provision --apply                    # aplica
+pnpm kalel:provision --apply --new-token        # idem, e imprime KAL_EL_SERVICE_TOKEN uma vez
+```
+
+O token impresso vai direto para o cofre de segredos do portal. Não cole em ticket, chat
+ou log. Rodar `--new-token` duas vezes cria dois tokens: revogue o que sobrar no CMS.
+
 ### 1.1 Token de serviço do Kal El
 
 No CMS: **Admin → Site → Service tokens**, ou
@@ -32,8 +54,9 @@ No Kal El: `POST /v1/admin/sites/:siteId/webhooks`
 ```json
 {
   "url": "https://www.maquinanerd.com.br/api/revalidate",
-  "events": ["article.published"],
-  "description": "Revalidação do portal Next"
+  "events": ["article.published", "article.updated"],
+  "description": "Revalidação do portal Next",
+  "secret": "<KAL_EL_WEBHOOK_SECRET>"
 }
 ```
 
@@ -53,18 +76,18 @@ faltar qualquer uma — inclusive `TRUST_PROXY`, que precisa ser respondida expl
 
 ## 2. Observação
 
-| Sinal                       | Onde        | O que significa                                                     |
-| --------------------------- | ----------- | ------------------------------------------------------------------- |
-| `GET /api/health`           | balanceador | processo vivo. Não depende do CMS de propósito                      |
-| `GET /api/health?ready=1`   | balanceador | ambiente válido **e** Kal El alcançável                             |
-| `content.optional-degraded` | log         | um módulo opcional caiu; a página continuou. Cinerie é o caso comum |
-| `kalel.contract.violation`  | log         | o CMS mudou de formato. **Alerta**                                  |
-| `kalel.read.error`          | log         | indisponibilidade do CMS                                            |
-| `revalidate.rejected`       | log         | webhook com assinatura ou evento inválido. Investigar               |
-| `revalidate.duplicate`      | log         | reentrega normal. Não é erro                                        |
-| `preview.rejected`          | log         | token de preview inválido ou expirado                               |
-| `rum.metric`                | log         | Core Web Vitals por template e editoria                             |
-| `discovery.degraded`        | log         | feed ou sitemap renderizado vazio por falha do CMS. **Alerta**      |
+| Sinal                       | Onde        | O que significa                                                |
+| --------------------------- | ----------- | -------------------------------------------------------------- |
+| `GET /api/health`           | balanceador | processo vivo. Não depende do CMS de propósito                 |
+| `GET /api/health?ready=1`   | balanceador | ambiente válido **e** Kal El alcançável                        |
+| `content.optional-degraded` | log         | um módulo opcional caiu; a página continuou                    |
+| `kalel.contract.violation`  | log         | o CMS mudou de formato. **Alerta**                             |
+| `kalel.read.error`          | log         | indisponibilidade do CMS                                       |
+| `revalidate.rejected`       | log         | webhook com assinatura ou evento inválido. Investigar          |
+| `revalidate.duplicate`      | log         | reentrega normal. Não é erro                                   |
+| `preview.rejected`          | log         | token de preview inválido ou expirado                          |
+| `rum.metric`                | log         | Core Web Vitals por template e editoria                        |
+| `discovery.degraded`        | log         | feed ou sitemap renderizado vazio por falha do CMS. **Alerta** |
 
 Toda linha é JSON com `event`, `time` e um `correlationId` quando existe um. Segredos são
 removidos na saída; nenhum log carrega token.
@@ -199,8 +222,12 @@ pnpm import:sandbox      # sobe um WordPress falso e um Kal El vazio, e imprime 
 
 ### 4.0.1 Categorias que não são editorias
 
-O portal tem seis editorias; este WordPress tem 8.619 categorias. Uma categoria vira
-editoria se o slug for uma das seis, e **tag** caso contrário — nada é descartado.
+O portal tem sete editorias (as do kit: `cinema`, `series-e-tv`, `games`, `quadrinhos`,
+`animes`, `videos`, `especiais`); este WordPress tem 8.619 categorias. Uma categoria vira
+editoria se o slug for uma das sete ou um dos apelidos antigos (`filmes` → `cinema`,
+`series` → `series-e-tv`, `reviews` → `especiais` e também tag `reviews`), e **tag** caso
+contrário — nada é descartado. As URLs antigas de editoria (`/filmes`, `/series`,
+`/noticias`, `/reviews`) redirecionam 308 para as novas, preservando página e slug.
 
 Sobram os posts que não caem em nenhuma: **298 no arquivo real**, a maioria filada só em
 `noticias`. Eles **falham a execução em vez de importar sem editoria**, porque um artigo
@@ -335,8 +362,41 @@ linha `discovery.degraded` no log é o que faz alguém olhar.
 
 Antes de rodar um build de produção, confira `GET /v1/health` no CMS.
 
+## 4.5 Imagem e deploy
+
+O portal sai como imagem Docker (Next standalone, Node 22, usuário sem privilégio), pensada
+para o mesmo tipo de host do Kal El: container atrás do proxy reverso da plataforma, TLS
+terminado no proxy.
+
+```bash
+cp .env.example .env.production     # preencha; o arquivo é ignorado pelo git
+DOCKER_BUILDKIT=1 docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml up -d
+curl -fsS http://127.0.0.1:3002/api/health
+curl -fsS 'http://127.0.0.1:3002/api/health?ready=1'
+```
+
+- **O build lê o Kal El** (seção 4.4), então precisa das variáveis. Elas entram como
+  _secret_ do BuildKit (`portal_env`), montado só no `RUN pnpm build`: não ficam em camada
+  nem em `docker history`. Nunca passe o token como `--build-arg`.
+- `KAL_EL_BASE_URL` é a origem **https pública** do CMS, não o nome do serviço no compose:
+  a validação de ambiente recusa origem em texto puro em produção.
+- Porta publicada só em `127.0.0.1:3002`: um proxy no próprio host usa
+  `http://127.0.0.1:3002`; um proxy em container (Traefik, Easypanel) entra numa rede
+  compartilhada com o serviço `portal` e dispensa a porta. Nunca publique em `0.0.0.0`:
+  com `TRUST_PROXY=true` (o compose já define) quem chegasse direto forjaria
+  `X-Forwarded-For`.
+- **Uma instância.** Cache ISR e nonce do webhook vivem no processo (seção 3). Escalar
+  horizontalmente exige cache handler e `NonceStore` compartilhados antes.
+- **Rollback de deploy:** marque cada imagem com o commit (`-t maquinanerd-portal:<sha>`) e
+  volte com `docker compose up -d` na tag anterior. Nada no portal tem estado a migrar.
+
 ## 5. Virada
 
+0. **Kal El pronto.** Mergear e publicar no CMS as branches `feat/article-slug-filter` e
+   `feat/delivery-published-order`, rodando a migração `0006` (índice por data de
+   publicação; ver [KAL-EL-DISCOVERY.md](./KAL-EL-DISCOVERY.md)). Depois
+   `pnpm kalel:provision --apply --new-token` contra o site de produção.
 1. **Staging com `noindex`.** `APP_ENV=staging` e um host que não seja o de produção — o
    `robots.ts` já devolve `Disallow: /` para host de staging. Aberto à redação por uma
    semana.
