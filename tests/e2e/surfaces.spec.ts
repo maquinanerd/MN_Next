@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 
 /**
@@ -412,17 +413,47 @@ test.describe('legacy URLs', () => {
   });
 
   test('a page number that is not a whole page in range is a 404', async ({ request }) => {
-    for (const path of ['/tag/marvel?page=1.5', '/autor/rafael-lima?page=abc', '/ofertas?page=999']) {
+    for (const path of [
+      '/tag/marvel?page=1.5',
+      '/autor/rafael-lima?page=abc',
+      '/ofertas?page=999',
+      // Search stops at five pages: each one is an uncached CMS query (lib/search.ts).
+      '/busca?q=marvel&page=6',
+    ]) {
       expect((await request.get(path)).status(), path).toBe(404);
     }
   });
 });
+
+/** A local preview token, signed with the secret `playwright.config.ts` hands the server. */
+function localPreviewToken(slug: string): string {
+  const body = Buffer.from(JSON.stringify({ s: slug, e: Math.floor(Date.now() / 1000) + 600 })).toString('base64url');
+  const signature = createHmac('sha256', 'playwright-preview-secret-000000000000').update(body).digest('hex');
+  return `mnp.${body}.${signature}`;
+}
 
 test.describe('preview', () => {
   test('is refused with an invalid token, and says nothing about why', async ({ request }) => {
     const res = await request.get(`/api/preview?token=mnp.${'a'.repeat(40)}.${'b'.repeat(64)}`, { maxRedirects: 0 });
     expect(res.status()).toBe(401);
     expect(res.headers()['x-robots-tag']).toContain('noindex');
+  });
+
+  test('opens with a relative Location, which survives the proxy', async ({ request }) => {
+    const res = await request.get(`/api/preview?token=${localPreviewToken('rascunho-de-demonstracao')}`, {
+      maxRedirects: 0,
+    });
+    expect(res.status()).toBe(307);
+    // Behind the proxy the server's own address is 0.0.0.0:3000, and an absolute Location
+    // built from the request sent the editor there.
+    expect(res.headers().location).toBe('/preview/rascunho-de-demonstracao');
+    expect(res.headers()['set-cookie']).toContain('mn-preview-grant=');
+  });
+
+  test('closes with a relative Location too', async ({ request }) => {
+    const res = await request.get('/api/preview/disable', { maxRedirects: 0 });
+    expect(res.status()).toBe(303);
+    expect(res.headers().location).toBe('/');
   });
 
   test('the preview surface 404s without a grant', async ({ page }) => {

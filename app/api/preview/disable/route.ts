@@ -1,5 +1,4 @@
 import { cookies, draftMode } from 'next/headers';
-import { NextResponse } from 'next/server';
 import { PREVIEW_COOKIE } from '@mn/content/security/preview';
 
 /**
@@ -23,17 +22,19 @@ const PRIVATE_HEADERS = {
   'referrer-policy': 'no-referrer',
 };
 
-async function end(request: Request): Promise<Response> {
+async function end(): Promise<Response> {
   const draft = await draftMode();
   draft.disable();
   (await cookies()).delete(PREVIEW_COOKIE);
-  return NextResponse.redirect(new URL('/', new URL(request.url).origin), { status: 303, headers: PRIVATE_HEADERS });
+  // Relative, for the reason given in `../route.ts`: behind the proxy `request.url` names the
+  // address the server listens on, not the host the editor was using.
+  return new Response(null, { status: 303, headers: { ...PRIVATE_HEADERS, location: '/' } });
 }
 
-export async function GET(request: Request): Promise<Response> {
-  return end(request);
+export async function GET(): Promise<Response> {
+  return end();
 }
 
-export async function POST(request: Request): Promise<Response> {
-  return end(request);
+export async function POST(): Promise<Response> {
+  return end();
 }

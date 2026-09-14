@@ -147,5 +147,9 @@ export async function GET(request: Request): Promise<Response> {
   const destination = category ? `/${category}/${slug}` : `/preview/${slug}`;
   logger.info('preview.opened', { correlationId: cid, slug });
 
-  return NextResponse.redirect(new URL(destination, url.origin), { status: 307, headers: PRIVATE_HEADERS });
+  // A relative `Location`, written by hand. The standalone server builds `request.url` from
+  // the address it listens on, so an absolute one sent the editor to `http://0.0.0.0:3000`
+  // behind the proxy — and `NextResponse.redirect` refuses a relative URL. The draft-mode
+  // and grant cookies set above still reach the browser: Next merges them into any Response.
+  return new Response(null, { status: 307, headers: { ...PRIVATE_HEADERS, location: destination } });
 }
