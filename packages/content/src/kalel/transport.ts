@@ -13,7 +13,8 @@ import { kalelEnvelope, kalelErrorSchema } from './dto';
  * Responsibilities, and deliberately nothing else:
  *  - attach the service credential (server-side, never serialised into a payload or log);
  *  - bound every call with an explicit timeout;
- *  - retry GET exactly once, with jitter, and never retry a write;
+ *  - retry GET exactly once, with jitter — or after Kal El's own `retry-after` on a 429,
+ *    when that wait is short — and never retry a write;
  *  - attach Next cache tags and revalidate windows;
  *  - validate the envelope and hand the mapper a typed value or a ContentError.
  */
@@ -49,14 +50,39 @@ export interface WriteRequest {
   correlationId?: string;
 }
 
-const RETRYABLE = new Set([408, 425, 429, 500, 502, 503, 504]);
+/** 429 is not here: a rate limit has its own rule, below. */
+const RETRYABLE = new Set([408, 425, 500, 502, 503, 504]);
+
+/**
+ * The longest one read waits on Kal El's `retry-after` before its single retry.
+ *
+ * Kal El allows 600 requests a minute per service token and answers a 429 with the
+ * seconds left in the window. A wait that short is cheaper than failing the render. A
+ * longer one is not worth holding a reader for, and retrying before the stated time only
+ * spends another request of a quota that is already gone — so past this bound the read
+ * gives up at once, and says so in the log.
+ */
+export const MAX_RETRY_AFTER_MS = 2_000;
+
+/** `retry-after` in milliseconds, from delta-seconds or an HTTP date; null when unusable. */
+export function retryAfterMs(header: string | null, now: number = Date.now()): number | null {
+  if (header === null) return null;
+  const value = header.trim();
+  if (/^\d+$/.test(value)) return Number(value) * 1000;
+  const at = Date.parse(value);
+  return Number.isNaN(at) ? null : Math.max(0, at - now);
+}
 
 function jitter(baseMs: number): number {
   return Math.round(baseMs * (0.5 + Math.random()));
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** Transport events that are alerts rather than dependency blips (RUNBOOK §2). */
-const ALERT_EVENTS: ReadonlySet<string> = new Set(['kalel.contract.violation']);
+const ALERT_EVENTS: ReadonlySet<string> = new Set(['kalel.contract.violation', 'kalel.read.rate-limited']);
 
 /**
  * Where the transport's events go when the caller does not say: the structured logger,
@@ -152,6 +178,31 @@ export class KalElTransport {
             status: res.status,
           });
         }
+        if (res.status === 429) {
+          const detail = await this.errorDetail(res);
+          const asked = retryAfterMs(res.headers.get('retry-after'));
+          const err = ContentError.unavailable(`Kal El GET ${req.path} was rate limited`, {
+            correlationId,
+            status: 429,
+          });
+          // No `retry-after` at all is not Kal El's limiter talking — a proxy, most likely —
+          // so it gets the same short jittered retry as any other blip.
+          const waitMs = asked ?? jitter(200);
+          if (!isLastAttempt && waitMs <= MAX_RETRY_AFTER_MS) {
+            lastError = err;
+            clearTimeout(timer);
+            await sleep(waitMs);
+            continue;
+          }
+          this.onLog('kalel.read.rate-limited', {
+            correlationId,
+            path: req.path,
+            retryAfterMs: asked,
+            attempts: attempt + 1,
+            detail,
+          });
+          throw err;
+        }
         if (!res.ok) {
           const detail = await this.errorDetail(res);
           const err = ContentError.unavailable(`Kal El GET ${req.path} failed with ${res.status}`, {
@@ -162,7 +213,7 @@ export class KalElTransport {
           if (RETRYABLE.has(res.status) && !isLastAttempt) {
             lastError = err;
             clearTimeout(timer);
-            await new Promise((r) => setTimeout(r, jitter(200)));
+            await sleep(jitter(200));
             continue;
           }
           throw err;
@@ -190,7 +241,7 @@ export class KalElTransport {
         lastError = err;
         const aborted = err instanceof Error && err.name === 'AbortError';
         if (!isLastAttempt) {
-          await new Promise((r) => setTimeout(r, jitter(200)));
+          await sleep(jitter(200));
           continue;
         }
         this.onLog('kalel.read.transport-error', {

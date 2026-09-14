@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { resetEnvCache } from '../../packages/content/src/env';
 import { ContentError } from '../../packages/content/src/errors';
-import { KalElTransport } from '../../packages/content/src/kalel/transport';
+import { KalElTransport, MAX_RETRY_AFTER_MS, retryAfterMs } from '../../packages/content/src/kalel/transport';
 import { kalelArticleListSchema } from '../../packages/content/src/kalel/dto';
 import { ARTICLE_SUMMARY, SITE_ID } from './kalel-fixtures';
 
@@ -12,13 +12,14 @@ import { ARTICLE_SUMMARY, SITE_ID } from './kalel-fixtures';
  * can actually produce, including the ones that are not JSON.
  */
 
-function transport(fetchImpl: typeof fetch) {
+function transport(fetchImpl: typeof fetch, onLog?: (event: string, meta: Record<string, unknown>) => void) {
   return new KalElTransport({
     baseUrl: 'https://cms.example.com',
     token: 'ke_st.testtokenvalue000000000',
     siteId: SITE_ID,
     timeoutMs: 200,
     fetchImpl,
+    onLog,
   });
 }
 
@@ -151,6 +152,65 @@ describe('KalElTransport.read', () => {
       tags: ['home'],
       revalidate: 60,
     });
+  });
+});
+
+describe('KalElTransport.read when Kal El rate-limits the token', () => {
+  // `@fastify/rate-limit` in Kal El: 600 requests a minute per service token, and a 429
+  // carrying the seconds left in the window.
+  function limited(retryAfter: string | null): Response {
+    return new Response(JSON.stringify({ error: { code: 'RATE_LIMITED', message: 'Rate limit exceeded' } }), {
+      status: 429,
+      headers: { 'content-type': 'application/json', ...(retryAfter === null ? {} : { 'retry-after': retryAfter }) },
+    });
+  }
+
+  it('waits out a short retry-after, then tries once more', async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      call += 1;
+      return call === 1 ? limited('1') : jsonResponse({ data: { items: [], nextCursor: null } });
+    });
+    const started = Date.now();
+    const result = await transport(fetchImpl as unknown as typeof fetch).read(kalelArticleListSchema, { path: '/x' });
+    expect(result.items).toEqual([]);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    // Not before the CMS said: a retry inside the window only spends more of the quota.
+    expect(Date.now() - started).toBeGreaterThanOrEqual(950);
+  });
+
+  it('gives up at once on a long retry-after, and logs that it did', async () => {
+    const onLog = vi.fn();
+    const fetchImpl = vi.fn(async () => limited('30'));
+    const started = Date.now();
+    await expect(
+      transport(fetchImpl as unknown as typeof fetch, onLog).read(kalelArticleListSchema, { path: '/x' }),
+    ).rejects.toMatchObject({ kind: 'unavailable', status: 429 });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(Date.now() - started).toBeLessThan(MAX_RETRY_AFTER_MS);
+    expect(onLog).toHaveBeenCalledWith(
+      'kalel.read.rate-limited',
+      expect.objectContaining({ path: '/x', retryAfterMs: 30_000, attempts: 1 }),
+    );
+  });
+
+  it('retries only once, however short the wait', async () => {
+    const onLog = vi.fn();
+    const fetchImpl = vi.fn(async () => limited('0'));
+    await expect(
+      transport(fetchImpl as unknown as typeof fetch, onLog).read(kalelArticleListSchema, { path: '/x' }),
+    ).rejects.toMatchObject({ kind: 'unavailable', status: 429 });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(onLog).toHaveBeenCalledWith('kalel.read.rate-limited', expect.objectContaining({ attempts: 2 }));
+  });
+
+  it('reads retry-after as seconds or as an HTTP date', () => {
+    const now = Date.parse('2026-09-14T12:00:00Z');
+    expect(retryAfterMs('1', now)).toBe(1_000);
+    expect(retryAfterMs('Mon, 14 Sep 2026 12:00:02 GMT', now)).toBe(2_000);
+    expect(retryAfterMs('Mon, 14 Sep 2026 11:00:00 GMT', now)).toBe(0);
+    expect(retryAfterMs('soon', now)).toBeNull();
+    expect(retryAfterMs(null, now)).toBeNull();
   });
 });
 
