@@ -15,16 +15,19 @@ import { KALEL_WEBHOOK_EVENTS, kalelArticlePublishedPayloadSchema, type KalElWeb
  *   x-kal-el-idempotency stable per (event, article, publish time)
  *
  * The target contract in `docs/02-kalel-integration.md` assumes a timestamp header and a
- * five-minute freshness window. **Kal El does not send one.** Replay protection is
- * therefore built from what is actually on the wire:
+ * five-minute freshness window. **Kal El does not send one.** Protection is therefore built
+ * from what is actually on the wire:
  *
- *   1. the idempotency key is a nonce - a repeat is accepted as a no-op, never twice;
- *   2. `publishedAt` inside the signed payload bounds how old a delivery may be.
+ *   1. the signature covers the raw body - a forged or altered delivery is refused;
+ *   2. the idempotency key is a nonce - a repeat is accepted as a no-op, never twice.
  *
- * That is strictly weaker than a signed timestamp against a *new* article id, so the
- * required CMS change is recorded in `docs/migration/KAL-EL-DISCOVERY.md`. What it does
- * guarantee today: a captured delivery cannot be replayed to force repeated revalidation
- * work, and a forged body cannot be signed.
+ * There is deliberately no freshness window. The one this used to derive from the signed
+ * `publishedAt` did not measure the age of a delivery: Kal El retries a refused delivery
+ * with backoff, up to five times, so a portal that was restarting when an article went out
+ * refused every retry of it and the article stayed stale until its ISR window ran out. It
+ * bought nothing in exchange - a replay inside the window is stopped by the nonce, and one
+ * after it can only purge a cache again. A signed delivery timestamp is the CMS change
+ * recorded in `docs/migration/KAL-EL-DISCOVERY.md`.
  */
 
 export const WEBHOOK_HEADERS = {
@@ -99,13 +102,9 @@ export interface VerifyOptions {
   rawBody: string;
   headers: Headers;
   store: NonceStore;
-  /** How stale a signed `publishedAt` may be, in seconds. */
-  maxSkewSeconds: number;
-  now?: () => number;
 }
 
 export async function verifyWebhook(opts: VerifyOptions): Promise<WebhookVerdict> {
-  const now = opts.now ?? Date.now;
   const signature = opts.headers.get(WEBHOOK_HEADERS.signature);
   const event = opts.headers.get(WEBHOOK_HEADERS.event);
   const idempotency = opts.headers.get(WEBHOOK_HEADERS.idempotency) ?? opts.headers.get(WEBHOOK_HEADERS.delivery);
@@ -130,17 +129,6 @@ export async function verifyWebhook(opts: VerifyOptions): Promise<WebhookVerdict
 
   const parsed = kalelArticlePublishedPayloadSchema.safeParse(payload);
   if (!parsed.success) return { ok: false, reason: 'payload does not match the agreed shape', status: 400 };
-
-  // Freshness, derived from the signed payload because no timestamp header is sent.
-  const publishedAt = Date.parse(parsed.data.publishedAt);
-  if (Number.isFinite(publishedAt)) {
-    const ageSeconds = Math.abs(now() - publishedAt) / 1000;
-    // `article.updated` carries the original publication time, which is legitimately old;
-    // only a fresh publication is held to the window.
-    if (event === 'article.published' && ageSeconds > opts.maxSkewSeconds) {
-      return { ok: false, reason: 'publication timestamp outside the accepted window', status: 400 };
-    }
-  }
 
   // Atomic: two concurrent deliveries of the same event cannot both win this.
   if (!(await opts.store.claim(idempotency, NONCE_TTL_MS))) {
