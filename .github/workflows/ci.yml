@@ -102,6 +102,43 @@ jobs:
       - run: pnpm build
       - run: pnpm test:performance
 
+  # The image a deployment actually runs. Built in fixture mode, which needs neither a CMS
+  # nor a secret, so every pull request proves the Dockerfile itself: pnpm on Alpine, the
+  # native `sharp` binary, the standalone trace and the non-root runner.
+  image:
+    name: Container image
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: static
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: >-
+          docker build
+          --build-arg APP_ENV=test
+          --build-arg CONTENT_SOURCE=fixture
+          --build-arg NEXT_PUBLIC_SITE_URL=https://www.maquinanerd.test
+          --build-arg KAL_EL_WEBHOOK_SECRET=ci-placeholder-webhook-secret-000000
+          --build-arg KAL_EL_PREVIEW_SECRET=ci-placeholder-preview-secret-000000
+          --tag maquinanerd-portal:ci .
+      - name: Serves, as a user that is not root
+        run: |
+          set -euo pipefail
+          docker run --detach --name portal --publish 3000:3000 \
+            --env APP_ENV=test --env CONTENT_SOURCE=fixture \
+            --env KAL_EL_WEBHOOK_SECRET=ci-placeholder-webhook-secret-000000 \
+            --env KAL_EL_PREVIEW_SECRET=ci-placeholder-preview-secret-000000 \
+            maquinanerd-portal:ci
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/health; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:3000/api/health
+          curl -fsS -o /dev/null http://127.0.0.1:3000/
+          test "$(docker exec portal id -u)" != "0"
+      - if: failure()
+        run: docker logs portal || true
+
   # A migration tool that only runs by hand rots. This proves each one at least starts,
   # parses its flags and prints help — without touching WordPress or Kal El.
   migration-tools:

@@ -1,0 +1,70 @@
+# Máquina Nerd portal on Coolify — "Docker Compose" build pack, deployed from this repository.
+#
+# The Coolify counterpart of docker-compose.prod.yml, in the shape of Kal El's own
+# docker-compose.coolify.yml:
+#
+#  - No `ports:`. Coolify's proxy (Traefik) routes the generated domain to the port named in
+#    SERVICE_URL_PORTAL_3000. Nothing is published on the host, so nobody reaches the
+#    container around the proxy to forge X-Forwarded-For, which TRUST_PROXY trusts.
+#  - The two signing secrets are Coolify "magic" variables: generated once, stored in the
+#    resource's environment, stable across deployments. The webhook one is also the value
+#    `pnpm kalel:provision` registers with Kal El (docs/migration/RUNBOOK.md §4.5).
+#  - Set in the resource's Environment Variables before the first deployment, by the
+#    operator: KAL_EL_BASE_URL (the CMS API's https origin), KAL_EL_SITE_ID,
+#    KAL_EL_SERVICE_TOKEN (printed once by `pnpm kalel:provision --new-token`) and, only
+#    for images served straight from a remote host, MEDIA_ALLOWED_HOSTS.
+#  - Set the domain to https first. NEXT_PUBLIC_SITE_URL is baked into the build: changing
+#    the domain means redeploying.
+#
+# `next build` prerenders from Kal El and validates the environment, and this build pack
+# cannot mount a BuildKit secret, so what the build reads is passed as build arguments too.
+# The Dockerfile declares them in the build stage only; the image that runs has none.
+
+services:
+  portal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_SITE_URL=${SERVICE_URL_PORTAL}
+        - APP_ENV=${APP_ENV:-staging}
+        - CONTENT_SOURCE=kalel
+        - KAL_EL_BASE_URL=${KAL_EL_BASE_URL}
+        - KAL_EL_SITE_ID=${KAL_EL_SITE_ID}
+        - KAL_EL_SERVICE_TOKEN=${KAL_EL_SERVICE_TOKEN}
+        - KAL_EL_WEBHOOK_SECRET=${SERVICE_BASE64_64_WEBHOOK}
+        - KAL_EL_PREVIEW_SECRET=${SERVICE_BASE64_64_PREVIEW}
+        - TRUST_PROXY=true
+        - MEDIA_ALLOWED_HOSTS=${MEDIA_ALLOWED_HOSTS:-}
+    environment:
+      # Declares the public URL Coolify generates for this service, routed to port 3000.
+      - SERVICE_URL_PORTAL_3000
+      - NODE_ENV=production
+      # `staging` until the cutover (RUNBOOK §5): the production guards, and noindex.
+      - APP_ENV=${APP_ENV:-staging}
+      - NEXT_PUBLIC_SITE_URL=${SERVICE_URL_PORTAL}
+      - CONTENT_SOURCE=kalel
+      - KAL_EL_BASE_URL=${KAL_EL_BASE_URL}
+      - KAL_EL_SITE_ID=${KAL_EL_SITE_ID}
+      - KAL_EL_SERVICE_TOKEN=${KAL_EL_SERVICE_TOKEN}
+      # 64 alphanumeric characters, the generator behind Kal El's SESSION_SECRET on this
+      # server; Kal El accepts a webhook secret of 16 to 128.
+      - KAL_EL_WEBHOOK_SECRET=${SERVICE_BASE64_64_WEBHOOK}
+      - KAL_EL_PREVIEW_SECRET=${SERVICE_BASE64_64_PREVIEW}
+      # Exactly one proxy in front (Traefik), which writes X-Forwarded-For itself.
+      - TRUST_PROXY=true
+      - MEDIA_ALLOWED_HOSTS=${MEDIA_ALLOWED_HOSTS:-}
+      - KAL_EL_TIMEOUT_MS=${KAL_EL_TIMEOUT_MS:-5000}
+      - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-60}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    healthcheck:
+      # Liveness, not readiness: a CMS blip must not get the container killed and restarted
+      # into the same blip. `?ready=1` is the operator's check (RUNBOOK §2).
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/api/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    # The ISR cache and the webhook nonces live in the container: one instance is the
+    # supported topology (RUNBOOK §3).
+    stop_grace_period: 20s
+    restart: unless-stopped

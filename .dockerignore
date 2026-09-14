@@ -16,3 +16,6 @@ maquina-nerd-kit
 !.env.example
 tests/e2e/__screenshots__
 *.log
+# Fixture photographs: only the fixture provider and its demo sponsored cards use them, and
+# no deployment that serves readers may run that provider (packages/content/src/env.ts).
+public/fixtures

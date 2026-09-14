@@ -2,18 +2,23 @@
 #
 # Máquina Nerd portal — production image (Next.js standalone).
 #
-# Built on the same kind of host as Kal El (docker-compose.prod.yml in the CMS repo): a
-# container behind the platform's reverse proxy, TLS terminated there.
+# A container behind the platform's reverse proxy, TLS terminated there. `next build`
+# prerenders the home, the editorias and the newest articles — so it reads Kal El with the
+# service token — and validates the whole environment when APP_ENV is staging or
+# production. It gets that environment one of two ways:
 #
+#   # a BuildKit secret (docker-compose.prod.yml): mounted for the one RUN that needs it,
+#   # it never lands in a layer, in `docker history` or in a build argument
 #   docker build \
 #     --secret id=portal_env,src=.env.production \
 #     --build-arg NEXT_PUBLIC_SITE_URL=https://www.maquinanerd.com.br \
 #     -t maquinanerd-portal .
 #
-# Why a build secret: `next build` prerenders the home, the editorias and the newest
-# articles, so it reads Kal El — with the service token. A BuildKit secret is mounted for
-# that one RUN and never lands in a layer or in `docker history`; a build-arg would.
-# The runtime reads the same variables from the environment (env_file in compose).
+#   # build arguments (docker-compose.coolify.yml), where the platform cannot mount a
+#   # secret: declared in the build stage only, so the image that runs carries none of them
+#   docker build --build-arg APP_ENV=staging --build-arg CONTENT_SOURCE=kalel ... .
+#
+# The runtime reads the same variables from the container's environment.
 
 ARG NODE_VERSION=22
 
@@ -36,13 +41,30 @@ FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages ./packages
 COPY . .
+# Declared, never copied into ENV. An argument nobody passes is simply absent from the
+# build's environment; `ENV X=${X}` would define it as an empty string instead, and a
+# defined variable — even an empty one — wins over the same name in the secret file.
 ARG NEXT_PUBLIC_SITE_URL
-ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL} NEXT_OUTPUT=standalone NODE_ENV=production
+ARG APP_ENV
+ARG CONTENT_SOURCE
+ARG KAL_EL_BASE_URL
+ARG KAL_EL_SITE_ID
+ARG KAL_EL_SERVICE_TOKEN
+ARG KAL_EL_WEBHOOK_SECRET
+ARG KAL_EL_PREVIEW_SECRET
+ARG TRUST_PROXY
+# The CSP and the image loader's allowlist are fixed at build time (next.config.ts).
+ARG MEDIA_ALLOWED_HOSTS
+ENV NEXT_OUTPUT=standalone NODE_ENV=production
 # `node --env-file`, not `. file` in a shell: a secret containing `$` or a backtick is
-# read literally instead of being expanded. Variables already set above (NODE_ENV,
-# NEXT_OUTPUT, NEXT_PUBLIC_SITE_URL) take precedence over the file.
-RUN --mount=type=secret,id=portal_env,required=true \
-    node --env-file=/run/secrets/portal_env node_modules/next/dist/bin/next build
+# read literally instead of being expanded. Variables already in the environment (the
+# arguments passed above, NODE_ENV, NEXT_OUTPUT) take precedence over the file.
+RUN --mount=type=secret,id=portal_env,required=false \
+    if [ -f /run/secrets/portal_env ]; then \
+      node --env-file=/run/secrets/portal_env node_modules/next/dist/bin/next build; \
+    else \
+      node node_modules/next/dist/bin/next build; \
+    fi
 
 # ---- runtime: only the traced server, the static assets and /public
 FROM node:${NODE_VERSION}-alpine AS runner
