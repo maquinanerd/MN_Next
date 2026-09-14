@@ -1,4 +1,4 @@
-import type { Article, ArticleSummary, Author, Category, ComparisonItem, LiveEvent, Tag } from '@mn/content';
+import { articlePath, type Article, type ArticleSummary, type Author, type Category, type Tag } from '@mn/content';
 
 /**
  * Schema.org graph construction.
@@ -88,10 +88,9 @@ export function newsHeadline(title: string): string {
   return `${(lastSpace > 60 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
 }
 
-export function articleUrl(ctx: SeoContext, article: Pick<ArticleSummary, 'slug' | 'category'>): string {
-  return article.category
-    ? absolute(ctx, `/${article.category.slug}/${article.slug}`)
-    : absolute(ctx, `/${article.slug}`);
+/** The article's canonical URL — the same `articlePath` every link and sitemap uses. */
+export function articleUrl(ctx: SeoContext, article: Pick<ArticleSummary, 'slug' | 'category' | 'layout'>): string {
+  return absolute(ctx, articlePath(article) ?? `/${article.slug}`);
 }
 
 export function articleNode(ctx: SeoContext, article: Article): Node {
@@ -157,32 +156,6 @@ export function reviewNode(ctx: SeoContext, article: Article): Node | null {
   };
 }
 
-export function itemListNode(ctx: SeoContext, name: string, items: ComparisonItem[]): Node {
-  return {
-    '@type': 'ItemList',
-    name,
-    itemListOrder: 'https://schema.org/ItemListOrderDescending',
-    numberOfItems: items.length,
-    itemListElement: items.map((item) => ({
-      '@type': 'ListItem',
-      position: item.rank,
-      name: item.name,
-      ...(item.image ? { image: absolute(ctx, item.image.url) } : {}),
-      ...(item.offer
-        ? {
-            offers: {
-              '@type': 'Offer',
-              price: item.offer.price,
-              priceCurrency: item.offer.currency,
-              availability: item.offer.inStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
-              url: item.offer.url,
-            },
-          }
-        : {}),
-    })),
-  };
-}
-
 export function collectionNode(
   ctx: SeoContext,
   opts: { name: string; description: string; url: string; items: ArticleSummary[] },
@@ -205,24 +178,6 @@ export function collectionNode(
         name: item.title,
       })),
     },
-  };
-}
-
-export function liveBlogNode(ctx: SeoContext, event: LiveEvent, url: string): Node {
-  return {
-    '@type': 'LiveBlogPosting',
-    '@id': `${url}#liveblog`,
-    headline: newsHeadline(event.title),
-    url,
-    coverageStartTime: event.startedAt,
-    ...(event.endedAt ? { coverageEndTime: event.endedAt } : {}),
-    publisher: { '@id': `${ctx.siteUrl}/#organization` },
-    liveBlogUpdate: event.entries.map((entry) => ({
-      '@type': 'BlogPosting',
-      headline: newsHeadline(entry.title ?? entry.text.slice(0, 100)),
-      datePublished: entry.time,
-      articleBody: entry.text,
-    })),
   };
 }
 

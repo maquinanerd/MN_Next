@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
+import { resetEnvCache } from '../../packages/content/src/env';
 import { ContentError } from '../../packages/content/src/errors';
-import { KalElTransport } from '../../packages/content/src/kalel/transport';
+import { KalElTransport, MAX_RETRY_AFTER_MS, retryAfterMs } from '../../packages/content/src/kalel/transport';
 import { kalelArticleListSchema } from '../../packages/content/src/kalel/dto';
 import { ARTICLE_SUMMARY, SITE_ID } from './kalel-fixtures';
 
@@ -11,13 +12,14 @@ import { ARTICLE_SUMMARY, SITE_ID } from './kalel-fixtures';
  * can actually produce, including the ones that are not JSON.
  */
 
-function transport(fetchImpl: typeof fetch) {
+function transport(fetchImpl: typeof fetch, onLog?: (event: string, meta: Record<string, unknown>) => void) {
   return new KalElTransport({
     baseUrl: 'https://cms.example.com',
     token: 'ke_st.testtokenvalue000000000',
     siteId: SITE_ID,
     timeoutMs: 200,
     fetchImpl,
+    onLog,
   });
 }
 
@@ -153,6 +155,65 @@ describe('KalElTransport.read', () => {
   });
 });
 
+describe('KalElTransport.read when Kal El rate-limits the token', () => {
+  // `@fastify/rate-limit` in Kal El: 600 requests a minute per service token, and a 429
+  // carrying the seconds left in the window.
+  function limited(retryAfter: string | null): Response {
+    return new Response(JSON.stringify({ error: { code: 'RATE_LIMITED', message: 'Rate limit exceeded' } }), {
+      status: 429,
+      headers: { 'content-type': 'application/json', ...(retryAfter === null ? {} : { 'retry-after': retryAfter }) },
+    });
+  }
+
+  it('waits out a short retry-after, then tries once more', async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      call += 1;
+      return call === 1 ? limited('1') : jsonResponse({ data: { items: [], nextCursor: null } });
+    });
+    const started = Date.now();
+    const result = await transport(fetchImpl as unknown as typeof fetch).read(kalelArticleListSchema, { path: '/x' });
+    expect(result.items).toEqual([]);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    // Not before the CMS said: a retry inside the window only spends more of the quota.
+    expect(Date.now() - started).toBeGreaterThanOrEqual(950);
+  });
+
+  it('gives up at once on a long retry-after, and logs that it did', async () => {
+    const onLog = vi.fn();
+    const fetchImpl = vi.fn(async () => limited('30'));
+    const started = Date.now();
+    await expect(
+      transport(fetchImpl as unknown as typeof fetch, onLog).read(kalelArticleListSchema, { path: '/x' }),
+    ).rejects.toMatchObject({ kind: 'unavailable', status: 429 });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(Date.now() - started).toBeLessThan(MAX_RETRY_AFTER_MS);
+    expect(onLog).toHaveBeenCalledWith(
+      'kalel.read.rate-limited',
+      expect.objectContaining({ path: '/x', retryAfterMs: 30_000, attempts: 1 }),
+    );
+  });
+
+  it('retries only once, however short the wait', async () => {
+    const onLog = vi.fn();
+    const fetchImpl = vi.fn(async () => limited('0'));
+    await expect(
+      transport(fetchImpl as unknown as typeof fetch, onLog).read(kalelArticleListSchema, { path: '/x' }),
+    ).rejects.toMatchObject({ kind: 'unavailable', status: 429 });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(onLog).toHaveBeenCalledWith('kalel.read.rate-limited', expect.objectContaining({ attempts: 2 }));
+  });
+
+  it('reads retry-after as seconds or as an HTTP date', () => {
+    const now = Date.parse('2026-09-14T12:00:00Z');
+    expect(retryAfterMs('1', now)).toBe(1_000);
+    expect(retryAfterMs('Mon, 14 Sep 2026 12:00:02 GMT', now)).toBe(2_000);
+    expect(retryAfterMs('Mon, 14 Sep 2026 11:00:00 GMT', now)).toBe(0);
+    expect(retryAfterMs('soon', now)).toBeNull();
+    expect(retryAfterMs(null, now)).toBeNull();
+  });
+});
+
 describe('KalElTransport.write', () => {
   it('refuses a POST without an idempotency key', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse({ data: {} }));
@@ -188,5 +249,50 @@ describe('KalElTransport.write', () => {
       }),
     ).rejects.toMatchObject({ kind: 'unavailable' });
     expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+});
+
+describe('KalElTransport.fromEnv', () => {
+  // The construction path the application uses. It used to leave `onLog` a no-op, so the
+  // alert the runbook pages on was never written by anything that ran in production.
+  const KEYS = ['CONTENT_SOURCE', 'KAL_EL_BASE_URL', 'KAL_EL_SITE_ID', 'KAL_EL_SERVICE_TOKEN', 'LOG_LEVEL'] as const;
+  const saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
+
+  beforeEach(() => {
+    process.env.CONTENT_SOURCE = 'kalel';
+    process.env.KAL_EL_BASE_URL = 'https://cms.example.com';
+    process.env.KAL_EL_SITE_ID = SITE_ID;
+    process.env.KAL_EL_SERVICE_TOKEN = 'ke_st.testtokenvalue000000000';
+    process.env.LOG_LEVEL = 'warn';
+    resetEnvCache();
+  });
+
+  afterEach(() => {
+    for (const key of KEYS) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+    resetEnvCache();
+    vi.restoreAllMocks();
+  });
+
+  it('logs a contract violation without being handed a logger', async () => {
+    const lines: string[] = [];
+    const capture = (...data: unknown[]) => {
+      lines.push(String(data[0]));
+    };
+    vi.spyOn(console, 'error').mockImplementation(capture);
+    vi.spyOn(console, 'warn').mockImplementation(capture);
+
+    const fetchImpl = vi.fn(async () => jsonResponse({ data: { items: [{ id: 'not-a-uuid' }], nextCursor: null } }));
+    const transport = KalElTransport.fromEnv({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    await expect(transport.read(kalelArticleListSchema, { path: '/x' })).rejects.toMatchObject({ kind: 'contract' });
+
+    const events = lines.map((line) => JSON.parse(line) as { event: string; level: string; path?: string });
+    expect(events).toContainEqual(
+      expect.objectContaining({ event: 'kalel.contract.violation', level: 'error', path: '/x' }),
+    );
+    // The line names the path and the field, never the credential that fetched it.
+    expect(lines.join('\n')).not.toContain('testtokenvalue');
   });
 });

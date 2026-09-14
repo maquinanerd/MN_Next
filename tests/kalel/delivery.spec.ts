@@ -16,7 +16,10 @@ import { previewTokenFor } from '../fake-kalel/server';
  * a provider that read only the first page would have passed everything here.
  */
 
-const DESKS = ['filmes', 'series', 'quadrinhos', 'games', 'animes', 'reviews'];
+const DESKS = ['cinema', 'series-e-tv', 'games', 'quadrinhos', 'animes', 'videos', 'especiais'];
+
+/** The same build, against the pre-kal-el#7 stand-in (`playwright.kalel.config.ts`). */
+const LEGACY_APP_URL = `http://127.0.0.1:${Number(process.env.PLAYWRIGHT_KALEL_LEGACY_PORT ?? 3102)}`;
 
 test.describe('pages render from the CMS', () => {
   test('the home is built from real article rows', async ({ page }) => {
@@ -38,11 +41,11 @@ test.describe('pages render from the CMS', () => {
     expect(href).toBeTruthy();
 
     await page.goto(href ?? '/');
-    await expect(page.locator('article, .mn-body').first()).toBeVisible();
+    await expect(page.locator('article').first()).toBeVisible();
     // The corpus gives every article a heading, a list and a figure. Each comes from a
     // different branch of the mapper, so all three appearing means the document walk works.
-    await expect(page.locator('.mn-body h2, article h2').first()).toBeVisible();
-    await expect(page.locator('.mn-body li, article li').first()).toBeVisible();
+    await expect(page.locator('article h2').first()).toBeVisible();
+    await expect(page.locator('article li').first()).toBeVisible();
   });
 
   test.describe('every desk answers', () => {
@@ -66,7 +69,7 @@ test.describe('pages render from the CMS', () => {
   });
 
   test('a slug that does not exist is a real 404, not a soft one', async ({ page }) => {
-    const res = await page.goto('/filmes/nao-existe-em-lugar-nenhum');
+    const res = await page.goto('/cinema/nao-existe-em-lugar-nenhum');
     expect(res?.status()).toBe(404);
   });
 
@@ -90,13 +93,40 @@ test.describe('pages render from the CMS', () => {
   });
 
   test('a bare tag slug redirects to the tag archive', async ({ page }) => {
-    await page.goto('/longform');
-    expect(new URL(page.url()).pathname).toBe('/tag/longform');
+    await page.goto('/marvel');
+    expect(new URL(page.url()).pathname).toBe('/tag/marvel');
+  });
+
+  test('a bare reserved tag is a 404, not a redirect into one', async ({ page }) => {
+    // `longform` is an editorial switch with no archive: `/tag/longform` is itself a 404.
+    const res = await page.goto('/longform');
+    expect(res?.status()).toBe(404);
+    expect(new URL(page.url()).pathname).toBe('/longform');
   });
 
   test('a segment that is neither article nor tag is still a 404', async ({ page }) => {
     const res = await page.goto('/isto-nao-e-nada-disso');
     expect(res?.status()).toBe(404);
+  });
+});
+
+test.describe('the page layout comes from the reserved tags', () => {
+  test('an article tagged capa-em-tela-cheia opens on the full-bleed cover', async ({ page }) => {
+    const overlay = CORPUS_ARTICLES[2];
+    // Corpus article i sits in desk i % 7: article 2 is in Games.
+    const res = await page.goto('/' + 'games/' + String(overlay?.slug));
+    expect(res?.status()).toBe(200);
+    // The header sits on the photo: the logo is the one drawn for dark grounds.
+    await expect(page.locator('header img[src*="mn-logo-on-dark"]')).toHaveCount(1);
+    await expect(page.locator('section#conteudo h1')).toBeVisible();
+  });
+
+  test('an article tagged oferta lives at /ofertas and is redirected there', async ({ page }) => {
+    const offer = CORPUS_ARTICLES[4];
+    const slug = String(offer?.slug);
+    await page.goto('/' + 'animes/' + slug);
+    expect(new URL(page.url()).pathname).toBe('/ofertas/' + slug);
+    await expect(page.getByText(/podem estar disponíveis em uma ou mais lojas parceiras/)).toBeVisible();
   });
 });
 
@@ -178,7 +208,10 @@ test.describe('discovery surfaces enumerate the real corpus', () => {
 
   test('an article carries a JSON-LD graph built from CMS fields', async ({ page }) => {
     await page.goto('/');
-    const href = await page.locator('main a[href^="/filmes/"], main a[href^="/series/"]').first().getAttribute('href');
+    const href = await page
+      .locator('main a[href^="/cinema/"], main a[href^="/series-e-tv/"]')
+      .first()
+      .getAttribute('href');
     await page.goto(href ?? '/');
     const ld = await page.locator('script[type="application/ld+json"]').first().textContent();
     expect(ld).toBeTruthy();
@@ -189,14 +222,30 @@ test.describe('discovery surfaces enumerate the real corpus', () => {
   });
 });
 
-test.describe('the delivery path never runs unauthenticated', () => {
-  test('readiness reports the CMS as reachable', async ({ request }) => {
+test.describe('readiness checks the contract, not just the host', () => {
+  test('is ready against a Kal El that numbers its lists', async ({ request }) => {
+    // The probe is an authenticated list read with `offset`, so a 200 here means the
+    // token, the site id and the kal-el#7 `total` all work — not merely that a port answers.
     const res = await request.get('/api/health?ready=1');
     expect(res.status()).toBe(200);
+    expect(await res.json()).toEqual({ status: 'ok', checks: { env: 'ok', kalel: 'ok', contract: 'ok' } });
   });
 
+  test('is degraded against a Kal El without the offset change', async ({ request }) => {
+    // The second application points at a stand-in answering lists as Kal El did before
+    // kal-el#7: `offset` ignored, no `total`. Pages still render by walking the cursor,
+    // but that is not the deployment the runbook signs off, so it must not take traffic.
+    const res = await request.get(`${LEGACY_APP_URL}/api/health?ready=1`);
+    expect(res.status()).toBe(503);
+    expect(await res.json()).toEqual({ status: 'degraded', checks: { env: 'ok', kalel: 'ok', contract: 'degraded' } });
+    // Liveness is untouched: restarting the container would not deploy the CMS change.
+    expect((await request.get(`${LEGACY_APP_URL}/api/health`)).status()).toBe(200);
+  });
+});
+
+test.describe('the delivery path never runs unauthenticated', () => {
   test('no page leaks the service token', async ({ page }) => {
-    for (const path of ['/', '/filmes', '/busca?q=trailer']) {
+    for (const path of ['/', '/cinema', '/busca?q=trailer']) {
       await page.goto(path);
       const html = await page.content();
       expect(html, path).not.toContain('ke_st.');
@@ -207,7 +256,7 @@ test.describe('the delivery path never runs unauthenticated', () => {
 
 test.describe('preview opens the draft, and only the draft', () => {
   test('a draft is invisible to a public read', async ({ page }) => {
-    const res = await page.goto('/filmes/rascunho-que-so-o-preview-abre');
+    const res = await page.goto('/cinema/rascunho-que-so-o-preview-abre');
     expect(res?.status()).toBe(404);
   });
 

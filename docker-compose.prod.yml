@@ -1,0 +1,46 @@
+# Máquina Nerd portal — production template (Contabo / Easypanel or any docker host).
+#
+# Runs next to Kal El (its own docker-compose.prod.yml). TLS and the public hostname are
+# the reverse proxy's job; the portal publishes 3002 on the host only so the proxy can
+# reach it. Variables come from .env.production (never committed) — see .env.example.
+#
+#   DOCKER_BUILDKIT=1 docker compose -f docker-compose.prod.yml build
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# KAL_EL_BASE_URL must be the CMS's public https origin, not the compose service name:
+# the environment guard refuses a plaintext origin in production, because the service
+# token travels to it on every read.
+services:
+  portal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:?set in the shell or .env}
+      secrets:
+        - portal_env
+    env_file: .env.production
+    environment:
+      NODE_ENV: production
+      APP_ENV: ${APP_ENV:-production}
+      # One reverse proxy in front: forwarded addresses are trusted, so rate limiting
+      # buckets on the real client (docs/migration/RUNBOOK.md §1.3).
+      TRUST_PROXY: 'true'
+    # Loopback only: with TRUST_PROXY on, anyone reaching the container directly could
+    # forge X-Forwarded-For. A proxy on the host uses 127.0.0.1:3002; a proxy running as a
+    # container (Traefik, Easypanel) joins a shared network and needs no published port.
+    ports:
+      - '127.0.0.1:3002:3000'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/api/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    # The ISR cache lives in the container. One instance is the supported topology until
+    # a shared cache handler and a shared webhook nonce store exist (RUNBOOK §3).
+    stop_grace_period: 20s
+    restart: unless-stopped
+
+secrets:
+  portal_env:
+    file: .env.production

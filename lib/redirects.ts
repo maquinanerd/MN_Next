@@ -101,6 +101,35 @@ const WP_RULES: { test: RegExp; to: string; status: 301 | 410; dropQuery?: boole
  */
 const DATE_PERMALINK = /^\/(?:\d{4})\/(?:\d{2})(?:\/(?:\d{2}))?\/([a-z0-9-]+)$/;
 
+/**
+ * Desk slugs that were renamed for the new front end (kit docs/03 fixes the editoria
+ * slugs). Mirrors `RENAMED_DESKS` in `packages/content/src/site.ts`; it is repeated here
+ * rather than imported because this module runs at the edge and must not pull the
+ * content package into the middleware bundle. `tests/unit/redirects.test.ts` fails if the
+ * two ever disagree.
+ *
+ * `/filmes/page/3` keeps its page; `/filmes/{slug}` keeps its slug under the new desk.
+ */
+export const RENAMED_DESK_REDIRECTS: Record<string, string> = {
+  filmes: '/cinema',
+  series: '/series-e-tv',
+  noticias: '/',
+  reviews: '/tag/reviews',
+};
+
+const RENAMED_DESK = /^\/(filmes|series|noticias|reviews)(\/.+)$/;
+
+function renamedDesk(path: string): string | null {
+  const match = RENAMED_DESK.exec(path);
+  if (!match?.[1] || !match[2]) return null;
+  const base = RENAMED_DESK_REDIRECTS[match[1]] ?? '/';
+  const rest = match[2];
+  const paged = /^\/page\/(\d{1,4})$/.exec(rest);
+  if (paged) return base === '/' ? `/page/${paged[1]}` : base.startsWith('/tag/') ? base : `${base}${rest}`;
+  // Only real editorias carry articles; the others lead to their landing page.
+  return base === '/cinema' || base === '/series-e-tv' ? `${base}${rest}` : base;
+}
+
 export function legacyRedirect(pathname: string, searchParams: URLSearchParams): RedirectMatch | null {
   const path = normalise(pathname);
 
@@ -120,6 +149,12 @@ export function legacyRedirect(pathname: string, searchParams: URLSearchParams):
     if (!match) continue;
     if (rule.status === 410) return { to: '/', status: 410 };
     const to = safeInternalPath(rule.to.replace('$1', match[1] ?? ''));
+    if (to) return { to, status: 301 };
+  }
+
+  const renamed = renamedDesk(path);
+  if (renamed) {
+    const to = safeInternalPath(renamed);
     if (to) return { to, status: 301 };
   }
 

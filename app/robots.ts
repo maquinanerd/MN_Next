@@ -17,6 +17,11 @@ import { siteUrl } from '../lib/seo-context';
  * primary test: a staging host named `homolog.` or `hml.` matches none of them and
  * would have been handed a fully crawlable robots.txt.
  */
+// Rendered per request. Prerendered, it would answer with the environment of the build,
+// which need not be the one the container runs with: an image built once and started as
+// staging, then as production, would keep telling crawlers whatever the build saw.
+export const dynamic = 'force-dynamic';
+
 export default function robots(): MetadataRoute.Robots {
   const base = siteUrl();
   const appEnv = process.env.APP_ENV ?? process.env.NODE_ENV;

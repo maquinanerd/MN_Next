@@ -1,395 +1,210 @@
-# Verificação final
+# Verificação final — rodada do kit de front-end
 
-Resultados **reais**, obtidos executando os comandos listados. Nada aqui é estimativa, e o
-que não pôde ser verificado está na seção de pendências em vez de marcado como feito.
+Resultados **reais**, obtidos executando os comandos listados em 2026-09-10. O que não pôde
+ser verificado está nas pendências, não marcado como feito. A verificação das rodadas
+anteriores (migração WordPress, integração Kal El, seis ciclos de revisão) está no
+histórico do git, na versão deste arquivo do commit `41d79d6`; o que ela provou continua
+coberto pelos mesmos testes, que seguem na suíte.
 
-- **Branch:** `chore/maquina-nerd-kalel-migration`
-- **Ambiente:** Windows 11, Node 24.19.0, pnpm 11.15.1, Next 15.5.4
-- **Modo:** `APP_ENV=test CONTENT_SOURCE=fixture` (o único que a validação de ambiente
-  permite sem credenciais reais)
+- **Branch:** `claude/frontend-analysis-publish-1f27fe`
+- **Ambiente:** Windows 11, Node 24, pnpm 11, Next 15.5.4, Tailwind 4.1.13
+- **Modo:** `APP_ENV=test`, `CONTENT_SOURCE=fixture` (Playwright) e `CONTENT_SOURCE=kalel`
+  contra o CMS de contrato (`pnpm test:kalel`)
 
 ---
 
 ## 1. Gates executados
 
-| Gate                    | Comando                           | Resultado                                                    |
-| ----------------------- | --------------------------------- | ------------------------------------------------------------ |
-| Formatação              | `pnpm format:check`               | ✅ _All matched files use Prettier code style_               |
-| Lint                    | `pnpm lint`                       | ✅ 0 problemas                                               |
-| Tipos                   | `pnpm typecheck`                  | ✅ 0 erros (`strict`, `noUncheckedIndexedAccess`, sem `any`) |
-| Unit                    | `pnpm test:unit`                  | ✅ **140 passed**                                            |
-| Contrato                | `pnpm test:contract`              | ✅ **56 passed**                                             |
-| Integração              | `pnpm test:integration`           | ✅ **82 passed**                                             |
-| Segurança               | `pnpm test:security`              | ✅ **42 passed**                                             |
-| **Entrega Kal El**      | `pnpm test:kalel`                 | ✅ **29 passed** — a app em `CONTENT_SOURCE=kalel`           |
-| Build                   | `pnpm build`                      | ✅ compila; home estática, artigo e editoria em SSG+ISR      |
-| E2E                     | `pnpm test:e2e`                   | ✅ incluído nos 485 abaixo                                   |
-| Acessibilidade          | `pnpm test:a11y`                  | ✅ incluído nos 485 abaixo                                   |
-| Visual                  | `pnpm test:visual`                | ✅ incluído nos 485 abaixo                                   |
-| Playwright (total)      | `npx playwright test`             | ✅ **485 passed**, 3 pulados, em 4 viewports                 |
-| Performance             | `pnpm test:performance`           | ✅ JS 109 KB / 120 · CSS 18 KB / 25                          |
-| Ferramentas de migração | `--help` nas três                 | ✅ exit 0                                                    |
-| **Arquivo WordPress**   | `pnpm wp:import --source archive` | ✅ ensaio completo sobre 41.318 posts; nada escrito          |
+| Gate                                      | Comando                                                            | Resultado                                                                                        |
+| ----------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| Formatação                                | `pnpm format:check`                                                | ✅ _All matched files use Prettier code style_                                                   |
+| Lint                                      | `pnpm lint`                                                        | ✅ 0 problemas                                                                                   |
+| Tipos                                     | `pnpm typecheck`                                                   | ✅ 0 erros (`strict`, `noUncheckedIndexedAccess`, sem `any`)                                     |
+| Unit                                      | `pnpm test:unit`                                                   | ✅ **201 passed** (10 arquivos)                                                                  |
+| Integração                                | `pnpm test:integration`                                            | ✅ **89 passed** (5 arquivos)                                                                    |
+| Contrato                                  | `pnpm test:contract`                                               | ✅ **62 passed**                                                                                 |
+| Segurança                                 | `pnpm test:security`                                               | ✅ **42 passed**                                                                                 |
+| Build                                     | `pnpm build`                                                       | ✅ 64 páginas; First Load JS compartilhado 102 kB                                                |
+| Performance                               | `pnpm test:performance`                                            | ✅ JS 109 KB / 120 · CSS 13 KB / 25                                                              |
+| Playwright (e2e + a11y + visual + layout) | `npx playwright test`                                              | ✅ **398 passed**, 18 pulados por viewport, 0 falhas, baselines sem atualização (4 viewports)    |
+| Entrega Kal El                            | `pnpm test:kalel`                                                  | ✅ **33 passed** — a app em `CONTENT_SOURCE=kalel`, incluindo layout por tag e tag reservada     |
+| Script oficial                            | `Run-Quality-Gates.ps1`                                            | ✅ _Todos os gates concluídos com sucesso_ — 13 gates; a11y 92, e2e 334, visual 64 no browser    |
+| Kal El (repositório do CMS)               | suíte vitest de `apps/api`, branch `feat/delivery-published-order` | ✅ **179/179** (24 arquivos, Postgres local); `article-list-order` + `article-slug-filter` 26/26 |
+| CI no GitHub (PR #1)                      | `.github/workflows/ci.yml`                                         | ✅ **8/8 jobs** (run 34650786964): visual em `windows-latest`, os demais em Linux                |
 
-**Total: 320 testes Node + 485 de browser fixture + 29 de browser Kal El = 834
-verificações.**
+O script oficial roda com o mesmo ambiente do bloco `env:` da CI (`APP_ENV=test`,
+`CONTENT_SOURCE=fixture`, `NEXT_PUBLIC_SITE_URL=https://www.maquinanerd.test` e os dois
+segredos de placeholder). Num shell sem variáveis, o gate `build` falha **de propósito**:
+a validação de ambiente recusa um build de produção sem as credenciais do Kal El
+(`CONTENT_SOURCE must be "kalel" in production`, observado nesta rodada). É a trava que
+impede a fixture de chegar a um leitor, não um defeito.
 
-O orçamento de performance é medido sobre o bundle produzido, não por Lighthouse:
-tamanho de bundle é determinístico e é o número que regride em silêncio. Lighthouse
-contra staging continua no checklist de pré-lançamento, onde um LCP real pode ser medido.
+Nenhum teste foi desabilitado nem pulado para passar. Os 18 "skipped" do Playwright são
+testes que só se aplicam a um viewport (ex.: alvos de 44px só em 390px; faixa de editoria
+só até 900px) e se declaram pulados nos outros três.
 
-## 1.1 O que mudou depois da primeira verificação
+## 2. O que foi construído nesta rodada
 
-Quatro waves de continuação, cada uma com o ciclo de revisão independente fechado.
+Seguindo `maquina-nerd-kit/PROMPT-FRONTEND.md`, as oito etapas:
 
-### Wave 1 — auditoria técnica
+1. **Fundação.** Tailwind v4 com os tokens de `docs/01` como tema estático
+   (`packages/tokens/src/tokens.css`), Montserrat 300–800 via `next/font`, breakpoints do
+   kit (761/901/1101/1181/1241), paleta, raios e sombras padrão zerados.
+2. **Primitivos** (`packages/ui`): HeroCard, OverlayCard, BigCard, FeatureVideoCard,
+   StandardCard, VideoCard, SideList, RowCard, SectionTitle, Pagination, AdSlot, Kicker,
+   Photo, cabeçalho com menu de nove itens e drawer, rodapé.
+3. **Home** na ordem do protótipo.
+4. **Editoria** `/[editoria]` e `/[editoria]/page/[n]`, `/page/[n]` para "mais notícias".
+5. **Matéria padrão**, com a coluna de texto alinhada ao menu.
+6. **Matéria overlay** (tag `capa-em-tela-cheia`).
+7. **Oferta** `/ofertas/[slug]` (tag `oferta`), com caixa de produto, aviso de afiliados e
+   conteúdo patrocinado.
+8. **Busca e institucionais**: busca, autor, tag, ofertas, sobre, newsletter, anuncie,
+   privacidade, cookies, termos, acessibilidade, política de afiliados, 404 e erro.
 
-Os gates estavam verdes. O que não estava era o que acontece quando o deployment não é
-produção mas também não é ninguém.
+Adaptador em `lib/content/` devolvendo os tipos de `docs/04-dados.md`; nenhuma rota fala
+com o Kal El diretamente. Detalhes e porquês em [DECISIONS.md §7](./DECISIONS.md).
 
-- **`APP_ENV=staging` passava por todas as travas**, e o runbook abre staging para a
-  redação por uma semana antes da virada: `CONTENT_SOURCE=fixture` era aceito lá.
-- **`robots.ts` decidia por `NODE_ENV` mais um regex de hostname.** Um build de staging
-  _é_ um build de produção, e um host chamado `homolog.` não casava com nenhum padrão —
-  recebia robots.txt totalmente rastreável.
-- **O classificador de endereço privado existia em duas cópias**, e a do ambiente só
-  conhecia `10.`, `192.168.` e `127.`. A revisão acrescentou que FQDN com ponto final
-  (`localhost.`) também passava.
-- `vitest.config.ts` não resolvia `@mn/content/x`, então um arquivo de teste falhava na
-  coleta em vez de rodar — uma suíte podia parar de existir com o resumo verde.
-- `app/global-error.tsx` não existia: `error.tsx` não cobre falha do layout raiz.
+**Para publicar:** `Dockerfile` (Next standalone, segredo de build via BuildKit),
+`docker-compose.prod.yml`, `pnpm kalel:provision` (editorias, tags reservadas, webhook e
+token no Kal El, idempotente, dry run por padrão) e o [RUNBOOK](./RUNBOOK.md) §1, §4.5 e §5.
 
-### Wave 2 — a integração, observada
+**No Kal El:** dois PRs encadeados —
+[#6](https://github.com/maquinanerd/kal-el/pull/6) (filtro `?slug=`) e
+[#7](https://github.com/maquinanerd/kal-el/pull/7) (ordem por publicação, página por offset
+com `total`, tags e entidades na listagem, índice novo na migração `0006`). O portal
+funciona sem eles (cai no cursor), mas com ordem certa e página O(1) só com eles. Ver
+[KAL-EL-DISCOVERY.md](./KAL-EL-DISCOVERY.md).
 
-Toda suíte rodava no provider de fixtures, que entrega objetos de domínio prontos. Os
-schemas de DTO, o mapper, a hidratação de taxonomia, a divisão cursor/offset e o proxy de
-mídia nunca eram exercitados por um render real.
+## 3. Cobertura das regras invioláveis do kit
 
-`tests/fake-kalel/` é um CMS fiel ao contrato — valida cada resposta contra os schemas da
-própria aplicação antes de enviar — e `pnpm test:kalel` sobe a app apontada para ele. O
-corpus é grande o bastante para forçar os dois modelos de paginação: 140 artigos (cursor
-pede 100) e 260 mídias (offset pede 200).
+| Regra                                    | Como está provado                                                                                                                                                                           |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fidelidade aos protótipos                | [VISUAL-AUDIT.md](./VISUAL-AUDIT.md): 5 rotas × 4 larguras comparadas com os protótipos; 48 baselines de regressão                                                                          |
+| Contraste ≥ 4,5:1                        | `tests/unit/tokens-contrast.test.ts` mede cada par cor/fundo; axe-core com 0 violações em 16 superfícies + drawer + consentimento, 4 viewports                                              |
+| Cor de editoria só em faixa/filete/ativo | tokens `--color-ed-*` só nesses usos; Cinema usa `#7A21DB` como fundo com texto (o `#A248FC` do kit reprova com branco e com tinta)                                                         |
+| Nenhum dado inventado                    | sem avatar sem retrato, sem "Mais vistos", sem periodicidade da newsletter; preço de demonstração marcado ao lado do preço; faixa "Demonstração" em modo fixture                            |
+| Publicidade (docs/05)                    | rótulo "Publicidade", espaço reservado com medida, `aria-label`, nunca focável; `rel="sponsored nofollow"` em produto, patrocinados e corpo de matéria comercial; divulgação acima do texto |
+| Mobile sem rolagem horizontal            | teste em todas as superfícies nos 4 viewports, sem `overflow-x: hidden` no documento                                                                                                        |
+| Alvos 44px / 24px                        | `@a11y touch targets`                                                                                                                                                                       |
+| Movimento reduzido, foco, aria           | `@a11y keyboard` e `@a11y motion`                                                                                                                                                           |
 
-Encontrou, na primeira execução, que **`next build` falhava inteiro se o CMS estivesse
-fora do ar**, porque `/feed.xml` e `/news-sitemap.xml` são pré-renderizados. Agora
-degradam para documento vazio com TTL curto — e só em `kind=unavailable`: violação de
-contrato e bug próprio continuam explodindo, porque publicar um feed permanentemente vazio
-com 200 é pior que não publicar.
+## 4. Revisão
 
-### Wave 3 — o importador, executado
+O Codex CLI não roda nesta máquina: `codex-cli 0.151.0` rejeita `--uncommitted` com
+prompt, e `codex exec` falha com o modelo padrão da conta ("requires a newer version of
+Codex") e com `-m gpt-5` ("not supported when using Codex with a ChatGPT account"). Conforme
+o `CLAUDE.md`, a CLI não foi atualizada e a revisão equivalente foi feita por um revisor
+independente, somente leitura, sobre o diff inteiro. **Não é o Codex, e está identificada
+como tal.**
 
-O importador nunca tinha sido rodado de ponta a ponta. `tests/fake-wp/` serve uma REST API
-do WordPress, o Kal El falso ganhou escrita com `externalKey`, `Idempotency-Key` e
-`If-Match`, e um teste roda o CLI real como subprocesso, duas vezes.
+Nove achados (2 altos, 5 médios, 2 baixos). Oito aceitos e corrigidos com teste de
+regressão; um mantido com motivo (escopos do token, limitação do Kal El). Lista e decisões
+em [DECISIONS.md §7.12](./DECISIONS.md) e `artifacts/codex-reviews/kit-*.md`.
 
-- **`findArticleByExternalKey` tratava falha de consulta como ausência**, então um erro do
-  CMS mandava criar um artigo que já existia — recusado pela unicidade, nunca atualizado.
-- **O runbook prometia algo que o código não fazia.** `If-Match` protege os milissegundos
-  entre ler a versão e escrever, não a semana desde a importação. O state file agora guarda
-  a versão escrita, e `--resume` decide de onde continuar, não se lembramos o que
-  escrevemos.
-- **O comentário em `source.ts` afirmava existir um `--wxr`.** Nunca existiu. O caminho
-  para um dump SQL está no runbook, com a sequência exata do inventário à verificação.
+## 4.1 A primeira CI no GitHub (PR #1)
 
-### Wave 3.1 — o arquivo real, lido
+O `ci.yml` nunca tinha rodado: até esta rodada o repositório não tinha remoto. Ao abrir o
+[PR #1](https://github.com/maquinanerd/MN_Next/pull/1):
 
-O backup foi entregue: `127_0_0_1.sql`, 1,66 GB, dump phpMyAdmin de 21/08/2026. Não é uma
-amostra — é o site inteiro, **41.318 posts publicados entre 03/01/2018 e 21/08/2026**,
-73.173 anexos, 8.619 categorias, 36.438 tags, 6 autores.
+1. **Setup.** `pnpm/action-setup@v4` recusou `version: 11` junto com
+   `packageManager: pnpm@11.15.1`. O `packageManager` virou a fonte única (`6b126ec`).
+2. **Segunda execução: 6 de 8 jobs verdes** (hygiene, static, build, migration-tools, a11y,
+   kalel). As duas falhas eram reais, e nenhuma é contornada:
+   - **e2e — o menu andava 19,4px em relação à coluna no Linux.** A coluna de texto tinha
+     largura fixa medida no Windows; o menu, com a largura do próprio texto, muda com a
+     rasterização de cada sistema. Um leitor em Linux, Mac ou Android veria o desvio.
+     Correção: os nove itens preenchem uma caixa da mesma largura fixa e crescem para
+     ocupá-la ([DECISIONS §7.7](./DECISIONS.md)). No Windows a sobra é zero e as baselines
+     não mudam.
+   - **visual — no Linux as páginas saem mais altas** (ex.: matéria 5430 → 5485px): a
+     quebra de linha muda com a rasterização. As baselines são do Windows, onde o projeto é
+     desenvolvido, então o job visual passou a rodar em `windows-latest`; os demais seguem
+     em Linux.
+3. **Terceira execução (`51d3ef1`): os 8 jobs verdes**
+   ([run 34650786964](https://github.com/maquinanerd/MN_Next/actions/runs/34650786964)) —
+   hygiene, static, build, migration-tools, a11y, e2e e kalel em Linux, visual em Windows.
 
-`scripts/wp/archive.ts` lê o dump direto, sem restaurar banco nenhum e **sem abrir
-nenhuma conexão de rede**. Implementa `WpReadSource`, a mesma interface da REST — agora um
-tipo, não uma promessa em comentário.
+O e2e no Linux é o gate que vale a pena manter assim: foi ele que achou um desvio que
+nenhuma execução em Windows mostraria, e que o leitor veria.
 
-Nada abaixo foi deduzido do design. Cada item apareceu ao rodar o importador de verdade
-contra os 41.318 artigos, e teria passado despercebido em qualquer corpus sintético:
+## 5. Variáveis que o operador precisa fornecer
 
-| Achado                                                  | Escala                                     | O que era                                                                                                                                                             |
-| ------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **45% do arquivo é do editor clássico e não tem `<p>`** | 18.786 posts                               | O parser só lê tags de bloco. Esses artigos importariam com as figuras e **nenhuma palavra do texto**, e o relatório contaria sucesso. `wpautop` portado.             |
-| **`categories[0]` não é a editoria**                    | 32.858 de 41.318                           | O WordPress ordena por term id; a primeira categoria é `noticias` na maioria. `build-redirects.ts` usava isso e mandaria 4 em 5 redirects para uma seção inexistente. |
-| **8.619 categorias para 6 editorias**                   | 8.613 rebaixadas                           | Importar uma a uma criaria 8.613 segmentos de rota. Viram tags; nada é descartado.                                                                                    |
-| **A tabela de redirects não cabe no edge**              | 5,06 MB / 206.590 entradas                 | `middleware.ts` importa o JSON e roda a cada requisição. Virou resolução no CMS: **17 entradas** restam.                                                              |
-| **Colchetes de prosa apagados como shortcode**          | ~1.700 trechos                             | `[risos]`, `[a presidente da Lucasfilm]`, `[SPOILER]` — o WordPress imprime esses literalmente e o conversor os deletava.                                             |
-| **68% das imagens de corpo não são nossas**             | 44.304 hotlink + 14.445 com URL corrompida | Decisão de licenciamento do operador, não de engenharia. O relatório agora quebra por domínio.                                                                        |
-| **`guid` aponta para um host morto**                    | 73.173 anexos                              | `http://13.48.147.139`. Montar a URL a partir dele faria 73 mil requisições a uma máquina desligada.                                                                  |
-| **Colisão de slug**                                     | 3 posts                                    | `slugify` corta em 120 caracteres; manchetes deste jornal chegam lá.                                                                                                  |
-| **Slug com escape percent**                             | 5 posts                                    | `%e0%aa%85` virava `e0-aa-85` na URL definitiva. Decodificado antes.                                                                                                  |
-| **Vídeos perdidos na sanitização**                      | 454 iframes + 302 figuras                  | Embeds do YouTube e do X. Convertidos antes do sanitizador, que continua removendo iframe de qualquer outra origem.                                                   |
-| **`/embed/ID` do YouTube quebrava o player**            | —                                          | `frameSrc` lia o caminho inteiro como id.                                                                                                                             |
+| Variável                                                         | Onde                               | Para quê                                                              |
+| ---------------------------------------------------------------- | ---------------------------------- | --------------------------------------------------------------------- |
+| `KAL_EL_BASE_URL`                                                | portal                             | origem **https** pública da API do Kal El                             |
+| `KAL_EL_SITE_ID`                                                 | portal                             | UUID do site Máquina Nerd no Kal El                                   |
+| `KAL_EL_SERVICE_TOKEN`                                           | portal (secreto)                   | token de entrega (`pnpm kalel:provision --new-token` imprime uma vez) |
+| `KAL_EL_WEBHOOK_SECRET`                                          | portal + provisionamento (secreto) | HMAC do webhook de revalidação, ≥ 32 caracteres                       |
+| `KAL_EL_PREVIEW_SECRET`                                          | portal (secreto)                   | assinatura do grant de pré-visualização, ≥ 32 caracteres              |
+| `NEXT_PUBLIC_SITE_URL`                                           | portal (build e runtime)           | `https://www.maquinanerd.com.br`                                      |
+| `APP_ENV`                                                        | portal                             | `staging` ou `production`                                             |
+| `TRUST_PROXY`                                                    | portal                             | `true` atrás de um proxy (o compose já define)                        |
+| `MEDIA_ALLOWED_HOSTS`                                            | portal                             | hosts de imagem permitidos, se houver além do proxy de mídia          |
+| `NEWSLETTER_PROVIDER_URL`                                        | portal                             | inscrição real; sem ela o formulário responde erro honesto (501)      |
+| `KALEL_ADMIN_EMAIL`, `KALEL_ADMIN_PASSWORD`, `PORTAL_PUBLIC_URL` | só no provisionamento              | login de owner para `pnpm kalel:provision`; nunca vão para o portal   |
 
-O ensaio completo roda em ~3 minutos e produz `artifacts/migration/full/`:
+## 6. Plano seguro de staging e virada
 
-```bash
-WP_ARCHIVE_DUMP='…/127_0_0_1.sql' pnpm wp:import --source archive
-```
+Passo a passo no [RUNBOOK §5](./RUNBOOK.md). Em resumo:
 
-```
-read 41318 · skipped 41020 · failed 298 · categoriesAsTags 8613 · noDesk 298 · slugCollision 3
-```
+1. **Kal El:** revisar e mergear `feat/article-slug-filter` e
+   `feat/delivery-published-order`; rodar a migração `0006`; deploy da API.
+2. **Provisionar:** `pnpm kalel:provision` (ensaio) → `--apply --new-token`.
+3. **Staging:** `.env.production` com `APP_ENV=staging` num host que não seja o de
+   produção (robots `Disallow: /`); `docker compose -f docker-compose.prod.yml up -d`;
+   `/api/health?ready=1` verde; `pnpm visual:compare` contra o staging; redação usa por
+   uma semana.
+4. **Importação e URLs:** delta final do WordPress, `pnpm urls:verify` com a amostra de
+   tráfego — zero 404 é bloqueante.
+5. **Virada:** TTL do DNS a 300 s com 24 h de antecedência, `APP_ENV=production`, janela de
+   tráfego baixo, 30 minutos de observação.
+6. **Rollback:** DNS de volta ao WordPress (fica de pé 30 dias) ou a imagem anterior do
+   portal (`docker compose up -d` na tag anterior).
 
-**Nada foi escrito em lugar nenhum.** Sem `--apply` o cliente do Kal El nem é construído,
-e as credenciais do CMS de produção continuam ausentes.
-
-### Wave 4 — fidelidade visual
-
-A comparação lado a lado com os `*.dc.html` mostrou que a home não estava mais pobre:
-estava **incompleta**. Três módulos do protótipo não existiam. Detalhe em
-[VISUAL-AUDIT.md](./VISUAL-AUDIT.md).
-
-## 2. Cobertura por item da Definition of Done
-
-### Produto e front
-
-| Item                                          | Situação                                                                                                            |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Sete superfícies implementadas                | ✅ [VISUAL-AUDIT.md](./VISUAL-AUDIT.md) liga cada fonte à rota e ao screenshot                                      |
-| Tokens, Figtree, temas, contraste do vermelho | ✅ e **corrigido**: `--mn-fg2` reprovava AA em todas as páginas ([DECISIONS §2.1](./DECISIONS.md))                  |
-| Rotas com loading / empty / error / not-found | ✅ estados dentro das páginas; `notFound()` devolve **404 de verdade** (era 200 — [DECISIONS §4.1](./DECISIONS.md)) |
-| Teclado, foco, aria, reduced motion, 44px     | ✅ 4 viewports; axe-core **0 violações** em 18 superfícies × 2 temas                                                |
-
-### Kal El e conteúdo
-
-| Item                                           | Situação                                                                                            |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Descoberta, adaptador e mappers documentados   | ✅ [KAL-EL-DISCOVERY.md](./KAL-EL-DISCOVERY.md), por inspeção do código do CMS                      |
-| Schemas, timeouts, erros e cache tags testados | ✅ 45 testes de contrato, incluindo timeout, 5xx com retry único e HTML de proxy                    |
-| Produção sem fixture e sem token no cliente    | ✅ duas travas independentes + teste estático da fronteira. **Staging agora conta como produção**   |
-| Ausência do Cinerie degrada só o módulo        | ✅ testado (`keeps the home up when the Cinerie module is unavailable`)                             |
-| Webhook HMAC / replay, preview, invalidação    | ✅ 19 testes; claim de nonce **atômico**; preview preso a um slug                                   |
-| Domínio cobre todos os tipos                   | ⚠️ o **domínio** cobre; o **CMS** não tem modelo para comercial, dossiê e ao vivo — ver pendência 4 |
-
-### Migração e URLs
-
-| Item                                         | Situação                                                                                                                                                  |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Scripts com help, dry-run, resume, relatório | ✅ dry run é o padrão; sem `--apply` o cliente de escrita nem é construído                                                                                |
-| Reexecução sem duplicar                      | ✅ **executado**: o CLI real, duas vezes, contra stand-ins que impõem `externalKey`, `Idempotency-Key` e `If-Match`. Segunda passada reporta `created: 0` |
-| Lê o arquivo real                            | ✅ **executado sobre os 41.318 posts**: `--source archive` lê o dump de 1,66 GB sem restaurar banco e sem rede. 11 defeitos que só o corpus real expõe    |
-| Parser sanitiza e contabiliza desconhecidos  | ✅ 83 testes; onze bugs reais encontrados por eles (ver §3 e Wave 3.1)                                                                                    |
-| Mapa de redirects e 410                      | ✅ permalink confirmado (`/%postname%/`); a regra é resolvida no CMS e a tabela guarda só as **17** exceções; sem open redirect (19 testes)               |
-| Amostra de URLs com zero 404                 | ❌ **não verificável**: a amostra não existe — pendência 1                                                                                                |
-
-### SEO, performance, segurança
-
-| Item                                            | Situação                                                                                         |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Metadata, canonical, OG, JSON-LD, breadcrumbs   | ✅ um `@graph` por página, assertado no e2e                                                      |
-| Sitemaps, news sitemap, RSS                     | ✅ index **enumera todos** os arquivos filhos (antes só as primeiras 100 URLs eram descobríveis) |
-| ISR / cache / revalidateTag conforme a matriz   | ✅ busca `no-store`, preview `noindex`, HTML útil sem JS                                         |
-| Imagens, fontes, embeds e anúncios com dimensão | ✅ `minHeight` obrigatório; embed atrás de fachada; teste de CLS de slot                         |
-| Env, headers/CSP, sanitização, rate limit, LGPD | ✅ CSP com limitação declarada ([DECISIONS §5.1](./DECISIONS.md))                                |
-
-### Engenharia e entrega
-
-| Item                                  | Situação                                                                                  |
-| ------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Todos os gates executados             | ✅ §1                                                                                     |
-| CI com gates e artefatos              | ✅ `.github/workflows/ci.yml`. **Não executado** — sem remoto configurado (pendência 1)   |
-| Nada proibido versionado              | ✅ job `hygiene`; ZIPs, `.env`, `.next`, `artifacts/` e `.migration-reference/` ignorados |
-| Docs, runbook, decisões, rollback     | ✅                                                                                        |
-| Sem deploy nem virada sem autorização | ✅ nada foi implantado; runbook completo                                                  |
-
-## 3. O que a revisão encontrou
-
-O ciclo do `CLAUDE.md` — implementa, Codex revisa, corrige, revisa de novo — rodou
-seis rodadas, e fechou.
-
-**Rodada 1 — Codex** (`artifacts/codex-reviews/wave-12-inicial.md`): 9 achados, 5 de
-severidade alta. Todos corrigidos, cada um com teste de regressão que falha se a correção
-for revertida.
-
-**Rodada 2 — auto-revisão.** O Codex abortou por limite de cota no meio da execução
-(`wave-12-final.log`). Conforme o `CLAUDE.md` manda nesse caso, a revisão equivalente foi
-feita internamente e registrada com o motivo em `wave-12-final.md`. Encontrou mais 12
-problemas, entre eles:
-
-- **soft-404 em todo o site** — um `loading.tsx` na raiz fazia `notFound()` e `redirect()`
-  devolverem HTTP 200. Medido: `/isto-nao-existe` → 200. Depois: 404;
-- **loop de redirect** em `/reviews/{slug}`, que redirecionava para si mesmo;
-- **contraste AA reprovado em todas as páginas**, e texto a **1,04:1** em faixas escuras;
-- overflow horizontal em 390px.
-
-**Rodada 3 — Codex** (`artifacts/codex-reviews/wave-final.md`), com a cota restabelecida:
-**7 achados bloqueantes**, todos reais, todos corrigidos e cobertos por teste:
-
-1. **A importação publicaria artigos sem editoria, sem tags e sem autor.** O post do
-   WordPress carrega **ids numéricos**, e o importador os procurava em mapas indexados por
-   _slug_ — toda busca falhava. Como o portal descarta artigos sem editoria das listagens e
-   do sitemap, os artigos teriam sido importados e ficado invisíveis. O autor nunca entrava
-   no payload.
-2. **A reexecução não reconciliava.** O update mandava só título, resumo, documento e slug,
-   então uma primeira execução defeituosa não podia ser reparada rodando de novo — o que
-   anula o propósito de um importador idempotente.
-3. **Falha de taxonomia ou de mídia terminava com exit 0** sob `--apply`. Uma migração que
-   perde uma capa e sai zero parece sucesso.
-4. **Shortcodes reconhecidos sumiam em silêncio.** `[caption]`, `[gallery]` e `[embed]`
-   eram preservados pelo stripper, mas o parser seguinte só lê tags HTML — então o
-   shortcode desaparecia entre dois parágrafos, sem sequer ser contado.
-5. **O news sitemap parava nos primeiros 100 itens.** A rota pede mil; o Kal El limita a
-   consulta a 100 por página e não havia paginação.
-6. **Canonicals de paginação apontavam para URLs inexistentes.** Reviews, autor e ofertas
-   paginam com `?page=`, mas o gerador emitia `/page/N`; `/ofertas` ignorava a página.
-7. **SSRF no importador de mídia.** `source_url` é dado do sistema legado e era buscado
-   sem restrição de host, seguindo redirects — um registro de mídia manipulado apontaria a
-   busca para a rede interna durante a migração.
-
-Além disso, escrever os testes do parser revelou dois defeitos por conta própria: `<cite>`
-era removido pela sanitização antes de o parser lê-lo — **toda citação migrada perdia a
-atribuição** — e nomes de shortcode com dígito não eram reconhecidos.
-
-**Rodada 4 — Codex** (`artifacts/codex-reviews/wave-final-2.md`), sobre as correções da
-rodada 3: **5 achados bloqueantes**, todos reais, todos corrigidos e cobertos por teste.
-Quatro deles são o mesmo tipo de erro — uma falha que não vira falha:
-
-1. **Download de asset perdido não contava como falha.** As três falhas vizinhas
-   incrementavam o contador; essa só escrevia na lista. Como o exit code lê o contador,
-   um `--apply` que perdesse **todas** as capas por falha de rede saía com código 0.
-2. **Alt text perdido era perdido para sempre.** Se o PATCH de metadados falhasse, o
-   mapeamento era gravado assim mesmo; a execução seguinte reusava a mídia e nunca mais
-   voltava a ela. Agora o débito fica em `pendingMediaMeta` no state file e é pago na
-   próxima execução — sem custar um PATCH por asset quando não há nada devendo.
-3. **Nenhuma imagem de galeria chegava ao artigo.** O parser emite `/wp-media-id/12`, mas
-   o importador indexava a mídia **só** pela URL legada, então o resolvedor não achava
-   nada e a imagem simplesmente não era emitida. O teste anterior passava porque construía
-   o próprio resolvedor e lhe entregava os placeholders na mão — concordava consigo mesmo.
-   O formato do placeholder agora existe em um lugar só (`shortcodeAssetRef`), e o teste
-   novo atravessa `importAsset` → `imageResolver` → `htmlToBlocks` reais.
-4. **O corpo da resposta era lido inteiro antes de checar o tamanho.** Um host permitido
-   podia declarar 512 bytes e enviar gigabytes: quem decidia a memória do importador era
-   ele. A leitura agora é incremental e cancela no limite.
-5. **A defesa de SSRF não resolvia nomes.** O allowlist julga um _nome_; um nome permitido
-   que responda `169.254.169.254` passava. Agora todo hostname é resolvido a cada hop e
-   qualquer resposta em faixa privada, loopback ou link-local reprova — IPv6 incluído.
-   O que **não** está fechado está dito abaixo, nas limitações.
-
-**Rodada 5 — Codex** (`artifacts/codex-reviews/wave-final-3.md`), sobre as correções da
-rodada 4: **2 achados bloqueantes**, ambos reais, ambos corrigidos.
-
-1. **O débito de alt text não sobrevivia a uma exceção.** `updateMediaMetadata()` pode
-   _rejeitar_ — timeout, conexão derrubada — e não só responder com erro. A rejeição
-   escapava, matava a execução antes do checkpoint que registra o débito, e a execução
-   seguinte encontrava o arquivo já enviado e nunca voltava a ele. A correção foi maior
-   que o achado: o mapeamento local passou a significar **"asset concluído"** e só é
-   gravado quando o PATCH landa, então uma queda em qualquer ponto entre o upload e o
-   checkpoint deixa a próxima execução capaz de perceber que ainda se deve algo.
-2. **A defesa de IPv6 era textual, não semântica.** `::ffff:10.0.0.1` era reconhecido;
-   `::ffff:7f00:1`, o **mesmo endereço** em hexadecimal, passava como público. Agora o
-   endereço é expandido e classificado de verdade, cobrindo IPv4-mapped, IPv4-translated
-   (RFC 6145), IPv4-compatible, o prefixo NAT64 `64:ff9b::/96`, `fc00::/7`, `fe80::/10`
-   e `fec0::/10` — e um endereço que não faz sentido reprova em vez de passar.
-
-**Rodada 6 — Codex** (`artifacts/codex-reviews/wave-final-4.md`): **"SEM ACHADO
-BLOQUEANTE"**, textualmente, na primeira linha. É o critério do `CLAUDE.md` para fechar o
-ciclo. Restou um achado **médio**, também corrigido: no caminho de reuso, um PATCH que
-finalmente landasse não gravava o mapeamento, então o asset continuaria sem registro de
-conclusão e receberia PATCH em toda reexecução — idempotente, mas caro para sempre.
-
-Duas rodadas do revisor terminaram sem relatório antes disso (`wave-final-3-tentativa-1`
-e `-2.log`): a primeira esgotou o contexto explorando o repositório, a segunda tentou
-rodar o vitest e bateu no sandbox `read-only`. A terceira tentativa, restrita a leitura e
-apontada ao diff, produziu os dois achados acima. As tentativas frustradas estão no
-diretório, não descartadas. A rodada 6 precisou do mesmo cuidado: o diff acumulado
-esgotava o contexto do revisor, então o recorte revisado foi entregue por stdin
-(`round6-focus.md`).
-
-Fechar o ciclo exigiu também um ajuste estrutural: os três scripts de migração chamavam
-`main()` no topo do módulo, então importar um deles para testar uma função executava a
-migração com o argv do test runner. Agora usam `runAsScript(import.meta.url, main)`.
-
-**Rodada 7 — Codex indisponível** (`artifacts/codex-reviews/wave-3-arquivo-inicial.md`).
-A CLI está instalada e autenticada, mas a conta resolve para `gpt-6-astra`, que a API
-recusa em `codex-cli 0.151.0`: _"requires a newer version of Codex"_. Quatro modelos
-alternativos foram tentados e respondem _"not supported when using Codex with a ChatGPT
-account"_. O `CLAUDE.md` cobre o caso — não instalar, não interromper, registrar e fazer a
-auditoria equivalente. A revisão substituta está no arquivo, com o log do erro ao lado, e
-**identificada como não independente**. Três achados, todos corrigidos:
-
-- **ALTO** — `lib/legacy-permalink.ts` montava o destino do 301 com dois campos vindos do
-  CMS e chamava `permanentRedirect` direto. Um slug começando com `/` produziria `//host`,
-  que o navegador lê como URL absoluta: redirecionador aberto com o Kal El como ponto de
-  injeção. Passa por `safeInternalPath` agora, como a tabela legada sempre passou.
-- **MÉDIO** — o escudo de `<pre>` no `wpautop` casava sem `\b`, então `<prefix>` engoliria
-  tudo até o próximo `</pre>` e devolveria o trecho sem parágrafo nenhum.
-- **BAIXO** — `DESK_PRECEDENCE` podia divergir de `DESK_SLUGS` sem que nada reclamasse;
-  agora um teste exige que as duas listas coincidam.
-
-> Nenhuma rodada foi simulada. Quando o revisor independente não pôde rodar, isso está
-> dito, e a revisão substituta está identificada como tal.
-
-## 4. Mudança no Kal El
-
-Uma única mudança, em branch e commit próprios no repositório do CMS:
-
-- **Branch:** `feat/article-slug-filter` · **Commit:** `83ad1e8`
-- Filtro `?slug=` em `GET /v1/sites/:siteId/articles`, três linhas de lógica, mais o
-  schema e o OpenAPI
-- **Teste:** `apps/api/tests/article-slug-filter.test.ts`, 5 casos, verdes contra
-  PostgreSQL real
-- Regressão conferida: `articles.test.ts` e `pipeline-contract.test.ts` seguem verdes
-
-**Commitada no repositório do Kal El, não enviada.** Fica na branch `feat/article-slug-filter`
-para revisão de quem cuida do CMS; nenhum push foi feito. O portal funciona sem ela — o resultado filtrado é sempre reconferido contra o slug
-pedido e uma divergência cai no índice completo.
-
-## 5. Pendências externas
+## 7. Pendências externas
 
 Nenhuma é contornável por código.
 
-| #   | Pendência                                  | O que bloqueia                                          | Como resolver                                                                                                   |
-| --- | ------------------------------------------ | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| 1   | Amostra de URLs de maior tráfego           | o critério **zero 404**, que é bloqueante de lançamento | exportar do Search Console para `data/import/top-urls.txt` e rodar `pnpm urls:verify`                           |
-| 2   | ~~Padrão real de permalink~~ **resolvido** | —                                                       | o arquivo diz: `/%postname%/`, com `no-category-base-wpml` ativo                                                |
-| 2b  | Editoria dos 298 posts sem uma             | esses artigos não têm URL pública                       | preencher `artifacts/migration/full/unmapped-categories.json` (222 são `noticias`) e passar em `--category-map` |
-| 2c  | Destino das 44.304 imagens de terceiros    | ilustração do corpo dos artigos                         | decisão de licenciamento: hoje não são baixadas — ver [DECISIONS 4.10](./DECISIONS.md)                          |
-| 2d  | `wp-content/uploads` extraído              | transferir os bytes das mídias                          | extrair o `tar.gz` de 101 GB (19 partes) e apontar `--uploads`                                                  |
-| 3   | Modelo comercial no Kal El                 | BuyBox e nota de review com conteúdo do CMS             | aceitar a proposta em [KAL-EL-DISCOVERY.md](./KAL-EL-DISCOVERY.md)                                              |
-| 4   | Credenciais do Kal El                      | rodar contra o CMS real                                 | `KAL_EL_BASE_URL`, `KAL_EL_SITE_ID`, `KAL_EL_SERVICE_TOKEN`, `KAL_EL_WEBHOOK_SECRET`, `KAL_EL_PREVIEW_SECRET`   |
-| 5   | Endpoint interno do Cinerie                | "Onde assistir" com dado real                           | `CINERIE_INTERNAL_URL`, `CINERIE_SERVICE_TOKEN`                                                                 |
-| 6   | Provedor de newsletter                     | inscrição real (hoje responde 501)                      | `NEWSLETTER_PROVIDER_URL`                                                                                       |
-| 7   | Network code do GAM                        | anúncios reais                                          | reserva de espaço já implementada                                                                               |
-| 8   | CMP LGPD                                   | se um CMP for exigido                                   | o banner próprio atende enquanto não houver                                                                     |
+| #   | Pendência                                                        | O que bloqueia                           | Como resolver                                                                         |
+| --- | ---------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------- |
+| 1   | Credenciais do Kal El (seção 5)                                  | rodar contra o CMS real                  | fornecer as variáveis; rodar `kalel:provision`                                        |
+| 2   | Merge e deploy das duas branches do Kal El                       | ordem por publicação e paginação O(1)    | revisão de quem cuida do CMS; migração `0006`                                         |
+| 3   | Amostra de URLs de maior tráfego                                 | critério **zero 404**                    | exportar do Search Console para `data/import/top-urls.txt` e rodar `pnpm urls:verify` |
+| 4   | Editoria dos 298 posts sem uma                                   | esses artigos não têm URL pública        | preencher o `--category-map` ([RUNBOOK §4.0.1](./RUNBOOK.md))                         |
+| 5   | Licença das imagens de terceiros e `wp-content/uploads` extraído | mídia do acervo                          | decisão editorial ([DECISIONS 4.10](./DECISIONS.md)); extrair o `tar.gz`              |
+| 6   | Modelo de produto e de layout no Kal El                          | caixa de produto com dado real           | aceitar a proposta em [KAL-EL-DISCOVERY.md](./KAL-EL-DISCOVERY.md)                    |
+| 7   | Network code do GAM                                              | anúncios reais                           | a reserva de espaço já está pronta                                                    |
+| 8   | Provedor de newsletter                                           | inscrição real                           | `NEWSLETTER_PROVIDER_URL`                                                             |
+| 9   | Revisão jurídica                                                 | termos, privacidade, cookies e afiliados | os textos são rascunhos neutros, sem promessa que o site não cumpra                   |
+| 10  | Revisor Codex                                                    | revisão independente pelo Codex          | atualizar a CLI numa máquina com acesso; rodar `codex review --uncommitted`           |
 
-## 6. Limitações declaradas
+## 8. Limitações declaradas
 
-**Cobertas por teste, com um custo conhecido:**
+- **Nenhuma execução contra o Kal El real.** A aplicação inteira roda em
+  `CONTENT_SOURCE=kalel` contra um CMS que valida as próprias respostas com os schemas da
+  app, e a mudança do Kal El foi testada contra Postgres real. Não substitui latência,
+  volume e comportamento sob carga do CMS de produção.
+- **Build Docker não executado nesta máquina.** O Docker Desktop 29.6 está instalado, mas o
+  WSL não tem nenhuma distribuição, e sem ela o daemon não sobe (esperado 5 minutos após
+  abrir o Docker Desktop). Instalar a distro é mudança de sistema, fora do escopo. O
+  Dockerfile segue o padrão standalone do Next; o primeiro `docker compose build` em
+  staging é o teste. Para ensaiar aqui: `wsl --install`, reiniciar, abrir o Docker Desktop
+  e rodar o build com um arquivo de ambiente em modo fixture (RUNBOOK §4.5).
+- **Tema escuro saiu.** O kit só desenha o claro; um escuro seria visual inventado
+  ([DECISIONS §7.1](./DECISIONS.md)). Os tokens permitem acrescentá-lo sem mexer em
+  componente.
+- **Uma instância.** Cache ISR e nonce de webhook em processo; escalar exige cache handler
+  e `NonceStore` compartilhados ([RUNBOOK §3](./RUNBOOK.md)).
+- **CSP com `'unsafe-inline'` em `script-src`** e **rate limit por instância**, como antes
+  ([DECISIONS §5](./DECISIONS.md)).
 
-- **CSP com `'unsafe-inline'` em `script-src`.** O Next emite scripts inline de bootstrap
-  por página; hash não cobre e nonce destruiria o ISR. Ainda bloqueia script de outra
-  origem. O vetor inline está fechado estruturalmente.
-- **Nonce de webhook em processo.** Em N instâncias, até N purgas redundantes — nunca um
-  efeito duplicado. Troca por Redis é de um arquivo.
-- **Rate limit por instância.** Não é uma cota distribuída; o teto real fica no edge/WAF.
-- **A validação de SSRF resolve o nome, não fixa o endereço.** O importador rejeita
-  qualquer hostname que resolva para faixa privada, a cada redirect, mas o socket faz a
-  própria resolução depois — um nome que mude de resposta nesse intervalo (DNS rebinding)
-  continua teoricamente possível. Fechar isso exige um dispatcher com endereço fixado. O
-  controle efetivo enquanto isso é o allowlist, e o [RUNBOOK](./RUNBOOK.md) diz o que ele
-  exige do operador: não declarar host cujo DNS não seja seu.
+## 9. Estado do repositório
 
-**Não verificáveis aqui:**
-
-- **Nenhuma execução contra o Kal El real.** O que existe agora é mais forte que antes —
-  a aplicação inteira renderiza em `CONTENT_SOURCE=kalel` contra um CMS que valida as
-  próprias respostas pelos schemas da app, e o importador roda duas vezes contra um alvo
-  que impõe as mesmas regras do real. O que isso **não** substitui: latência, volume e
-  comportamento sob carga do CMS de verdade.
-- **A comparação lado a lado foi feita, e não cobriu tudo.** As sete superfícies foram
-  abertas contra seus protótipos em 1440px e as diferenças de composição encontradas estão
-  corrigidas ([VISUAL-AUDIT.md](./VISUAL-AUDIT.md)). Não foram percorridos elemento a
-  elemento: os cinco templates de artigo entre si, as quatro telas comerciais entre si, e
-  os viewports 768 e 1024 fora da baseline. Isso continua sendo revisão humana.
-- **A ferramenta de comparação não é confiável em 390px** — as capturas saem sem estilo em
-  algumas execuções. A evidência de mobile que vale é a baseline do Playwright.
-- **Dossiê e ao vivo** renderizam a partir do que o CMS consegue expressar e não entram na
-  baseline visual — um screenshot de estado vazio não prova fidelidade.
-
-## 7. Estado do repositório
-
-`git status` limpo na branch `chore/maquina-nerd-kalel-migration`. Ignorados por
-`.gitignore`, deliberadamente: os dois ZIPs originais (intactos, hashes em
-[INPUT-INVENTORY.md](./INPUT-INVENTORY.md)), `.migration-reference/`, `artifacts/`,
-`.next/`, `node_modules/` e todo `.env*`.
-
-Versionados de propósito: as 160 baselines visuais (~32 MB). Sem elas no repositório o
-gate visual não prova nada.
+Ignorados deliberadamente: os ZIPs de entrada (intactos, hashes em
+[INPUT-INVENTORY.md](./INPUT-INVENTORY.md)), `maquina-nerd-kit/`, `.migration-reference/`,
+`artifacts/` (capturas, relatórios de revisão), `.next/`, `node_modules/` e todo `.env*`
+exceto `.env.example`. Versionadas de propósito: as 48 baselines visuais. O portal está no
+[PR #1](https://github.com/maquinanerd/MN_Next/pull/1) e as duas mudanças do CMS nos PRs
+[kal-el#6](https://github.com/maquinanerd/kal-el/pull/6) e
+[kal-el#7](https://github.com/maquinanerd/kal-el/pull/7); nada foi mesclado nem implantado.

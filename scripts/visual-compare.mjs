@@ -5,143 +5,63 @@
  * The Definition of Done asks for a human comparison against each `*.dc.html`, and a
  * baseline suite cannot supply one: baselines prove the site has not changed since it was
  * approved, which says nothing about whether it matches the design. This produces the
- * evidence that comparison needs — the same surface, the same width, the same theme,
- * captured from the prototype and from the application — and writes both into
- * `artifacts/visual/` so a reviewer can flip between them.
+ * evidence that comparison needs — the same surface, the same width, captured from the
+ * prototype and from the application — and writes both into `artifacts/visual/` so a
+ * reviewer can flip between them.
  *
- *   pnpm visual:compare                       # every mapped surface, 1440 and 390
+ *   pnpm visual:compare                       # every surface, 390/768/1024/1440
  *   pnpm visual:compare -- --only home        # one surface
  *   pnpm visual:compare -- --width 768        # one width
  *
- * It serves the extracted prototypes itself, so the only prerequisite is that
- * `Inspect-Inputs.ps1 -ExtractReferences` has run and the application is up.
+ * The prototypes are opened from disk (`file://`): the kit's `support.js` renders them from
+ * the file location and leaves an empty page when served over HTTP. The only prerequisites
+ * are the kit copy under `.migration-reference/maquina-nerd-kit/` and the application up
+ * in fixture mode (`VISUAL_APP_URL`, default http://127.0.0.1:3210).
  */
 
-import { createServer } from 'node:http';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { pathToFileURL } from 'node:url';
 
-const REFERENCE = path.resolve('.migration-reference/claude-design');
+const REFERENCE = path.resolve('.migration-reference/maquina-nerd-kit/prototypes');
 const OUT = path.resolve('artifacts/visual');
 const APP = process.env.VISUAL_APP_URL ?? 'http://127.0.0.1:3210';
-const PROTO_PORT = Number(process.env.VISUAL_PROTO_PORT ?? 4100);
 
-/** Each approved surface, the prototype that defines it and the route that serves it. */
+/**
+ * The seven prototypes of the kit (README) and the route that serves each. The design
+ * system and the index are references, not pages: there is no route to compare them with,
+ * so only the prototype is captured and the comparison is made against the tokens.
+ */
 const SURFACES = [
   { key: 'home', proto: 'Máquina Nerd Template.dc.html', route: '/' },
-  { key: 'categoria', proto: 'Máquina Nerd Categorias.dc.html', route: '/series' },
+  { key: 'editoria', proto: 'Máquina Nerd Categorias.dc.html', route: '/cinema' },
   {
-    key: 'artigo',
+    key: 'materia',
     proto: 'Máquina Nerd Notícias.dc.html',
-    route: '/series/resident-evil-2026-revela-mudanca-em-monstro-classico',
+    route: '/cinema/o-misterio-de-scarlett-johansson-a-estrela-perdida-da-marvel',
   },
-  { key: 'especiais', proto: 'Máquina Nerd Especiais.dc.html', route: '/especiais/marvel' },
   {
-    key: 'comercial',
-    proto: 'Máquina Nerd Comercial.dc.html',
-    route: '/reviews/box-sandman-edicao-definitiva-vale-os-r-289',
+    key: 'materia-overlay',
+    proto: 'Máquina Nerd Notícias Overlay.dc.html',
+    route: '/cinema/o-misterio-de-scarlett-johansson-edicao-capa',
   },
-  { key: 'design-system', proto: 'Máquina Nerd Design System.dc.html', route: '/sobre' },
-  { key: 'indice', proto: 'Máquina Nerd Índice.dc.html', route: '/' },
+  {
+    key: 'materia-oferta',
+    proto: 'Máquina Nerd Notícias Publi.dc.html',
+    route: '/ofertas/controle-xbox-edicao-especial-tem-queda-de-preco-na-amazon',
+  },
+  { key: 'design-system', proto: 'Máquina Nerd Design System.dc.html', route: null },
+  { key: 'indice', proto: 'Máquina Nerd Índice.dc.html', route: null },
 ];
-
-/**
- * The five article templates, which live as five screens inside one prototype file.
- *
- * `Máquina Nerd Notícias.dc.html` is not one page: it stacks the five approved article
- * shapes, each behind a `data-screen-label`. Capturing the file whole compares the
- * standard template against a page and the other four against nothing, which is how they
- * went unexamined. Each screen is clipped to its own element instead.
- */
-const SCREENS = [
-  {
-    key: 'artigo-padrao',
-    label: 'Notícia padrão',
-    route: '/series/resident-evil-2026-revela-mudanca-em-monstro-classico',
-  },
-  {
-    key: 'artigo-longform',
-    label: 'Longform',
-    route: '/series/como-ahsoka-virou-o-centro-do-plano-galactico-da-disney',
-  },
-  {
-    key: 'artigo-urgente',
-    label: 'Urgente',
-    route: '/series/lanterns-atinge-93-milhoes-de-espectadores-na-estreia-na-hbo',
-  },
-  {
-    key: 'artigo-video',
-    label: 'Vídeo',
-    route: '/animes/netflix-revela-trailer-de-lego-one-piece-com-aventura-inedita',
-  },
-  { key: 'artigo-lista', label: 'Lista', route: '/series/5-coisas-que-o-trailer-de-ahsoka-t2-esconde-sobre-thrawn' },
-];
-
-/**
- * The four commercial screens, stacked in one prototype the same way.
- *
- * Same trap as the article templates: capturing `Máquina Nerd Comercial.dc.html` whole
- * compares the publieditorial against a page and the other three against nothing.
- */
-const COMMERCIAL = [
-  {
-    key: 'comercial-publieditorial',
-    label: 'Publieditorial',
-    route: '/quadrinhos/como-montar-uma-estante-de-colecionador-sem-gastar-o-mes-inteiro',
-  },
-  {
-    key: 'comercial-review',
-    label: 'Review de produto',
-    route: '/reviews/box-sandman-edicao-definitiva-vale-os-r-289',
-  },
-  {
-    key: 'comercial-comparativo',
-    label: 'Comparativo',
-    route: '/quadrinhos/os-10-melhores-box-de-quadrinhos-para-comecar-uma-colecao',
-  },
-  { key: 'comercial-landing', label: 'Landing de oferta', route: '/ofertas/semana-nerd-2026' },
-];
-
-const SCREEN_PROTO = 'Máquina Nerd Notícias.dc.html';
-const COMMERCIAL_PROTO = 'Máquina Nerd Comercial.dc.html';
-
-const TYPES = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.png': 'image/png',
-  '.webp': 'image/webp',
-  '.jpg': 'image/jpeg',
-};
-
-function serveReference() {
-  const server = createServer(async (req, res) => {
-    try {
-      const rel = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname).replace(/^\/+/, '');
-      // Confined to the reference folder: the path comes from a URL.
-      const file = path.resolve(REFERENCE, rel);
-      if (!file.startsWith(REFERENCE)) throw new Error('outside the reference folder');
-      const body = await readFile(file);
-      res.writeHead(200, { 'content-type': TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream' });
-      res.end(body);
-    } catch {
-      res.writeHead(404);
-      res.end('not found');
-    }
-  });
-  return new Promise((resolve) => server.listen(PROTO_PORT, '127.0.0.1', () => resolve(server)));
-}
 
 /** Navigates and waits until the page is genuinely painted and settled. */
 async function load(page, url) {
-  await page.goto(url, { waitUntil: 'networkidle', timeout: 60_000 });
-  // `networkidle` can fire before a stylesheet has been parsed, and a capture taken then
-  // shows unstyled markup — which reads as a broken layout rather than as a broken shot.
-  await page.waitForFunction(() => document.styleSheets.length > 0, undefined, { timeout: 15_000 });
+  await page.goto(url, { waitUntil: 'load', timeout: 60_000 });
+  await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
   await page.evaluate(() => document.fonts.ready);
   await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
-  const consent = page.getByRole('button', { name: /Aceitar todos|Apenas essenciais/ });
+  const consent = page.getByRole('button', { name: /Aceitar|Recusar|Apenas essenciais/ });
   if ((await consent.count()) > 0) {
     await consent
       .first()
@@ -149,6 +69,7 @@ async function load(page, url) {
       .catch(() => undefined);
     await page.waitForTimeout(250);
   }
+  // Scrolls once to the end so lazy images load, then back to the top.
   await page.evaluate(
     () =>
       new Promise((done) => {
@@ -167,31 +88,6 @@ async function load(page, url) {
   await page.waitForTimeout(800);
 }
 
-/**
- * Captures one screen of a multi-screen prototype.
- *
- * The clip runs from the labelled element to the next label, so a screen carries its own
- * banner and stops where the following one starts.
- */
-async function captureScreen(page, url, label, file) {
-  await load(page, url);
-  const box = await page.evaluate((wanted) => {
-    const marks = [...document.querySelectorAll('[data-screen-label]')];
-    const index = marks.findIndex((m) => (m.getAttribute('data-screen-label') ?? '').trim() === wanted);
-    if (index < 0) return null;
-    const start = marks[index].getBoundingClientRect().top + window.scrollY;
-    const next = marks[index + 1];
-    const end = next ? next.getBoundingClientRect().top + window.scrollY : document.body.scrollHeight;
-    return { top: Math.max(0, Math.round(start)), height: Math.round(end - start) };
-  }, label);
-  if (!box) throw new Error(`no screen labelled "${label}"`);
-  await page.screenshot({
-    path: file,
-    fullPage: true,
-    clip: { x: 0, y: box.top, width: page.viewportSize().width, height: box.height },
-  });
-}
-
 async function capture(page, url, file) {
   await load(page, url);
   await page.screenshot({ path: file, fullPage: true });
@@ -200,67 +96,49 @@ async function capture(page, url, file) {
 async function main() {
   const args = process.argv.slice(2);
   const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null;
-  const widths = args.includes('--width') ? [Number(args[args.indexOf('--width') + 1])] : [1440, 390];
-  // `--screens` compares the five article templates, which share one prototype file.
-  const screensOnly = args.includes('--screens');
-  const surfaces = screensOnly ? [] : only ? SURFACES.filter((s) => s.key === only) : SURFACES;
-  // Every multi-screen prototype, tagged with the file each screen belongs to.
-  const allScreens = [
-    ...SCREENS.map((s) => ({ ...s, proto: SCREEN_PROTO })),
-    ...COMMERCIAL.map((s) => ({ ...s, proto: COMMERCIAL_PROTO })),
-  ];
-  // `--only` names a surface *or* a screen; the tool should not need to be told which.
-  const screens = allScreens.filter((s) => !only || s.key === only);
+  const widths = args.includes('--width') ? [Number(args[args.indexOf('--width') + 1])] : [390, 768, 1024, 1440];
+  const surfaces = only ? SURFACES.filter((s) => s.key === only) : SURFACES;
 
   const { chromium } = await import('@playwright/test');
-  const server = await serveReference();
   const browser = await chromium.launch();
   await mkdir(OUT, { recursive: true });
 
   const index = [];
+  let failures = 0;
   try {
     for (const width of widths) {
-      const page = await browser.newPage({ viewport: { width, height: 1000 }, deviceScaleFactor: 1 });
+      const context = await browser.newContext({ viewport: { width, height: 1000 }, deviceScaleFactor: 1 });
+      // The consent bar is answered up front so it does not cover the app captures.
+      await context.addCookies([{ name: 'mn-consent', value: 'rejected', url: APP }]);
+      const page = await context.newPage();
       for (const surface of surfaces) {
         const protoFile = path.join(OUT, `${surface.key}-${width}-proto.png`);
-        const appFile = path.join(OUT, `${surface.key}-${width}-app.png`);
+        const appFile = surface.route ? path.join(OUT, `${surface.key}-${width}-app.png`) : null;
         try {
-          await capture(page, `http://127.0.0.1:${PROTO_PORT}/${encodeURIComponent(surface.proto)}`, protoFile);
-          await capture(page, `${APP}${surface.route}`, appFile);
-          index.push({ surface: surface.key, width, proto: surface.proto, route: surface.route });
+          await capture(page, pathToFileURL(path.join(REFERENCE, surface.proto)).href, protoFile);
+          if (appFile && surface.route) await capture(page, `${APP}${surface.route}`, appFile);
+          index.push({
+            surface: surface.key,
+            width,
+            proto: surface.proto,
+            route: surface.route,
+            files: [path.basename(protoFile), ...(appFile ? [path.basename(appFile)] : [])],
+          });
           console.warn(`  ${surface.key} @ ${width}`);
         } catch (err) {
+          failures += 1;
           console.error(`  ${surface.key} @ ${width} failed: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
-
-      for (const screen of screens) {
-        const protoFile = path.join(OUT, `${screen.key}-${width}-proto.png`);
-        const appFile = path.join(OUT, `${screen.key}-${width}-app.png`);
-        try {
-          await captureScreen(
-            page,
-            `http://127.0.0.1:${PROTO_PORT}/${encodeURIComponent(screen.proto)}`,
-            screen.label,
-            protoFile,
-          );
-          await capture(page, `${APP}${screen.route}`, appFile);
-          index.push({ surface: screen.key, width, proto: `${screen.proto} · ${screen.label}`, route: screen.route });
-          console.warn(`  ${screen.key} @ ${width}`);
-        } catch (err) {
-          console.error(`  ${screen.key} @ ${width} failed: ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }
-
-      await page.close();
+      await context.close();
     }
   } finally {
     await browser.close();
-    server.close();
   }
 
   await writeFile(path.join(OUT, 'index.json'), JSON.stringify({ app: APP, captured: index }, null, 2));
-  console.warn(`\n${index.length} pairs in ${OUT}`);
+  console.warn(`\n${index.length} captures in ${OUT}`);
+  if (failures > 0) process.exit(1);
 }
 
 main().catch((err) => {

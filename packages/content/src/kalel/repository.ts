@@ -2,35 +2,34 @@ import 'server-only';
 
 import { z } from 'zod';
 
-import { TAG, REVALIDATE, articleSlugTag, articleTag, authorTag, categoryTag, specialTag, tagTag } from '../cache-tags';
+import { TAG, REVALIDATE, articleSlugTag, articleTag, authorTag, categoryTag, tagTag } from '../cache-tags';
 import type {
   Article,
   ArticleSummary,
   Author,
   Category,
-  HomePage,
   Image,
   LegacyRedirect,
-  LiveEvent,
   Page,
   ReadOptions,
   SearchResult,
   SitemapEntry,
   SitemapKind,
   SitemapPage,
-  Special,
   Tag as DomainTag,
 } from '../domain/types';
 import { ContentError } from '../errors';
+import { LAYOUT_TAGS, articlePath, isReservedTag, resolveLayout } from '../paths';
 import {
-  DEFAULT_PER_PAGE,
   SEARCH_PER_PAGE,
+  byPublishedDesc,
+  emptyPage,
+  windowOffsets,
   type ArticleRelations,
   type ContentRepository,
-  emptyPage,
+  type ListWindow,
 } from '../repository';
 import { isValidSlug } from '../slug';
-import { getCinerieTitles } from '../cinerie/client';
 import {
   kalelArticleListSchema,
   kalelArticleSchema,
@@ -60,63 +59,58 @@ import { SITEMAP_PAGE_SIZE } from '../sitemap-page-size';
 /**
  * Production content provider.
  *
- * Three properties of the real Kal El API shape this file:
+ * Four properties of the real Kal El API shape this file:
  *
- *  1. **There is no public delivery endpoint.** Every read is authenticated with the
- *     server-only service token, so nothing here may run in a client component;
- *     `server-only` enforces that at build time.
- *  2. **Article lookup is by id, plus the `slug` filter added by the companion Kal El
- *     change.** Because the list query is not `.strict()`, an instance without that
- *     change silently ignores the parameter and answers with the newest article — so the
- *     result is always re-checked against the requested slug, and a mismatch falls back
- *     to the complete published index. Correct on both, one round trip on the patched one.
- *  3. **Media pages by `limit`/`offset` with a `total`, articles page by cursor.** Two
- *     different pagination models in one API; conflating them truncates the media index
- *     to its first page and makes older covers vanish.
+ *  1. **There is no public delivery endpoint.** Every read carries the server-only
+ *     service token; `server-only` makes a client import a build error.
+ *  2. **Lookup by slug** uses the `slug` filter added by the companion Kal El change, and
+ *     the result is re-checked — an instance without the change ignores the parameter.
+ *  3. **Publication order.** Kal El lists by `updatedAt` unless asked for
+ *     `order=published` (companion change). An imported archive is written in a single
+ *     afternoon, so update order would put a migration batch on the front page. Every
+ *     list asks for publication order, and every page is also sorted locally, so an
+ *     instance without the change is still ordered correctly within the page it returns.
+ *  4. **Two pagination models.** Articles page by cursor, or — on an instance with the
+ *     companion change — by `offset` with a `total`; media page by `limit`/`offset`.
+ *     Conflating them truncates an index silently.
  */
 
 /** Articles page by cursor at 100 per call; 500 pages is a 50k-article ceiling. */
 const INDEX_PAGE_SIZE = 100;
 const MAX_INDEX_PAGES = 500;
 
+/**
+ * How deep a listing may walk the cursor for one page when the instance cannot jump by
+ * offset: 20 calls, 2 000 stories — page 222 of the feed. A page number comes from a URL,
+ * so without a bound any visitor could make one render crawl the whole archive.
+ */
+const MAX_WALK_PAGES = 20;
+
 /** How far back the news walk will page before giving up. 1000 articles is the cap. */
 const MAX_NEWS_PAGES = 10;
 
 /** Media pages by offset; Kal El caps `limit` at 200. */
-/**
- * Tags that mark an article as worth the full-width band.
- *
- * Reserved tags, not a field: the CMS has no dossier model, so promotion to the banner
- * is an editorial convention the newsroom can apply from the tag picker. Changing this
- * set is changing one line, which is the point of keeping it here rather than in code
- * scattered across the page.
- */
-const BANNER_TAGS = new Set(['especial', 'dossie', 'documentario']);
-
-/** Desks whose articles can lead the franchise feature. */
-const SPECIAL_DESKS = new Set(['especiais', 'marvel', 'star-wars', 'dc']);
-
-/** Where an article lives. Null when it has no desk, which means it has no public URL. */
-function articlePath(article: ArticleSummary): string | null {
-  return article.category ? `/${article.category.slug}/${article.slug}` : null;
-}
-
 const MEDIA_PAGE_SIZE = 200;
 const MAX_MEDIA_PAGES = 200;
 
-interface CursorWindow {
-  items: KalElArticleSummary[];
-  hasNext: boolean;
-}
+/** Every article listing asks for publication order (see property 3 above). */
+const PUBLISHED_ORDER = { order: 'published' } as const;
 
 /** One published article, reduced to what slug resolution and the sitemaps need. */
 interface IndexEntry {
   id: string;
   slug: string;
   categoryId: string | null;
+  tagIds: string[];
   updatedAt: string;
   publishedAt: string | null;
   title: string;
+}
+
+interface ListResult {
+  items: KalElArticleSummary[];
+  total: number | null;
+  hasNext: boolean;
 }
 
 export interface KalElRepositoryOptions {
@@ -157,13 +151,13 @@ export class KalElContentRepository implements ContentRepository {
     return rows.map(mapTag);
   }
 
-  private async fetchAuthors(): Promise<Author[]> {
+  private async fetchAuthors(media: Map<string, Image>): Promise<Author[]> {
     const rows = await this.transport.read(z.array(kalelAuthorSchema), {
       path: this.transport.sitePath('/authors'),
       tags: [TAG.taxonomy],
       revalidate: REVALIDATE.taxonomy,
     });
-    return rows.map((r) => mapAuthor(r));
+    return rows.map((r) => mapAuthor(r, media));
   }
 
   private async fetchEntities(): Promise<Map<string, KalElEntity>> {
@@ -175,19 +169,15 @@ export class KalElContentRepository implements ContentRepository {
       });
       return new Map(rows.map((r) => [r.id, r]));
     } catch {
-      // Entities carry optional commercial metadata only. Losing them must not take a
-      // page down; the commercial module falls back to its generic label.
+      // Entities carry optional commercial metadata only; losing them must not take a
+      // page down. The commercial label falls back to its generic text.
       return new Map();
     }
   }
 
   /**
-   * Media index, paged by offset.
-   *
-   * Kal El has no batch-by-id media endpoint, so the site library is walked once per
-   * revalidate window and indexed. It reports a `total`, which is what bounds the walk —
-   * treating this endpoint as cursor-paginated (as the article list is) would stop after
-   * the first page and silently drop every older asset.
+   * Media index, paged by offset — Kal El has no batch-by-id media endpoint, so the
+   * library is walked once per revalidate window. Its `total` bounds the walk.
    */
   private async fetchMediaIndex(): Promise<Map<string, Image>> {
     const index = new Map<string, Image>();
@@ -207,13 +197,13 @@ export class KalElContentRepository implements ContentRepository {
   }
 
   private async context(): Promise<MapperContext> {
-    const [categories, tags, authors, media, entities] = await Promise.all([
+    const [categories, tags, media, entities] = await Promise.all([
       this.fetchCategories(),
       this.fetchTags(),
-      this.fetchAuthors(),
       this.fetchMediaIndex(),
       this.fetchEntities(),
     ]);
+    const authors = await this.fetchAuthors(media);
     return {
       categories: new Map(categories.map((c) => [c.id, c])),
       tags: new Map(tags.map((t) => [t.id, t])),
@@ -227,14 +217,9 @@ export class KalElContentRepository implements ContentRepository {
   // ------------------------------------------------------------------ index
 
   /**
-   * Every published article, reduced and cached.
-   *
-   * Two callers need the whole corpus and cannot be served by a page of it: the sitemap,
-   * which must enumerate all of it, and slug resolution on a Kal El instance without the
-   * `slug` filter. One tagged walk per revalidate window serves both.
-   *
-   * The walk is bounded. Beyond the ceiling it truncates and keeps going rather than
-   * throwing: a sitemap covering the most recent 50k articles is useful, a 500 is not.
+   * Every published article, reduced and cached — for the sitemap, which must enumerate
+   * all of it, and for slug resolution on an instance without the `slug` filter. Bounded:
+   * beyond the ceiling it truncates rather than failing the sitemap.
    */
   private async articleIndex(): Promise<IndexEntry[]> {
     const entries: IndexEntry[] = [];
@@ -242,7 +227,7 @@ export class KalElContentRepository implements ContentRepository {
     for (let page = 0; page < MAX_INDEX_PAGES; page += 1) {
       const res = await this.transport.read(kalelArticleListSchema, {
         path: this.transport.sitePath('/articles'),
-        query: { status: 'published', limit: INDEX_PAGE_SIZE, ...(cursor ? { cursor } : {}) },
+        query: { status: 'published', ...PUBLISHED_ORDER, limit: INDEX_PAGE_SIZE, ...(cursor ? { cursor } : {}) },
         tags: [TAG.sitemap],
         revalidate: REVALIDATE.sitemap,
       });
@@ -252,6 +237,7 @@ export class KalElContentRepository implements ContentRepository {
           id: item.id,
           slug: item.slug,
           categoryId: item.categories[0] ?? null,
+          tagIds: item.tags,
           updatedAt: item.updatedAt,
           publishedAt: item.publishedAt,
           title: item.title,
@@ -260,233 +246,201 @@ export class KalElContentRepository implements ContentRepository {
       if (!res.nextCursor) break;
       cursor = res.nextCursor;
     }
-    return entries;
+    return entries.sort((a, b) => byPublishedDesc(a, b));
   }
 
-  // ---------------------------------------------------------------- articles
+  // ---------------------------------------------------------------- listings
 
-  private async cursorWindow(
+  /**
+   * One window of a listing, newest publication first.
+   *
+   * Asks for `offset` and publication order. An instance with the companion change answers
+   * with a `total`, and the window is exactly that page, in one request. An instance
+   * without it ignores both parameters — and then the only honest answer is to walk the
+   * cursor far enough to cover the window, so a deep page costs several requests (each
+   * cached) rather than returning the first page's stories under a page-5 URL.
+   */
+  private async listWindow(
     query: Record<string, string | number | undefined>,
     page: number,
-    perPage: number,
+    window: ListWindow | undefined,
     tags: string[],
     revalidate: number,
-  ): Promise<CursorWindow> {
+  ): Promise<ListResult & { perPage: number; skip: number }> {
+    const { perPage, skip, offset } = windowOffsets(page, window);
+    const base = { status: 'published', ...PUBLISHED_ORDER, ...query };
+
+    const direct = await this.transport.read(kalelArticleListSchema, {
+      path: this.transport.sitePath('/articles'),
+      query: { ...base, limit: Math.min(perPage, 100), offset },
+      tags,
+      revalidate,
+    });
+    if (typeof direct.total === 'number') {
+      return {
+        items: direct.items,
+        total: Math.max(0, direct.total - skip),
+        hasNext: offset + direct.items.length < direct.total,
+        perPage,
+        skip,
+      };
+    }
+
+    // No `total`: the instance ignored `offset`. Walk the cursor to cover the window —
+    // bounded, so a deep page number in a URL cannot turn one render into a crawl of the
+    // archive. Past the bound the window is empty, and the routes answer 404 for it.
+    const needed = offset + perPage + 1;
+    if (needed > MAX_WALK_PAGES * INDEX_PAGE_SIZE) return { items: [], total: null, hasNext: false, perPage, skip };
+    const collected: KalElArticleSummary[] = [];
     let cursor: string | undefined;
-    let items: KalElArticleSummary[] = [];
-    let hasNext = false;
-    for (let i = 0; i < Math.max(1, page); i += 1) {
+    let exhausted = false;
+    for (let walked = 0; walked < MAX_WALK_PAGES && collected.length < needed; walked += 1) {
       const res = await this.transport.read(kalelArticleListSchema, {
         path: this.transport.sitePath('/articles'),
-        query: { status: 'published', limit: perPage, ...query, ...(cursor ? { cursor } : {}) },
+        query: { ...base, limit: INDEX_PAGE_SIZE, ...(cursor ? { cursor } : {}) },
         tags,
         revalidate,
       });
-      items = res.items;
-      hasNext = Boolean(res.nextCursor);
+      collected.push(...res.items);
       if (!res.nextCursor) {
-        // A page past the end of the archive.
-        if (i < page - 1) return { items: [], hasNext: false };
+        exhausted = true;
         break;
       }
       cursor = res.nextCursor;
     }
-    return { items, hasNext };
-  }
-
-  private toPage(items: ArticleSummary[], page: number, perPage: number, hasNext: boolean): Page<ArticleSummary> {
-    return { items, page, perPage, total: null, totalPages: null, hasNext };
+    return {
+      items: collected.slice(offset, offset + perPage),
+      total: exhausted ? Math.max(0, collected.length - skip) : null,
+      hasNext: collected.length > offset + perPage,
+      perPage,
+      skip,
+    };
   }
 
   /**
-   * Maps summaries and drops the ones that have no public URL.
-   *
-   * Kal El allows a published article with no category; this site has no route for one,
-   * so rendering a card for it would link to `/{slug}`, which the catch-all reads as a
-   * desk. Dropping it here keeps every card, sitemap entry and feed item linkable.
+   * Maps summaries, drops the ones with no public URL, and sorts by publication — the
+   * local sort is what keeps an instance without the ordering change correct per page.
    */
   private async summaries(rows: KalElArticleSummary[], ctx?: MapperContext): Promise<ArticleSummary[]> {
     const context = ctx ?? (await this.context());
     return rows
       .map((r) => mapArticleSummary(r, context))
-      .filter((a): a is ArticleSummary => a !== null && a.category !== null);
+      .filter((a): a is ArticleSummary => a !== null && articlePath(a) !== null)
+      .sort(byPublishedDesc);
   }
 
-  async getHome(): Promise<HomePage> {
-    const ctx = await this.context();
-    const res = await this.transport.read(kalelArticleListSchema, {
-      path: this.transport.sitePath('/articles'),
-      query: { status: 'published', limit: 60 },
-      tags: [TAG.home],
-      revalidate: REVALIDATE.home,
-    });
-    const all = await this.summaries(res.items, ctx);
-
-    const lead = all[0] ?? null;
-    const secondary = all.slice(1, 4);
-    const aside = all.slice(4, 6);
-    const rest = all.slice(6);
-
-    const byCategory = new Map<string, ArticleSummary[]>();
-    for (const a of rest) {
-      const key = a.category?.slug ?? 'geral';
-      const list = byCategory.get(key);
-      if (list) list.push(a);
-      else byCategory.set(key, [a]);
-    }
-
-    const sections = [...byCategory.entries()]
-      .filter(([, list]) => list.length >= 2)
-      .slice(0, 4)
-      .map(([slug, list]) => ({
-        key: slug,
-        label: list[0]?.category?.name ?? 'Últimas',
-        href: `/${slug}`,
-        articles: list.slice(0, 9),
-      }));
-
-    // The Cinerie desk owns this data. A failure there degrades the module to nothing
-    // and leaves the rest of the home at 200 (docs/10).
-    const whereToWatch = await getCinerieTitles();
-
-    /*
-     * The banner and the franchise feature, from what the CMS can actually express.
-     *
-     * There is no dossier model in Kal El — that gap is recorded in KAL-EL-DISCOVERY —
-     * so neither module is derived from one. The banner promotes the most recent article
-     * carrying a reserved `especial` tag and a cover; the feature promotes the most
-     * recent article in a desk under `especiais`. Both render nothing when there is
-     * nothing to promote, which is the honest outcome and not an empty frame.
-     *
-     * The designed three-word lockup has no source here, so `lockup` stays null and the
-     * band sets the headline on one line.
-     */
-    const promoted = all.find((a) => a.cover !== null && a.tags.some((t) => BANNER_TAGS.has(t.slug)));
-    const banner = promoted
-      ? {
-          href: articlePath(promoted) ?? '/especiais',
-          label: 'Especial',
-          title: promoted.title,
-          image: promoted.cover,
-          lockup: null,
-          tags: promoted.tags.slice(0, 3).map((t) => t.name),
-        }
-      : null;
-
-    const specialLead = all.find((a) => a.category !== null && SPECIAL_DESKS.has(a.category.slug));
-    const special =
-      specialLead && specialLead.category
-        ? { slug: specialLead.category.slug, name: specialLead.category.name, lead: specialLead }
-        : null;
-
+  private toPage(items: ArticleSummary[], page: number, win: ListResult & { perPage: number }): Page<ArticleSummary> {
     return {
-      lead,
-      secondary,
-      aside,
-      sections,
-      mostRead: all.slice(0, 5),
-      banner,
-      special,
-      more: rest.slice(0, 9),
-      whereToWatch,
-      poll: null,
-      updatedAt: lead?.updatedAt ?? this.now().toISOString(),
+      items,
+      page,
+      perPage: win.perPage,
+      total: win.total,
+      totalPages: win.total === null ? null : Math.max(1, Math.ceil(win.total / win.perPage)),
+      hasNext: win.hasNext,
     };
   }
 
-  /**
-   * Resolves a slug to a Kal El article id.
-   *
-   * The filtered call is verified rather than trusted: an unpatched Kal El ignores an
-   * unknown query parameter, which would otherwise serve the most recently updated
-   * article under every slug on the site.
-   *
-   * In preview the status filter is deliberately absent — the whole point of a preview
-   * token is to reach an article that is *not* published, and filtering to `published`
-   * would answer 404 for every draft.
-   */
-  private async resolveIdBySlug(slug: string, options?: ReadOptions): Promise<string | null> {
-    const preview = options?.preview === true;
-    const cacheOpts = preview
-      ? { noStore: true as const }
-      : { tags: [articleSlugTag(slug)], revalidate: REVALIDATE.article };
-
-    const filtered = await this.transport.read(kalelArticleListSchema, {
-      path: this.transport.sitePath('/articles'),
-      query: { ...(preview ? {} : { status: 'published' }), slug, limit: 5 },
-      ...cacheOpts,
-    });
-    const direct = filtered.items.find((i) => i.slug === slug);
-    if (direct) return direct.id;
-    // The filter was honoured and matched nothing: the article does not exist.
-    if (filtered.items.length === 0) return null;
-
-    // The filter was ignored. Fall back to the complete index, which is cached, so this
-    // costs one corpus walk per revalidate window rather than one per request.
-    if (preview) {
-      // Drafts are not in the published index, so there is nothing to fall back to. This
-      // only happens on an unpatched Kal El, and is reported rather than guessed at.
-      throw new ContentError(
-        'unsupported',
-        'Preview by slug needs the Kal El article slug filter; this instance does not support it',
-      );
-    }
-    const index = await this.articleIndex();
-    return index.find((entry) => entry.slug === slug)?.id ?? null;
-  }
-
-  async getArticleById(id: string, options?: ReadOptions): Promise<Article | null> {
+  async listLatest(page: number, window?: ListWindow): Promise<Page<ArticleSummary>> {
     const ctx = await this.context();
-    try {
-      const dto = await this.transport.read(kalelArticleSchema, {
-        path: this.transport.sitePath(`/articles/${id}`),
-        ...(options?.preview ? { noStore: true as const } : { tags: [articleTag(id)], revalidate: REVALIDATE.article }),
-      });
-      if (!options?.preview && dto.status !== 'published') return null;
-      const mapped = mapArticle(dto, ctx);
-      return mapped?.article ?? null;
-    } catch (err) {
-      if (err instanceof ContentError && err.kind === 'not_found') return null;
-      throw err;
-    }
+    const win = await this.listWindow({}, page, window, [TAG.home], REVALIDATE.home);
+    return this.toPage(await this.summaries(win.items, ctx), page, win);
   }
 
-  async getArticleBySlug(slug: string, options?: ReadOptions): Promise<Article | null> {
-    if (!isValidSlug(slug)) return null;
-    const id = await this.resolveIdBySlug(slug, options);
-    if (!id) return null;
-    return this.getArticleById(id, options);
+  async listCategory(
+    slug: string,
+    page: number,
+    window?: ListWindow,
+  ): Promise<Page<ArticleSummary> & { category: Category }> {
+    const ctx = await this.context();
+    const category = [...ctx.categories.values()].find((c) => c.slug === slug);
+    if (!category) throw ContentError.notFound(`category ${slug}`);
+    const win = await this.listWindow(
+      { categoryId: category.id },
+      page,
+      window,
+      [categoryTag(slug)],
+      REVALIDATE.category,
+    );
+    return { ...this.toPage(await this.summaries(win.items, ctx), page, win), category };
   }
-
-  async getArticle(categorySlug: string, slug: string, options?: ReadOptions): Promise<Article | null> {
-    const article = await this.getArticleBySlug(slug, options);
-    if (!article) return null;
-    // The canonical URL is `/{categoria}/{slug}`. An article with no desk has no public
-    // URL at all, and serving one under an arbitrary desk would create a duplicate the
-    // sitemap never declared.
-    if (!article.category || article.category.slug !== categorySlug) return null;
-    return article;
-  }
-
-  // ------------------------------------------------------------- collections
 
   async listCategories(): Promise<Category[]> {
     return this.fetchCategories();
   }
 
-  async listCategory(slug: string, page: number): Promise<Page<ArticleSummary> & { category: Category }> {
+  async listTags(): Promise<DomainTag[]> {
+    return this.fetchTags();
+  }
+
+  /** The first `n` published stories of a listing, a hundred at a time, bounded. */
+  private async head(
+    query: Record<string, string>,
+    n: number,
+    tags: string[],
+    revalidate: number,
+  ): Promise<{ items: KalElArticleSummary[]; complete: boolean }> {
+    const items: KalElArticleSummary[] = [];
+    let cursor: string | undefined;
+    for (let walked = 0; walked < MAX_WALK_PAGES && items.length < n; walked += 1) {
+      const res = await this.transport.read(kalelArticleListSchema, {
+        path: this.transport.sitePath('/articles'),
+        query: {
+          status: 'published',
+          ...PUBLISHED_ORDER,
+          ...query,
+          limit: INDEX_PAGE_SIZE,
+          ...(cursor ? { cursor } : {}),
+        },
+        tags,
+        revalidate,
+      });
+      items.push(...res.items);
+      if (!res.nextCursor) return { items, complete: true };
+      cursor = res.nextCursor;
+    }
+    return { items, complete: false };
+  }
+
+  /**
+   * Offer pages: articles carrying the reserved `oferta` tag or one of its synonyms — every
+   * one of them lays the article out as an offer, so every one must list it here too.
+   */
+  async listOffers(page: number, window?: ListWindow): Promise<Page<ArticleSummary>> {
     const ctx = await this.context();
-    const category = [...ctx.categories.values()].find((c) => c.slug === slug);
-    if (!category) throw ContentError.notFound(`category ${slug}`);
-    const win = await this.cursorWindow(
-      { categoryId: category.id },
-      page,
-      DEFAULT_PER_PAGE,
-      [categoryTag(slug)],
-      REVALIDATE.category,
+    const offerTags = LAYOUT_TAGS.offer
+      .map((slug) => [...ctx.tags.values()].find((t) => t.slug === slug))
+      .filter((t): t is DomainTag => Boolean(t));
+    const [only] = offerTags;
+    if (!only) return emptyPage<ArticleSummary>(page, windowOffsets(page, window).perPage);
+    if (offerTags.length === 1) {
+      const win = await this.listWindow({ tagId: only.id }, page, window, [tagTag(only.slug)], REVALIDATE.category);
+      return this.toPage(await this.summaries(win.items, ctx), page, win);
+    }
+
+    // Several synonyms in use (an archive imported with `afiliado`, a newsroom tagging
+    // `oferta`): each is its own listing in the CMS, so the head of each, deep enough to
+    // cover the window, is merged and cut here.
+    const { perPage, skip, offset } = windowOffsets(page, window);
+    const needed = offset + perPage + 1;
+    if (needed > MAX_WALK_PAGES * INDEX_PAGE_SIZE) return emptyPage<ArticleSummary>(page, perPage);
+    const heads = await Promise.all(
+      offerTags.map((t) => this.head({ tagId: t.id }, needed, [tagTag(t.slug)], REVALIDATE.category)),
     );
-    const items = await this.summaries(win.items, ctx);
-    return { ...this.toPage(items, page, DEFAULT_PER_PAGE, win.hasNext), category };
+    const seen = new Set<string>();
+    const merged: KalElArticleSummary[] = [];
+    for (const row of heads.flatMap((h) => h.items)) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      merged.push(row);
+    }
+    const all = await this.summaries(merged, ctx);
+    const complete = heads.every((h) => h.complete);
+    return this.toPage(all.slice(offset, offset + perPage), page, {
+      items: [],
+      total: complete ? Math.max(0, all.length - skip) : null,
+      hasNext: all.length > offset + perPage,
+      perPage,
+    });
   }
 
   async search(query: string, page: number): Promise<Page<SearchResult>> {
@@ -500,7 +454,13 @@ export class KalElContentRepository implements ContentRepository {
     for (let i = 0; i < Math.max(1, page); i += 1) {
       const res = await this.transport.read(kalelArticleListSchema, {
         path: this.transport.sitePath('/articles'),
-        query: { status: 'published', q: trimmed, limit: SEARCH_PER_PAGE, ...(cursor ? { cursor } : {}) },
+        query: {
+          status: 'published',
+          ...PUBLISHED_ORDER,
+          q: trimmed,
+          limit: SEARCH_PER_PAGE,
+          ...(cursor ? { cursor } : {}),
+        },
         noStore: true,
       });
       rows = res.items;
@@ -519,173 +479,117 @@ export class KalElContentRepository implements ContentRepository {
     const ctx = await this.context();
     const author = [...ctx.authors.values()].find((a) => a.slug === slug);
     if (!author) return null;
-    const win = await this.cursorWindow(
-      { authorId: author.id },
-      page,
-      DEFAULT_PER_PAGE,
-      [authorTag(slug)],
-      REVALIDATE.author,
-    );
-    const items = await this.summaries(win.items, ctx);
-    return { ...this.toPage(items, page, DEFAULT_PER_PAGE, win.hasNext), author };
+    const win = await this.listWindow({ authorId: author.id }, page, undefined, [authorTag(slug)], REVALIDATE.author);
+    return { ...this.toPage(await this.summaries(win.items, ctx), page, win), author };
   }
 
   async getTag(slug: string, page: number): Promise<(Page<ArticleSummary> & { tag: DomainTag }) | null> {
     const ctx = await this.context();
     const tag = [...ctx.tags.values()].find((t) => t.slug === slug);
     if (!tag) return null;
-    const win = await this.cursorWindow({ tagId: tag.id }, page, DEFAULT_PER_PAGE, [tagTag(slug)], REVALIDATE.tag);
-    const items = await this.summaries(win.items, ctx);
-    return { ...this.toPage(items, page, DEFAULT_PER_PAGE, win.hasNext), tag };
+    const win = await this.listWindow({ tagId: tag.id }, page, undefined, [tagTag(slug)], REVALIDATE.tag);
+    return { ...this.toPage(await this.summaries(win.items, ctx), page, win), tag };
   }
 
-  async listByTemplate(template: 'video' | 'list', page: number): Promise<Page<ArticleSummary>> {
-    const win = await this.cursorWindow({ type: template }, page, DEFAULT_PER_PAGE, [TAG.home], REVALIDATE.category);
-    return this.toPage(await this.summaries(win.items), page, DEFAULT_PER_PAGE, win.hasNext);
-  }
-
-  async listReviews(page: number): Promise<Page<ArticleSummary>> {
-    const win = await this.cursorWindow({ type: 'review' }, page, DEFAULT_PER_PAGE, [TAG.home], REVALIDATE.category);
-    return this.toPage(await this.summaries(win.items), page, DEFAULT_PER_PAGE, win.hasNext);
-  }
-
-  async listOffers(page: number): Promise<Page<ArticleSummary>> {
-    const ctx = await this.context();
-    const campaign = [...ctx.tags.values()].find((t) => t.slug === 'campanha' || t.slug === 'ofertas');
-    if (!campaign) return emptyPage<ArticleSummary>(page);
-    const win = await this.cursorWindow(
-      { tagId: campaign.id },
-      page,
-      DEFAULT_PER_PAGE,
-      [tagTag(campaign.slug)],
-      REVALIDATE.category,
-    );
-    return this.toPage(await this.summaries(win.items, ctx), page, DEFAULT_PER_PAGE, win.hasNext);
-  }
-
-  // ----------------------------------------------------------- specials/live
+  // ---------------------------------------------------------------- articles
 
   /**
-   * Specials and live coverage.
-   *
-   * Kal El has no franchise/dossier/live-event model. A special is a category under the
-   * reserved `especiais` parent and its dossiers are that category's children; a live
-   * event is an article tagged `ao-vivo` whose headings are read as the update timeline.
-   * This is the honest maximum with the current contract; the CMS change that would make
-   * it first-class is proposed in KAL-EL-DISCOVERY.md.
+   * Resolves a slug to a Kal El article id. The filtered call is verified rather than
+   * trusted: an unpatched Kal El ignores an unknown parameter and would otherwise serve
+   * the most recently updated article under every slug on the site. In preview the status
+   * filter is absent — a preview token exists to reach an unpublished article.
    */
-  async getSpecial(slugs: string[]): Promise<Special | null> {
-    const franchiseSlug = slugs[0];
-    if (!franchiseSlug) return null;
-    const ctx = await this.context();
-    const category = [...ctx.categories.values()].find((c) => c.slug === franchiseSlug);
-    if (!category) return null;
+  private async resolveIdBySlug(slug: string, options?: ReadOptions): Promise<string | null> {
+    const preview = options?.preview === true;
+    const cacheOpts = preview
+      ? { noStore: true as const }
+      : { tags: [articleSlugTag(slug)], revalidate: REVALIDATE.article };
 
-    const win = await this.cursorWindow(
-      { categoryId: category.id },
-      1,
-      24,
-      [specialTag(franchiseSlug)],
-      REVALIDATE.special,
-    );
-    const articles = await this.summaries(win.items, ctx);
-    const children = [...ctx.categories.values()].filter((c) => c.parentId === category.id);
+    const filtered = await this.transport.read(kalelArticleListSchema, {
+      path: this.transport.sitePath('/articles'),
+      query: { ...(preview ? {} : { status: 'published' }), slug, limit: 5 },
+      ...cacheOpts,
+    });
+    const direct = filtered.items.find((i) => i.slug === slug);
+    if (direct) return direct.id;
+    // The filter was honoured and matched nothing: the article does not exist.
+    if (filtered.items.length === 0) return null;
 
-    return {
-      franchise: {
-        id: category.id,
-        slug: category.slug,
-        name: category.name,
-        description: category.description,
-        cover: articles[0]?.cover ?? null,
-      },
-      dossiers: children.map((c) => ({
-        id: c.id,
-        slug: c.slug,
-        franchiseId: category.id,
-        title: c.name,
-        kicker: category.name,
-        cover: null,
-        chapters: [],
-      })),
-      articles,
-      liveEvent: null,
-    };
+    if (preview) {
+      // Drafts are not in the published index, so there is nothing to fall back to.
+      throw new ContentError(
+        'unsupported',
+        'Preview by slug needs the Kal El article slug filter; this instance does not support it',
+      );
+    }
+    const index = await this.articleIndex();
+    return index.find((entry) => entry.slug === slug)?.id ?? null;
   }
 
-  async listSpecials(): Promise<Special[]> {
+  async getArticleById(id: string, options?: ReadOptions): Promise<Article | null> {
     const ctx = await this.context();
-    const root = [...ctx.categories.values()].find((c) => c.slug === 'especiais');
-    if (!root) return [];
-    const children = [...ctx.categories.values()].filter((c) => c.parentId === root.id);
-    const specials = await Promise.all(children.map((c) => this.getSpecial([c.slug])));
-    return specials.filter((s): s is Special => s !== null);
+    try {
+      const dto = await this.transport.read(kalelArticleSchema, {
+        path: this.transport.sitePath(`/articles/${id}`),
+        ...(options?.preview ? { noStore: true as const } : { tags: [articleTag(id)], revalidate: REVALIDATE.article }),
+      });
+      if (!options?.preview && dto.status !== 'published') return null;
+      return mapArticle(dto, ctx)?.article ?? null;
+    } catch (err) {
+      if (err instanceof ContentError && err.kind === 'not_found') return null;
+      throw err;
+    }
   }
 
-  async getLiveEvent(slug: string): Promise<LiveEvent | null> {
-    const article = await this.getArticleBySlug(slug);
-    if (!article || article.template !== 'urgent') return null;
-    const entries = article.body
-      .filter((b): b is Extract<typeof b, { type: 'heading' }> => b.type === 'heading')
-      .map((h, index) => ({
-        id: h.id,
-        time: article.updatedAt,
-        title: h.text,
-        text: h.text,
-        important: index === 0,
-      }));
-    return {
-      id: article.id,
-      slug: article.slug,
-      title: article.title,
-      status: 'live',
-      entries,
-      startedAt: article.publishedAt ?? article.updatedAt,
-    };
+  async getArticleBySlug(slug: string, options?: ReadOptions): Promise<Article | null> {
+    if (!isValidSlug(slug)) return null;
+    const id = await this.resolveIdBySlug(slug, options);
+    if (!id) return null;
+    return this.getArticleById(id, options);
+  }
+
+  /**
+   * The article at `/{editoria}/{slug}`. An article whose desk differs is not served under
+   * another desk — that would be a duplicate no sitemap declared. Offer pages are resolved
+   * by slug at `/ofertas/{slug}` instead.
+   */
+  async getArticle(categorySlug: string, slug: string, options?: ReadOptions): Promise<Article | null> {
+    const article = await this.getArticleBySlug(slug, options);
+    if (!article) return null;
+    if (!article.category || article.category.slug !== categorySlug) return null;
+    return article;
   }
 
   // --------------------------------------------------------------- discovery
 
-  /** How many article sitemap files exist, so the index can name every one of them. */
   async countSitemapPages(): Promise<number> {
     const index = await this.articleIndex();
     return Math.max(1, Math.ceil(index.length / SITEMAP_PAGE_SIZE));
   }
 
-  /**
-   * One sitemap file.
-   *
-   * `cursor` is the 1-based page number for articles. A cursor was the wrong shape here:
-   * a sitemap index has to name every child file up front, and an opaque cursor cannot
-   * be enumerated — so only the first 100 URLs were ever discoverable.
-   */
+  /** One sitemap file; for articles, `cursor` is the 1-based page number. */
   async listSitemap(kind: SitemapKind, cursor?: string): Promise<SitemapPage> {
     const ctx = await this.context();
+    const stamp = this.now().toISOString();
 
     if (kind === 'categories') {
       return {
-        entries: [...ctx.categories.values()].map((c) => ({
-          path: `/${c.slug}`,
-          lastModified: this.now().toISOString(),
-        })),
+        entries: [...ctx.categories.values()].map((c) => ({ path: `/${c.slug}`, lastModified: stamp })),
         nextCursor: null,
       };
     }
     if (kind === 'tags') {
       return {
-        entries: [...ctx.tags.values()].map((t) => ({
-          path: `/tag/${t.slug}`,
-          lastModified: this.now().toISOString(),
-        })),
+        // Reserved tags are switches, not archives: `/tag/oferta` is a 404 by design.
+        entries: [...ctx.tags.values()]
+          .filter((t) => !isReservedTag(t.slug))
+          .map((t) => ({ path: `/tag/${t.slug}`, lastModified: stamp })),
         nextCursor: null,
       };
     }
     if (kind === 'authors') {
       return {
-        entries: [...ctx.authors.values()].map((a) => ({
-          path: `/autor/${a.slug}`,
-          lastModified: this.now().toISOString(),
-        })),
+        entries: [...ctx.authors.values()].map((a) => ({ path: `/autor/${a.slug}`, lastModified: stamp })),
         nextCursor: null,
       };
     }
@@ -697,11 +601,13 @@ export class KalElContentRepository implements ContentRepository {
 
     const entries: SitemapEntry[] = slice
       .map((entry): SitemapEntry | null => {
-        const category = entry.categoryId ? ctx.categories.get(entry.categoryId) : undefined;
-        // An article whose desk was deleted has no public URL; it must not enter a sitemap.
-        if (!category) return null;
+        const category = entry.categoryId ? (ctx.categories.get(entry.categoryId) ?? null) : null;
+        const tags = entry.tagIds.map((id) => ctx.tags.get(id)).filter((t): t is DomainTag => Boolean(t));
+        const path = articlePath({ slug: entry.slug, category, layout: resolveLayout(tags) });
+        // An article with no public URL must not enter a sitemap.
+        if (!path) return null;
         return {
-          path: `/${category.slug}/${entry.slug}`,
+          path,
           lastModified: entry.updatedAt,
           title: entry.title,
           ...(entry.publishedAt ? { publishedAt: entry.publishedAt } : {}),
@@ -714,16 +620,8 @@ export class KalElContentRepository implements ContentRepository {
   }
 
   /**
-   * Recent articles, for the RSS feed and the Google News sitemap.
-   *
-   * Paginated: Kal El caps `limit` at 100, so a single call could only ever return the
-   * hundred most recently updated articles. The news sitemap asks for up to a thousand
-   * from the last 48 hours, and on a busy day that silently lost everything past the
-   * first page.
-   *
-   * The walk stops as soon as a page is entirely older than the cutoff. The list is
-   * ordered by `updatedAt`, not `publishedAt`, so it stops one page late rather than
-   * early — a re-edited old article can appear among recent ones.
+   * Recent articles, for the RSS feed and the Google News sitemap. Paginated because Kal
+   * El caps `limit` at 100; stops at the first page wholly older than the cutoff.
    */
   async listRecentNews(since: Date, limit: number): Promise<ArticleSummary[]> {
     const ctx = await this.context();
@@ -733,7 +631,7 @@ export class KalElContentRepository implements ContentRepository {
     for (let page = 0; page < MAX_NEWS_PAGES && collected.length < limit; page += 1) {
       const res = await this.transport.read(kalelArticleListSchema, {
         path: this.transport.sitePath('/articles'),
-        query: { status: 'published', limit: INDEX_PAGE_SIZE, ...(cursor ? { cursor } : {}) },
+        query: { status: 'published', ...PUBLISHED_ORDER, limit: INDEX_PAGE_SIZE, ...(cursor ? { cursor } : {}) },
         tags: [TAG.news],
         revalidate: REVALIDATE.news,
       });
@@ -747,7 +645,7 @@ export class KalElContentRepository implements ContentRepository {
       cursor = res.nextCursor;
     }
 
-    return collected.slice(0, limit);
+    return collected.sort(byPublishedDesc).slice(0, limit);
   }
 
   async listRedirects(): Promise<LegacyRedirect[]> {
@@ -792,13 +690,6 @@ export class KalElContentRepository implements ContentRepository {
 
   // ------------------------------------------------------- revalidation help
 
-  /**
-   * The taxonomy an article belongs to, for targeted cache invalidation.
-   *
-   * The webhook payload carries only an article id and slug, so the desk, tag and author
-   * archives it appears in have to be looked up before their tags can be purged —
-   * otherwise those listings stay stale until their own ISR window elapses.
-   */
   async relationsFor(articleId: string): Promise<ArticleRelations> {
     const ctx = await this.context();
     const dto = await this.transport.read(kalelArticleSchema, {

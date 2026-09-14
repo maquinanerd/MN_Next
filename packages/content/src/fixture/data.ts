@@ -1,940 +1,907 @@
-import { authorColorVar, initialsOf } from '@mn/tokens';
-
 import type {
   Article,
+  ArticleLayout,
   ArticleSummary,
+  ArticleTemplate,
   Author,
   Category,
   ContentBlock,
   Image,
-  LiveEvent,
-  Poll,
+  Product,
   RichText,
+  SchemaType,
   Tag,
-  WatchTitle,
 } from '../domain/types';
+import { resolveLayout } from '../paths';
 import { readingMinutes } from '../slug';
 
 /**
- * Fixture corpus.
+ * Fixture corpus — **demonstration only**.
  *
- * Exists so every route, template variant and state can be rendered and asserted without
- * a CMS - which is what makes the visual audit reproducible in CI. It is loadable only
- * under `CONTENT_SOURCE=fixture`, and `env.ts` refuses that combination in production.
+ * Every headline, byline and price here is the approved prototypes' own demo copy
+ * (`maquina-nerd-kit/prototypes/*.dc.html`) or written in the same register; none of it is
+ * news. The page says so: fixture mode renders the "Demonstração" banner, and the
+ * provider refuses to start in staging or production (`env.ts`, `provider.ts`).
  *
- * The imagery is generated locally (`pnpm fixtures:media`): neutral gradients, no
- * third-party assets. The prototype `uploads/` folder is reference material and is never
- * a runtime dependency.
+ * It exists so every route, layout and state renders deterministically without a CMS —
+ * which is what makes the visual audit reproducible. The imagery is generated locally
+ * (`pnpm fixtures:media`): neutral gradients, no third-party assets.
  */
 
-const IMG = (name: string, width = 1600, height = 900, alt = ''): Image => ({
+const IMG = (name: string, alt: string, width = 1600, height = 900): Image => ({
   url: `/fixtures/${name}.jpg`,
   width,
   height,
   alt,
 });
 
+const cat = (slug: string, name: string, description: string): Category => ({
+  id: `cat-${slug}`,
+  slug,
+  name,
+  description,
+});
+
 export const fixtureCategories: Category[] = [
-  {
-    id: 'cat-filmes',
-    slug: 'filmes',
-    name: 'Filmes',
-    description: 'Estreias, bilheteria, bastidores e trailers do cinema.',
-  },
-  {
-    id: 'cat-series',
-    slug: 'series',
-    name: 'Séries de TV',
-    description: 'Audiência, renovações e o que vale assistir nos streamings.',
-  },
-  {
-    id: 'cat-quadrinhos',
-    slug: 'quadrinhos',
-    name: 'Quadrinhos',
-    description: 'Marvel, DC, mangá, independentes e encadernados.',
-  },
-  {
-    id: 'cat-games',
-    slug: 'games',
-    name: 'Games',
-    description: 'Lançamentos, adaptações e a indústria por trás dos jogos.',
-  },
-  {
-    id: 'cat-animes',
-    slug: 'animes',
-    name: 'Animes',
-    description: 'Temporadas, adaptações e o mercado de animação japonesa.',
-  },
-  {
-    id: 'cat-reviews',
-    slug: 'reviews',
-    name: 'Reviews',
-    description: 'Análises de produtos, box e edições de colecionador.',
-  },
-  {
-    id: 'cat-especiais',
-    slug: 'especiais',
-    name: 'Especiais',
-    description: 'Dossiês, coberturas e mergulhos de franquia.',
-  },
-  {
-    id: 'cat-star-wars',
-    slug: 'star-wars',
-    name: 'Star Wars',
-    description: 'Tudo sobre a galáxia muito, muito distante.',
-    parentId: 'cat-especiais',
-  },
-  {
-    id: 'cat-marvel',
-    slug: 'marvel',
-    name: 'Marvel',
-    description: 'O Universo Cinematográfico Marvel, fase a fase.',
-    parentId: 'cat-especiais',
-  },
+  cat('cinema', 'Cinema', 'Estreias, bilheteria, bastidores e trailers do cinema.'),
+  cat('series-e-tv', 'Séries e TV', 'Audiência, renovações e o que vale assistir nos streamings.'),
+  cat('games', 'Games', 'Lançamentos, consoles e a indústria por trás dos jogos.'),
+  cat('quadrinhos', 'Quadrinhos', 'Marvel, DC, mangá, independentes e encadernados.'),
+  cat('animes', 'Animes', 'Temporadas, adaptações e o mercado de animação japonesa.'),
+  cat('videos', 'Vídeos', 'Trailers, entrevistas e clipes.'),
+  cat('especiais', 'Especiais', 'Reportagens, críticas e listas.'),
 ];
+
+const tag = (slug: string, name: string): Tag => ({ id: `tag-${slug}`, slug, name });
 
 export const fixtureTags: Tag[] = [
-  { id: 'tag-resident-evil', slug: 'resident-evil', name: 'Resident Evil' },
-  { id: 'tag-terror', slug: 'terror', name: 'Terror' },
-  { id: 'tag-netflix', slug: 'netflix', name: 'Netflix' },
-  { id: 'tag-hbo', slug: 'hbo-max', name: 'HBO Max' },
-  { id: 'tag-longform', slug: 'longform', name: 'Longform' },
-  { id: 'tag-ao-vivo', slug: 'ao-vivo', name: 'Ao vivo' },
-  { id: 'tag-afiliado', slug: 'afiliado', name: 'Afiliado' },
-  { id: 'tag-patrocinado', slug: 'patrocinado', name: 'Patrocinado' },
-  { id: 'tag-campanha', slug: 'campanha', name: 'Campanha' },
-  { id: 'tag-star-wars', slug: 'star-wars', name: 'Star Wars' },
-  { id: 'tag-marvel', slug: 'marvel', name: 'Marvel' },
-  { id: 'tag-dc', slug: 'dc', name: 'DC' },
+  tag('marvel', 'Marvel'),
+  tag('dc', 'DC'),
+  tag('star-wars', 'Star Wars'),
+  tag('terror', 'Terror'),
+  tag('trailers', 'Trailers'),
+  tag('streaming', 'Streaming'),
+  tag('hbo', 'HBO'),
+  tag('netflix', 'Netflix'),
+  tag('cult', 'Cult'),
+  tag('ps5', 'PS5'),
+  tag('xbox', 'Xbox'),
+  tag('nintendo', 'Nintendo'),
+  tag('pc', 'PC'),
+  tag('dc-comics', 'DC Comics'),
+  tag('marvel-comics', 'Marvel Comics'),
+  tag('manga', 'Mangá'),
+  tag('independentes', 'Independentes'),
+  tag('lancamentos', 'Lançamentos'),
+  tag('animacao', 'Animação'),
+  tag('entrevistas', 'Entrevistas'),
+  tag('clipes', 'Clipes'),
+  tag('reportagem', 'Reportagem'),
+  tag('critica', 'Crítica'),
+  tag('lista', 'Lista'),
+  tag('reviews', 'Reviews'),
+  tag('descontos', 'Descontos'),
+  // Reserved: presentation switches, never shown as topics.
+  tag('oferta', 'Oferta'),
+  tag('capa-em-tela-cheia', 'Capa em tela cheia'),
 ];
 
-function author(id: string, name: string, slug: string, bio: string, role: string): Author {
-  return { id, name, slug, initials: initialsOf(name), avatarColor: authorColorVar(id), bio, role };
-}
+const author = (slug: string, name: string, role: string): Author => ({ id: `aut-${slug}`, slug, name, role });
 
 export const fixtureAuthors: Author[] = [
-  author(
-    'aut-rafael',
-    'Rafael Lima',
-    'rafael-lima',
-    'Cobre cinema e terror no Máquina Nerd desde 2021. Escreve sobre produção, bilheteria e o que acontece antes do trailer chegar.',
-    'Repórter de cinema',
-  ),
-  author(
-    'aut-carla',
-    'Carla Menezes',
-    'carla-menezes',
-    'Editora de séries. Escreve sobre televisão, streaming e a economia por trás das temporadas.',
-    'Editora de séries',
-  ),
-  author(
-    'aut-bruno',
-    'Bruno Nascimento',
-    'bruno-nascimento',
-    'Cobre audiência, streaming e dados de mercado.',
-    'Repórter',
-  ),
-  author('aut-juliana', 'Juliana Paes', 'juliana-paes', 'Escreve sobre animes, mangás e animação.', 'Repórter'),
-  author('aut-redacao', 'Redação', 'redacao', 'A redação do Máquina Nerd.', 'Redação'),
+  author('rafael-lima', 'Rafael Lima', 'Repórter de cinema'),
+  author('juliana-prado', 'Juliana Prado', 'Repórter'),
+  author('bruno-nunes', 'Bruno Nunes', 'Repórter'),
+  author('carla-menezes', 'Carla Menezes', 'Editora de séries'),
+  author('rebeca-pinho', 'Rebeca Pinho', 'Repórter de ofertas'),
 ];
 
 const t = (text: string): RichText => [{ type: 'text', text, marks: [] }];
+const p = (text: string): ContentBlock => ({ type: 'paragraph', content: t(text) });
 
-const tLink = (before: string, linkText: string, href: string, after: string): RichText => [
-  { type: 'text', text: before, marks: [] },
-  { type: 'text', text: linkText, marks: [{ type: 'link', href }] },
-  { type: 'text', text: after, marks: [] },
-];
+const withLink = (before: string, linkText: string, href: string, after: string): ContentBlock => ({
+  type: 'paragraph',
+  content: [
+    { type: 'text', text: before, marks: [] },
+    { type: 'text', text: linkText, marks: [{ type: 'link', href }] },
+    { type: 'text', text: after, marks: [] },
+  ],
+});
 
-const standardBody: ContentBlock[] = [
-  {
-    type: 'paragraph',
-    content: [
-      { type: 'text', text: 'Novo material promocional do reboot de ', marks: [] },
-      { type: 'text', text: 'Resident Evil', marks: [{ type: 'bold' }] },
-      {
-        type: 'text',
-        text: ' mostra uma criatura mutante com tentáculos, indicando uma abordagem diferente para o horror biológico da franquia. A imagem circulou primeiro em materiais de imprensa e foi confirmada pelo estúdio na tarde desta quarta.',
-        marks: [],
-      },
-    ],
-  },
-  {
-    type: 'paragraph',
-    content: t(
-      'A mudança sugere que a produção quer se afastar do design mais mecânico visto nos filmes anteriores. Segundo pessoas envolvidas na produção, a criatura aparece no terceiro ato e foi construída com uma base prática ampliada digitalmente.',
-    ),
-  },
+/** The prototype article, block for block (Máquina Nerd Notícias.dc.html). */
+const featureBody: ContentBlock[] = [
+  p(
+    'Scarlett Johansson é a atriz, produtora e força criativa por trás de Viúva Negra, o filme que fechou uma década de Marvel Studios. A personagem teve apenas um filme solo, um único grande sucesso de bilheteria em ano de pandemia e não voltou às telas desde 2021. Ainda assim, seu legado e lugar na história do cinema de super-heróis persistem.',
+  ),
+  withLink(
+    'Diz tudo sobre a escala do talento de Johansson que sua reputação como uma das grandes da Marvel se baseie em tão pouco material solo. Em 2019, ',
+    'Kevin Feige falou à imprensa',
+    '/cinema',
+    ' sobre a postura e o estilo da atriz, e a admiração de colegas se repete a cada nova entrevista.',
+  ),
+  { type: 'image', image: IMG('still-02', 'Cena de bastidores em um set de filmagem', 1600, 850), size: 'wide' },
+  p(
+    'Ainda assim, Johansson é agora considerada por muitos uma das grandes figuras "perdidas" do gênero. Nos últimos cinco anos, ela recusou repetidamente qualquer retorno à personagem, e suas aparições públicas se tornaram escassas.',
+  ),
+  p(
+    'Celebrando seu quinto aniversário, Viúva Negra é um filme cult no sentido mais verdadeiro. Sua contenção e melodrama ficaram em desacordo com as cenas dominantes da época — e é justamente essa qualidade atemporal que envelheceu tão bem.',
+  ),
+  p(
+    'O filme se apoia menos em suas cenas de ação do que na produção conturbada que o cercou, com uma porta giratória de diretores e produtores e muitas histórias sobre o perfeccionismo da protagonista.',
+  ),
   {
     type: 'quote',
-    content: t('A ideia nunca foi refazer o jogo plano por plano. Era encontrar o que assusta hoje.'),
-    attribution: 'Fonte ligada à produção',
-  },
-  {
-    type: 'paragraph',
     content: t(
-      'O elenco gravou as cenas sem efeito digital de referência, o que explica parte da reação física registrada no trailer. A escolha lembra o processo usado em produções recentes de terror que priorizam animatrônicos.',
+      'Ela era muito engraçada, muito talentosa, muito legal. Quando entrava em cena eu pensava "não existe ninguém como ela"',
     ),
+    attribution: 'Mike Badger',
   },
-  { type: 'heading', level: 2, text: 'O que muda em relação aos jogos', id: 'o-que-muda-em-relacao-aos-jogos' },
-  {
-    type: 'paragraph',
-    content: t(
-      'A criatura mantém a silhueta reconhecível pelos fãs, mas troca a carapaça por uma estrutura de tentáculos. Nos jogos, o mesmo inimigo aparece em três variações; o filme aparentemente condensa as três em uma só.',
-    ),
-  },
-  {
-    type: 'list',
-    style: 'bullet',
-    items: [
-      t('Design prático ampliado digitalmente, sem captura de movimento'),
-      t('Aparição única no terceiro ato, sem repetição de encontros'),
-      t('Trilha assinada pelo mesmo compositor da série de 2022'),
-    ],
-  },
-  { type: 'image', image: IMG('still-01', 1600, 900, 'Cena do reboot de Resident Evil'), size: 'wide' },
-  {
-    type: 'paragraph',
-    content: tLink(
-      'A estreia segue marcada para 2026, sem data exata divulgada. O estúdio deve liberar o trailer completo no ',
-      'próximo mês',
-      '/series',
-      ', segundo o cronograma de divulgação enviado à imprensa.',
-    ),
-  },
-];
-
-const longformBody: ContentBlock[] = [
-  {
-    type: 'paragraph',
-    dropcap: true,
-    content: t(
-      'A nova temporada de Ahsoka expande o conflito galáctico com o retorno de Thrawn, batalhas espaciais épicas e mistérios sobre o poder ancestral de Mortis. O material divulgado nesta quinta é o primeiro a mostrar a frota reunida sob o comando do Grande Almirante.',
-    ),
-  },
-  {
-    type: 'paragraph',
-    content: t(
-      'A escolha não é acidental. Desde 2023, a divisão de televisão da Lucasfilm reorganizou seu calendário em torno de três pilares, e Ahsoka é o único deles que atravessa todas as fases anunciadas até 2028.',
-    ),
-  },
-  { type: 'heading', level: 2, text: 'O plano que começou em Rebels', id: 'o-plano-que-comecou-em-rebels' },
-  {
-    type: 'paragraph',
-    content: t(
-      'Personagens introduzidos em animação carregam agora o peso de sustentar produções de orçamento alto. É uma aposta que a Disney já testou com O Mandaloriano e que agora tenta repetir em escala maior.',
-    ),
-  },
-  { type: 'image', image: IMG('still-02', 1600, 900, 'Frota reunida sob o comando do Grande Almirante'), size: 'full' },
+  p(
+    'Para os fanáticos por Viúva Negra, separar fato de ficção sempre foi parte do apelo. É um filme em que nada é o que parece, e a própria origem do roteiro virou tema de debate entre fãs.',
+  ),
+  { type: 'heading', level: 2, text: 'A evolução conturbada da produção', id: 'a-evolucao-conturbada-da-producao' },
+  p(
+    'O projeto começou em 2013, em um estúdio que, no meio da era Feige, estava tomado por uma onda de crossovers. Os roteiristas se revezaram, e cada versão do texto trazia uma Natasha diferente.',
+  ),
+  p(
+    'Depois de recrutar um fotógrafo e um montador de confiança, o grupo começou a ganhar força dentro do estúdio. "Fizemos todo o trabalho, e foi aí que os problemas começaram", disse um dos envolvidos.',
+  ),
+  { type: 'image', image: IMG('still-03', 'Equipe reunida durante uma filmagem noturna', 1600, 950), size: 'wide' },
   {
     type: 'quote',
-    content: t('Não existe mais franquia de televisão barata. Existe franquia que sustenta um serviço de streaming.'),
-    attribution: 'Executivo de streaming, sob anonimato',
+    content: t('Quando vejo o filme hoje ainda fico feliz, ele tem momentos mágicos. Mas ela é a artista'),
+    attribution: 'Steve Lillywhite',
   },
-  { type: 'heading', level: 2, text: 'Mortis, o curinga', id: 'mortis-o-curinga' },
-  {
-    type: 'paragraph',
-    content: t(
-      'O poder ancestral de Mortis é o elemento que permite à série mexer em regras estabelecidas sem contradizer os filmes. É também o ponto onde parte do público mais fiel costuma reclamar.',
-    ),
-  },
-  {
-    type: 'callout',
-    tone: 'neutral',
-    title: 'Contexto',
-    content: t('Mortis apareceu pela primeira vez na terceira temporada de The Clone Wars, em 2011.'),
-  },
+  p(
+    'Em dezembro de 2019, o estúdio recorreu à diretora Cate Shortland, que ficou inicialmente impressionada com o talento de Johansson. Mas os problemas reapareceram, e a produção seguiu aos trancos.',
+  ),
+  { type: 'heading', level: 2, text: 'Um recuo da vida pública', id: 'um-recuo-da-vida-publica' },
+  p(
+    'Sem os parceiros de origem, o projeto chegou ao fim. Johansson recuou da vista do público, decidida a revisitar as cenas do seu único filme para a própria satisfação. Na ausência dela, o moinho de boatos entrou em ação.',
+  ),
 ];
 
-const urgentBody: ContentBlock[] = [
-  {
-    type: 'paragraph',
-    content: t(
-      'A HBO confirmou o número oficial de audiência da estreia de Lanterns: 9,3 milhões de espectadores nas primeiras 72 horas, somando linear e streaming.',
-    ),
-  },
-  { type: 'heading', level: 2, text: 'HBO confirma número oficial de audiência', id: 'hbo-confirma-numero-oficial' },
-  {
-    type: 'paragraph',
-    content: t('O comunicado saiu às 16h04 e cita medição própria somada a dados da Nielsen para o mercado americano.'),
-  },
-  { type: 'heading', level: 2, text: 'Elenco comenta repercussão nas redes', id: 'elenco-comenta-repercussao' },
-  {
-    type: 'paragraph',
-    content: t('Aaron Pierre e Kyle Chandler publicaram agradecimentos poucos minutos após o anúncio.'),
-  },
-  { type: 'heading', level: 2, text: 'Medidores independentes apontam pico no domingo', id: 'medidores-independentes' },
-  {
-    type: 'paragraph',
-    content: t('Serviços de terceiros registraram o pico de audiência na noite de domingo, no horário nobre.'),
-  },
+const shortBody = (topic: string): ContentBlock[] => [
+  p(
+    `Esta é uma matéria de demonstração sobre ${topic}. O texto existe para mostrar a tipografia, o espaçamento e os blocos do template; nenhuma informação aqui é notícia real.`,
+  ),
+  p(
+    'O corpo do artigo usa parágrafos de 17px com entrelinha 1.6, justificados no desktop e alinhados à esquerda no celular, com largura de leitura alinhada ao menu do cabeçalho.',
+  ),
+  p(
+    'Os anúncios entram sempre entre dois parágrafos, nunca logo depois de uma imagem, e o espaço reservado mantém as dimensões mesmo quando o anúncio não carrega.',
+  ),
+  { type: 'heading', level: 2, text: 'Como o template se comporta', id: 'como-o-template-se-comporta' },
+  p(
+    'Subtítulos de 22px dividem o texto em seções. Citações recebem um filete de 3px na cor da editoria, e figuras largas extravasam a coluna de texto em telas acima de 1240px.',
+  ),
+  p(
+    'No celular, a coluna do autor dá lugar a uma faixa na cor da editoria, e a lista de assuntos continua acessível por um menu que abre sem depender de JavaScript.',
+  ),
+  p('No fim do texto, o leitor encontra a próxima matéria, as relacionadas e o rodapé com as editorias do portal.'),
 ];
 
-const listBody: ContentBlock[] = [
-  {
-    type: 'paragraph',
-    content: t(
-      'O trailer completo de Ahsoka T2 tem dois minutos e vinte segundos. Estes são os cinco detalhes que passam batido.',
-    ),
-  },
-  { type: 'heading', level: 2, text: 'A frota reunida aparece por três segundos', id: 'a-frota-reunida' },
-  { type: 'paragraph', content: t('No segundo 47, ao fundo, a formação completa aparece em plano aberto.') },
-  { type: 'heading', level: 2, text: 'Mortis volta como lugar, não como flashback', id: 'mortis-volta-como-lugar' },
-  { type: 'paragraph', content: t('A geometria do cenário é a mesma da animação, não uma citação visual.') },
-  { type: 'heading', level: 2, text: 'A trilha reaproveita um tema de 2008', id: 'a-trilha-reaproveita' },
-  { type: 'paragraph', content: t('Os primeiros compassos citam a abertura de The Clone Wars.') },
+const controlProduct: Product = {
+  name: 'Controle Sem Fio Xbox — edição especial',
+  image: IMG('product-01', 'Controle sem fio de videogame em cor vibrante', 1200, 1200),
+  description:
+    'Superfícies esculpidas, botão direcional híbrido e aderência texturizada nos gatilhos. Compatível com Xbox Series X|S, Xbox One e PC.',
+  price: 'R$ 349,90',
+  listPrice: 'R$ 499,90',
+  demo: true,
+  offers: [
+    { retailer: 'Amazon', url: 'https://www.amazon.com.br/', price: 'R$ 349,90' },
+    { retailer: 'Mercado Livre', url: 'https://www.mercadolivre.com.br/', price: 'R$ 359,00' },
+  ],
+};
+
+const offerBody: ContentBlock[] = [
+  p(
+    'Além da cor, o controle conta com conexão sem fio e Bluetooth, permitindo jogar no console ou no PC com mais liberdade. Ele também traz entrada USB-C, botão Share e áreas texturizadas nas alavancas e gatilhos.',
+  ),
+  { type: 'product', product: controlProduct },
+  { type: 'heading', level: 2, text: 'Conexão sem fio para jogar em diferentes dispositivos', id: 'conexao-sem-fio' },
+  p(
+    'O controle usa a tecnologia sem fio do console e também conta com Bluetooth para conexão com PCs e dispositivos móveis compatíveis, sem precisar ficar preso a cabos.',
+  ),
+  { type: 'heading', level: 2, text: 'Personalização e mapeamento de botões', id: 'personalizacao' },
+  p(
+    'Pelo aplicativo do fabricante, é possível remapear os botões e criar perfis personalizados — útil para adaptar os comandos a diferentes tipos de jogos.',
+  ),
+  { type: 'image', image: IMG('product-02', 'Controle de videogame fotografado de lado', 1600, 900), size: 'wide' },
+  { type: 'heading', level: 2, text: 'Botão Share para capturas e gravações', id: 'botao-share' },
+  p(
+    'O botão Share dedicado facilita registrar as partidas: dá para capturar telas e gravar trechos sem interromper o jogo.',
+  ),
+  { type: 'heading', level: 2, text: 'Pegada pensada para longas sessões', id: 'pegada' },
+  p(
+    'Gatilhos, botões superiores e a parte traseira têm textura, e o direcional híbrido foi desenhado para comandos mais precisos.',
+  ),
+  { type: 'heading', level: 2, text: 'Bateria para jogar por horas', id: 'bateria' },
+  p('O controle funciona com duas pilhas AA, e a autonomia varia de acordo com o uso e os acessórios conectados.'),
 ];
 
-const videoBody: ContentBlock[] = [
-  {
-    type: 'paragraph',
-    content: t(
-      'O especial em duas partes traz uma nova perspectiva sobre a jornada dos Piratas do Chapéu de Palha, utilizando a estética de blocos para adaptar momentos icônicos da obra de Eiichiro Oda.',
-    ),
-  },
-  { type: 'embed', provider: 'youtube', url: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ', embedId: 'aqz-KE-bpKQ' },
-  {
-    type: 'paragraph',
-    content: t('A estreia acontece em duas levas, com a segunda parte três semanas depois da primeira.'),
-  },
-  { type: 'gallery', images: [IMG('still-03'), IMG('still-04'), IMG('still-05')] },
-];
-
-const commercialBody: ContentBlock[] = [
-  {
-    type: 'paragraph',
-    content: t(
-      'A Edição Definitiva de Sandman reúne os 75 números da série regular em quatro volumes de capa dura, com tradução revisada e papel pólen.',
-    ),
-  },
-  { type: 'heading', level: 2, text: 'Acabamento e leitura', id: 'acabamento-e-leitura' },
-  {
-    type: 'paragraph',
-    content: t('A costura aguenta abertura total sem marcar a lombada, o que importa em um box que será relido.'),
-  },
-  {
-    type: 'buyBox',
-    disclosure:
-      'Preço verificado em 27/08/2026. O Máquina Nerd pode receber comissão por compras feitas por este link, sem alteração no valor final.',
-    offers: [
-      {
-        retailer: 'Amazon.com.br',
-        price: 289,
-        listPrice: 399,
-        currency: 'BRL',
-        url: 'https://www.amazon.com.br/dp/EXEMPLO',
-        inStock: true,
-        verifiedAt: '2026-08-27T12:00:00-03:00',
-      },
-    ],
-  },
-  {
-    type: 'specTable',
-    rows: [
-      { label: 'Páginas', value: '2.000' },
-      { label: 'Formato', value: '17 × 26 cm' },
-      { label: 'Acabamento', value: 'Capa dura, costurado' },
-      { label: 'Editora', value: 'Panini' },
-    ],
-  },
-];
-
-/**
- * The review body: the commercial one without its inline buy box.
- *
- * The approved review template puts the box in the right-hand rail, not in the prose.
- * Keeping the block here as well would render the same price, retailer and verification
- * date twice on one page — which is exactly what happened the first time the rail box was
- * wired up. The landing keeps its inline box, because that template has no rail.
- */
-const reviewBody: ContentBlock[] = commercialBody.filter((block) => block.type !== 'buyBox');
-
-const comparisonBody: ContentBlock[] = [
-  {
-    type: 'paragraph',
-    content: t('Dez box para quem quer começar uma coleção sem se perder em edição esgotada e preço de sebo.'),
-  },
-  {
-    type: 'comparison',
-    items: [
-      {
-        rank: 1,
-        name: 'Sandman — Edição Definitiva',
-        score: 9.2,
-        highlight: 'Melhor escolha geral',
-        image: IMG('product-01', 1200, 1200, 'Box Sandman Edição Definitiva'),
-        specs: [
-          { label: 'Volumes', value: '4' },
-          { label: 'Páginas', value: '2.000' },
-        ],
-        offer: {
-          retailer: 'Amazon.com.br',
-          price: 289,
-          currency: 'BRL',
-          url: 'https://www.amazon.com.br/dp/EXEMPLO1',
-          inStock: true,
-          verifiedAt: '2026-08-27T12:00:00-03:00',
-        },
-      },
-      {
-        rank: 2,
-        name: 'Watchmen — Deluxe',
-        score: 8.8,
-        highlight: 'Melhor custo-benefício',
-        image: IMG('product-02', 1200, 1200, 'Watchmen Deluxe'),
-        specs: [
-          { label: 'Volumes', value: '1' },
-          { label: 'Páginas', value: '448' },
-        ],
-        offer: {
-          retailer: 'Amazon.com.br',
-          price: 149,
-          currency: 'BRL',
-          url: 'https://www.amazon.com.br/dp/EXEMPLO2',
-          inStock: true,
-          verifiedAt: '2026-08-27T12:00:00-03:00',
-        },
-      },
-    ],
-  },
-];
-
-interface FixtureArticleSeed {
-  id: string;
+interface Seed {
   slug: string;
   title: string;
-  subtitle?: string;
   excerpt: string;
-  template: Article['template'];
-  categoryId: string;
-  tagIds: string[];
-  authorIds: string[];
+  category: string;
+  subject?: string;
+  tags?: string[];
+  author: string;
   cover: string;
-  publishedAt: string;
-  updatedAt: string;
-  body: ContentBlock[];
-  schemaType: Article['seo']['schemaType'];
-  commercial?: Article['commercial'];
-  review?: Article['review'];
-  videoId?: string;
+  alt: string;
+  /** Hours before FIXTURE_NOW. */
+  hours: number;
+  template?: ArticleTemplate;
+  schemaType?: SchemaType;
+  body?: ContentBlock[];
+  lead?: string;
+  editedHoursAfter?: number;
 }
 
-const seeds: FixtureArticleSeed[] = [
+/** The fixed "now" fixtures are dated against, so relative times never drift in a screenshot. */
+export const FIXTURE_NOW_ISO = '2026-09-10T12:00:00-03:00';
+
+const seeds: Seed[] = [
+  // --- Cinema
   {
-    id: 'art-resident-evil',
-    slug: 'resident-evil-2026-revela-mudanca-em-monstro-classico',
-    title: 'Resident Evil de 2026 revela mudança em monstro clássico',
-    subtitle:
-      'Novo material promocional do reboot mostra criatura mutante com tentáculos, indicando uma abordagem diferente para o horror biológico.',
+    slug: 'o-misterio-de-scarlett-johansson-a-estrela-perdida-da-marvel',
+    title: 'O mistério de Scarlett Johansson, a estrela "perdida" da Marvel',
     excerpt:
-      'Novo material promocional do reboot de Resident Evil mostra criatura mutante com tentáculos, indicando uma abordagem diferente para o horror biológico.',
-    template: 'standard',
-    categoryId: 'cat-series',
-    tagIds: ['tag-resident-evil', 'tag-terror', 'tag-netflix'],
-    authorIds: ['aut-rafael'],
+      'Há pouco mais de cinco anos, Viúva Negra encerrou a jornada de Natasha Romanoff. Mas sua estrela tem sido esquiva desde então.',
+    lead: 'Há pouco mais de cinco anos, Viúva Negra encerrou a jornada de Natasha Romanoff — um filme que moldou a fase seguinte do MCU. Mas sua estrela tem sido esquiva desde então, escreve Rafael Lima.',
+    category: 'cinema',
+    subject: 'Marvel',
+    tags: ['marvel'],
+    author: 'rafael-lima',
     cover: 'cover-01',
-    publishedAt: '2026-08-27T14:32:00-03:00',
-    updatedAt: '2026-08-27T16:05:00-03:00',
-    body: standardBody,
-    schemaType: 'NewsArticle',
+    alt: 'Atriz em um tapete vermelho',
+    hours: 1,
+    body: featureBody,
+    editedHoursAfter: 21,
+    schemaType: 'Article',
   },
   {
-    id: 'art-ahsoka-longform',
-    slug: 'como-ahsoka-virou-o-centro-do-plano-galactico-da-disney',
-    title: 'Como Ahsoka virou o centro do plano galáctico da Disney',
-    subtitle:
-      'O trailer da segunda temporada entrega Thrawn, batalhas espaciais e Mortis. Por trás disso, uma reorganização de cronograma que começou há três anos.',
-    excerpt:
-      'O trailer da segunda temporada entrega Thrawn, batalhas espaciais e Mortis. Por trás disso, uma reorganização de cronograma que começou há três anos.',
-    template: 'longform',
-    categoryId: 'cat-series',
-    tagIds: ['tag-longform', 'tag-star-wars'],
-    authorIds: ['aut-carla'],
+    slug: 'o-misterio-de-scarlett-johansson-edicao-capa',
+    title: 'Como Scarlett Johansson virou o centro de um mito da Marvel',
+    excerpt: 'Cinco anos depois de Viúva Negra, a atriz volta a ser assunto nos corredores do estúdio.',
+    category: 'cinema',
+    subject: 'Marvel',
+    tags: ['marvel', 'capa-em-tela-cheia'],
+    author: 'rafael-lima',
     cover: 'cover-02',
-    publishedAt: '2026-08-27T09:00:00-03:00',
-    updatedAt: '2026-08-27T09:00:00-03:00',
-    body: longformBody,
+    alt: 'Retrato de uma atriz sob luz dramática',
+    hours: 2,
+    body: featureBody,
     schemaType: 'Article',
   },
   {
-    id: 'art-lanterns-urgente',
-    slug: 'lanterns-atinge-93-milhoes-de-espectadores-na-estreia-na-hbo',
-    title: 'Lanterns atinge 9,3 milhões de espectadores na estreia na HBO',
-    excerpt: 'Produção do DC Studios supera expectativas de audiência na estreia.',
-    template: 'urgent',
-    categoryId: 'cat-series',
-    tagIds: ['tag-ao-vivo', 'tag-hbo', 'tag-dc'],
-    authorIds: ['aut-bruno'],
-    cover: 'cover-03',
-    publishedAt: '2026-08-27T11:00:00-03:00',
-    updatedAt: '2026-08-27T16:04:00-03:00',
-    body: urgentBody,
-    schemaType: 'LiveBlogPosting',
-  },
-  {
-    id: 'art-lego-one-piece',
-    slug: 'netflix-revela-trailer-de-lego-one-piece-com-aventura-inedita',
-    title: 'Netflix revela trailer de LEGO One Piece com aventura inédita',
-    excerpt: 'O especial em duas partes adapta momentos icônicos da obra de Eiichiro Oda.',
-    template: 'video',
-    categoryId: 'cat-animes',
-    tagIds: ['tag-netflix'],
-    authorIds: ['aut-juliana'],
-    cover: 'cover-04',
-    publishedAt: '2026-08-27T10:15:00-03:00',
-    updatedAt: '2026-08-27T10:15:00-03:00',
-    body: videoBody,
-    schemaType: 'NewsArticle',
-    videoId: 'aqz-KE-bpKQ',
-  },
-  {
-    id: 'art-cinco-coisas',
-    slug: '5-coisas-que-o-trailer-de-ahsoka-t2-esconde-sobre-thrawn',
-    title: '5 coisas que o trailer de Ahsoka T2 esconde sobre Thrawn',
-    excerpt: 'Do plano de três segundos à trilha reaproveitada: os detalhes que passam batido.',
-    template: 'list',
-    categoryId: 'cat-series',
-    tagIds: ['tag-star-wars'],
-    authorIds: ['aut-carla'],
-    cover: 'cover-05',
-    publishedAt: '2026-08-26T18:20:00-03:00',
-    updatedAt: '2026-08-26T18:20:00-03:00',
-    body: listBody,
-    schemaType: 'ItemList',
-  },
-  {
-    id: 'art-sandman-review',
-    slug: 'box-sandman-edicao-definitiva-vale-os-r-289',
-    title: 'Box Sandman Edição Definitiva: vale os R$ 289?',
-    excerpt: 'Acabamento, tradução e preço: o que a Edição Definitiva entrega em quatro volumes.',
-    template: 'standard',
-    categoryId: 'cat-reviews',
-    tagIds: ['tag-afiliado'],
-    authorIds: ['aut-redacao'],
-    cover: 'cover-06',
-    publishedAt: '2026-08-25T09:00:00-03:00',
-    updatedAt: '2026-08-27T12:00:00-03:00',
-    body: reviewBody,
-    schemaType: 'Review',
-    commercial: {
-      kind: 'affiliate',
-      brandName: 'Panini',
-      disclosure:
-        'Este conteúdo contém links de afiliados. O Máquina Nerd pode receber comissão por compras feitas por estes links, sem alteração no valor final.',
-      offers: [
-        {
-          retailer: 'Amazon.com.br',
-          price: 289,
-          listPrice: 399,
-          currency: 'BRL',
-          url: 'https://www.amazon.com.br/dp/EXEMPLO',
-          inStock: true,
-          verifiedAt: '2026-08-27T12:00:00-03:00',
-        },
-      ],
-    },
-    review: {
-      articleId: 'art-sandman-review',
-      product: {
-        name: 'Box Sandman — Edição Definitiva',
-        brand: 'Panini',
-        image: IMG('product-01', 1200, 1200, 'Box Sandman'),
-      },
-      score: 8.4,
-      breakdown: [
-        { label: 'Roteiro', value: 9 },
-        { label: 'Acabamento', value: 8 },
-        { label: 'Extras', value: 7 },
-      ],
-      pros: ['Acabamento do box', 'Tradução revisada'],
-      cons: ['Preço alto', 'Sem extras inéditos'],
-      verdict: 'A melhor forma de ler Sandman em português hoje, se o orçamento permitir.',
-    },
-  },
-  {
-    id: 'art-melhores-box',
-    slug: 'os-10-melhores-box-de-quadrinhos-para-comecar-uma-colecao',
-    title: 'Os 10 melhores box de quadrinhos para começar uma coleção',
-    excerpt: 'Dez edições que cabem na estante e não dependem de sebo para completar.',
-    template: 'list',
-    categoryId: 'cat-quadrinhos',
-    tagIds: ['tag-afiliado'],
-    authorIds: ['aut-redacao'],
-    cover: 'cover-07',
-    publishedAt: '2026-08-24T09:00:00-03:00',
-    updatedAt: '2026-08-27T12:00:00-03:00',
-    body: comparisonBody,
-    schemaType: 'ItemList',
-    commercial: {
-      kind: 'affiliate',
-      brandName: 'Diversas editoras',
-      disclosure:
-        'Este conteúdo contém links de afiliados. O Máquina Nerd pode receber comissão por compras feitas por estes links, sem alteração no valor final.',
-    },
-  },
-  {
-    id: 'art-estante-publieditorial',
-    slug: 'como-montar-uma-estante-de-colecionador-sem-gastar-o-mes-inteiro',
-    title: 'Como montar uma estante de colecionador sem gastar o mês inteiro',
-    excerpt: 'Iluminação, ordem e vidro UV: o básico para expor uma coleção sem estragá-la.',
-    template: 'standard',
-    categoryId: 'cat-quadrinhos',
-    tagIds: ['tag-patrocinado'],
-    authorIds: ['aut-redacao'],
-    cover: 'cover-08',
-    publishedAt: '2026-08-23T09:00:00-03:00',
-    updatedAt: '2026-08-23T09:00:00-03:00',
-    body: [
-      { type: 'heading', level: 2, text: '1. Luz fria mata o plástico', id: '1-luz-fria-mata-o-plastico' },
-      {
-        type: 'paragraph',
-        content: t(
-          'LED frio acelera o amarelamento do plástico das action figures. Prefira temperatura acima de 3000K.',
-        ),
-      },
-      { type: 'heading', level: 2, text: '2. Ordem cronológica é mais legível', id: '2-ordem-cronologica' },
-      {
-        type: 'paragraph',
-        content: t('Ordenar por data de publicação torna a estante navegável para quem chega de fora.'),
-      },
-    ],
-    schemaType: 'Article',
-    commercial: {
-      kind: 'branded-content',
-      brandName: 'Linha Modular',
-      disclosure:
-        'Conteúdo produzido em parceria comercial. A redação do Máquina Nerd não participou da elaboração deste material.',
-    },
-  },
-  {
-    id: 'art-semana-nerd',
-    slug: 'semana-nerd-2026',
-    title: 'Semana Nerd 2026: as ofertas que valem a pena',
-    excerpt: 'A campanha de descontos do ano, filtrada pela redação.',
-    template: 'standard',
-    categoryId: 'cat-reviews',
-    tagIds: ['tag-campanha'],
-    authorIds: ['aut-redacao'],
-    cover: 'cover-09',
-    publishedAt: '2026-08-22T09:00:00-03:00',
-    updatedAt: '2026-08-27T12:00:00-03:00',
-    body: commercialBody,
-    schemaType: 'ItemList',
-    commercial: {
-      kind: 'campaign',
-      brandName: 'Semana Nerd',
-      campaignId: 'semana-nerd-2026',
-      // The terms the design runs across the landing. Authored here because they are
-      // commitments a sales desk makes, not anything derivable from offer rows.
-      campaignTerms: [
-        'Frete grátis acima de R$ 149',
-        'Cupom MAQUINANERD10',
-        'Preços verificados às 16h04',
-        'Estoque limitado',
-      ],
-      disclosure: 'Campanha publicitária. O conteúdo desta página foi definido pelo anunciante.',
-    },
-  },
-  {
-    id: 'art-pirates',
     slug: 'pirates-of-the-caribbean-avanca-com-negociacoes-para-johnny-depp',
     title: 'Pirates of the Caribbean avança com negociações para Johnny Depp',
-    excerpt: 'Jerry Bruckheimer confirma conversas ativas para o retorno do Capitão Jack Sparrow.',
-    template: 'standard',
-    categoryId: 'cat-filmes',
-    tagIds: [],
-    authorIds: ['aut-rafael'],
-    cover: 'cover-10',
-    publishedAt: '2026-08-27T08:00:00-03:00',
-    updatedAt: '2026-08-27T08:00:00-03:00',
-    body: standardBody,
-    schemaType: 'NewsArticle',
+    excerpt: 'Produtor confirma conversas para o retorno do Capitão Jack Sparrow.',
+    category: 'cinema',
+    subject: 'Disney',
+    author: 'juliana-prado',
+    cover: 'cover-03',
+    alt: 'Pirata em um navio',
+    hours: 3,
   },
   {
-    id: 'art-star-trek',
-    slug: 'star-trek-usa-bonecos-ha-60-anos-antes-de-strange-new-worlds',
-    title: 'Star Trek usa bonecos há 60 anos antes de Strange New Worlds',
-    excerpt: 'Marionetes resgatam uma tradição de 60 anos da franquia.',
-    template: 'standard',
-    categoryId: 'cat-series',
-    tagIds: [],
-    authorIds: ['aut-bruno'],
-    cover: 'cover-11',
-    publishedAt: '2026-08-26T08:00:00-03:00',
-    updatedAt: '2026-08-26T08:00:00-03:00',
-    body: standardBody,
-    schemaType: 'NewsArticle',
+    slug: 'resident-evil-de-2026-revela-mudanca-em-monstro-classico',
+    title: 'Resident Evil de 2026 revela mudança em monstro clássico',
+    excerpt:
+      'Novo material do reboot mostra criatura mutante com tentáculos. O estúdio confirma que ela aparece no terceiro ato.',
+    category: 'cinema',
+    subject: 'Terror',
+    tags: ['terror'],
+    author: 'rafael-lima',
+    cover: 'cover-04',
+    alt: 'Cena escura de um filme de terror',
+    hours: 4,
   },
   {
-    id: 'art-bad-day',
     slug: 'cameron-diaz-estrela-bad-day-nova-comedia-de-acao-da-netflix',
     title: 'Cameron Diaz estrela Bad Day, nova comédia de ação da Netflix',
-    excerpt: 'Estreia confirmada para 11 de dezembro marca o retorno da atriz ao gênero.',
-    template: 'standard',
-    categoryId: 'cat-filmes',
-    tagIds: ['tag-netflix'],
-    authorIds: ['aut-carla'],
+    excerpt: 'A atriz fala sobre o retorno após dez anos longe das telas.',
+    category: 'cinema',
+    subject: 'Netflix',
+    tags: ['netflix'],
+    author: 'juliana-prado',
+    cover: 'cover-05',
+    alt: 'Atriz em cena de ação',
+    hours: 5,
+  },
+  {
+    slug: 'hlin-johannsdottir-fecha-parceria-para-just-a-kid',
+    title: 'Hlín Jóhannsdóttir fecha parceria com Alief para Just a Kid',
+    excerpt: 'A diretora islandesa leva o drama de estreia ao mercado europeu.',
+    category: 'cinema',
+    subject: 'Cinema de arte',
+    author: 'bruno-nunes',
+    cover: 'cover-06',
+    alt: 'Criança olhando por uma janela',
+    hours: 6,
+  },
+  {
+    slug: 'colombiana-ganha-destaque-no-streaming-com-zoe-saldana',
+    title: 'Colombiana ganha destaque no streaming com Zoe Saldaña',
+    excerpt: 'Filme de 2011 entra no Top 10 após chegar ao catálogo.',
+    category: 'cinema',
+    subject: 'Streaming',
+    tags: ['streaming'],
+    author: 'carla-menezes',
+    cover: 'cover-07',
+    alt: 'Atriz em cena noturna',
+    hours: 10,
+  },
+  {
+    slug: 'scarlett-johansson-volta-ao-mcu-em-projeto-secreto',
+    title: 'Scarlett Johansson volta ao MCU em projeto secreto do Marvel Studios',
+    excerpt: 'Atriz de Viúva Negra foi vista em reunião no estúdio; a Marvel não comenta.',
+    category: 'cinema',
+    subject: 'Marvel',
+    tags: ['marvel'],
+    author: 'rafael-lima',
+    cover: 'cover-08',
+    alt: 'Atriz sorrindo em evento',
+    hours: 24,
+  },
+  {
+    slug: 'oito-dos-melhores-filmes-de-2026-ate-agora',
+    title: 'Oito dos melhores filmes de 2026 até agora',
+    excerpt: 'Os críticos do Máquina Nerd escolhem os destaques do ano até aqui.',
+    category: 'cinema',
+    subject: 'Lista',
+    tags: ['lista'],
+    author: 'carla-menezes',
+    cover: 'cover-09',
+    alt: 'Sala de cinema vazia',
+    hours: 30,
+    template: 'list',
+    schemaType: 'ItemList',
+  },
+  {
+    slug: 'dez-filmes-para-ver-em-setembro',
+    title: 'Dez filmes para ver em setembro',
+    excerpt: 'Do circuito de arte aos blockbusters, o que estreia no mês.',
+    category: 'cinema',
+    subject: 'Lista',
+    tags: ['lista'],
+    author: 'carla-menezes',
+    cover: 'cover-10',
+    alt: 'Cartazes de filmes em uma parede',
+    hours: 50,
+  },
+  // --- Séries e TV
+  {
+    slug: 'lanterns-atinge-93-milhoes-de-espectadores-na-estreia',
+    title: 'Lanterns atinge 9,3 milhões de espectadores na estreia na HBO',
+    excerpt: 'Série de Hal Jordan e John Stewart tem a maior abertura do DC Studios na TV.',
+    category: 'series-e-tv',
+    subject: 'HBO',
+    tags: ['hbo', 'dc'],
+    author: 'bruno-nunes',
+    cover: 'cover-11',
+    alt: 'Dois atores em cena de série',
+    hours: 0.4,
+  },
+  {
+    slug: 'billy-bob-thornton-revela-como-o-texas-acolheu-taylor-sheridan',
+    title: 'Billy Bob Thornton revela como o Texas acolheu Taylor Sheridan',
+    excerpt: 'O ator de Landman fala sobre a parceria com o criador de Yellowstone.',
+    category: 'series-e-tv',
+    subject: 'Streaming',
+    tags: ['streaming'],
+    author: 'carla-menezes',
     cover: 'cover-12',
-    publishedAt: '2026-08-25T08:00:00-03:00',
-    updatedAt: '2026-08-25T08:00:00-03:00',
-    body: standardBody,
-    schemaType: 'NewsArticle',
+    alt: 'Ator de chapéu em paisagem desértica',
+    hours: 6,
   },
   {
-    id: 'art-marvel-dossie',
-    slug: 'a-decada-que-a-marvel-apostou-tudo',
-    title: 'A década que a Marvel apostou tudo',
-    subtitle: 'Da Fase 1 ao pós-crédito que ninguém entendeu.',
-    excerpt: 'Um dossiê sobre como a Marvel transformou dez anos de filmes em um único arco narrativo.',
-    template: 'longform',
-    categoryId: 'cat-marvel',
-    tagIds: ['tag-longform', 'tag-marvel'],
-    authorIds: ['aut-carla'],
+    slug: 'por-que-definimos-nossa-identidade-pelas-series-que-acompanhamos',
+    title: 'Por que definimos nossa identidade pelas séries que acompanhamos',
+    excerpt: 'O hábito de se apresentar pelo que assiste pode ser mais revelador do que parece.',
+    category: 'series-e-tv',
+    subject: 'Cult',
+    tags: ['cult'],
+    author: 'carla-menezes',
     cover: 'cover-13',
-    publishedAt: '2026-08-20T08:00:00-03:00',
-    updatedAt: '2026-08-20T08:00:00-03:00',
-    body: longformBody,
-    schemaType: 'Article',
+    alt: 'Pessoa assistindo televisão no escuro',
+    hours: 7,
   },
   {
-    id: 'art-comic-con',
-    slug: 'cobertura-comic-con-2026',
-    title: 'Cobertura Comic-Con 2026',
-    excerpt: 'Minuto a minuto do maior evento de cultura pop do ano.',
-    template: 'urgent',
-    categoryId: 'cat-especiais',
-    tagIds: ['tag-ao-vivo'],
-    authorIds: ['aut-redacao'],
+    slug: 'my-brilliant-career-estreia-no-top-10-da-netflix',
+    title: 'My Brilliant Career estreia no Top 10 da Netflix',
+    excerpt: 'A minissérie australiana surpreende e lidera o ranking em 14 países.',
+    category: 'series-e-tv',
+    subject: 'Netflix',
+    tags: ['netflix'],
+    author: 'juliana-prado',
     cover: 'cover-14',
-    publishedAt: '2026-08-19T09:00:00-03:00',
-    updatedAt: '2026-08-19T18:00:00-03:00',
-    body: urgentBody,
-    schemaType: 'LiveBlogPosting',
+    alt: 'Planta diante de uma janela',
+    hours: 8,
   },
   {
-    id: 'art-taboo',
+    slug: 'the-mighty-boosh-redefine-a-comedia-surrealista',
+    title: 'The Mighty Boosh redefine a comédia surrealista na televisão',
+    excerpt: 'Vinte anos depois, a série britânica ganha nova geração de fãs.',
+    category: 'series-e-tv',
+    subject: 'Cult',
+    tags: ['cult'],
+    author: 'bruno-nunes',
+    cover: 'cover-15',
+    alt: 'Dois comediantes em figurino excêntrico',
+    hours: 9,
+  },
+  {
     slug: 'taboo-traz-tom-hardy-em-papel-inspirado-por-sherlock-holmes',
     title: 'Taboo traz Tom Hardy em papel inspirado por Sherlock Holmes',
-    excerpt: 'Minissérie explora a mente de um anti-herói estrategista.',
-    template: 'standard',
-    categoryId: 'cat-series',
-    tagIds: [],
-    authorIds: ['aut-carla'],
-    cover: 'cover-15',
-    publishedAt: '2026-08-18T08:00:00-03:00',
-    updatedAt: '2026-08-18T08:00:00-03:00',
-    body: standardBody,
-    schemaType: 'NewsArticle',
-  },
-  {
-    id: 'art-hq-mangas',
-    slug: 'mercado-de-manga-cresce-e-muda-a-prateleira-das-livrarias',
-    title: 'Mercado de mangá cresce e muda a prateleira das livrarias',
-    excerpt: 'A expansão do mangá reorganizou o espaço físico das grandes redes.',
-    template: 'standard',
-    categoryId: 'cat-quadrinhos',
-    tagIds: [],
-    authorIds: ['aut-juliana'],
+    excerpt: 'Segunda temporada da série chega ao Brasil em setembro.',
+    category: 'series-e-tv',
+    subject: 'Streaming',
+    tags: ['streaming'],
+    author: 'bruno-nunes',
     cover: 'cover-16',
-    publishedAt: '2026-08-17T08:00:00-03:00',
-    updatedAt: '2026-08-17T08:00:00-03:00',
-    body: standardBody,
-    schemaType: 'NewsArticle',
+    alt: 'Ator de cartola em rua antiga',
+    hours: 11,
   },
   {
-    id: 'art-games-adaptacao',
-    slug: 'adaptacoes-de-games-dominam-a-agenda-dos-estudios-em-2027',
-    title: 'Adaptações de games dominam a agenda dos estúdios em 2027',
-    excerpt: 'Dez produções em desenvolvimento colocam o game no centro do calendário.',
-    template: 'standard',
-    categoryId: 'cat-games',
-    tagIds: [],
-    authorIds: ['aut-rafael'],
+    slug: 'star-trek-usa-bonecos-ha-60-anos',
+    title: 'Star Trek usa bonecos há 60 anos antes de Strange New Worlds',
+    excerpt: 'Da série original ao episódio-marionete: o recurso acompanha a franquia.',
+    category: 'series-e-tv',
+    subject: 'Streaming',
+    author: 'bruno-nunes',
     cover: 'cover-17',
-    publishedAt: '2026-08-16T08:00:00-03:00',
-    updatedAt: '2026-08-16T08:00:00-03:00',
-    body: standardBody,
-    schemaType: 'NewsArticle',
+    alt: 'Bonecos de ficção científica',
+    hours: 26,
   },
   {
-    id: 'art-anime-temporada',
-    slug: 'temporada-de-outono-tem-12-estreias-e-duas-continuacoes',
-    title: 'Temporada de outono tem 12 estreias e duas continuações',
-    excerpt: 'O calendário de outono chega cheio, com duas continuações muito aguardadas.',
-    template: 'list',
-    categoryId: 'cat-animes',
-    tagIds: [],
-    authorIds: ['aut-juliana'],
+    slug: 'cinco-licoes-da-segunda-temporada-de-taboo',
+    title: 'Cinco lições da segunda temporada de Taboo',
+    excerpt: 'Tom Hardy volta ao papel que definiu a série.',
+    category: 'series-e-tv',
+    subject: 'Streaming',
+    author: 'bruno-nunes',
     cover: 'cover-18',
-    publishedAt: '2026-08-15T08:00:00-03:00',
-    updatedAt: '2026-08-15T08:00:00-03:00',
-    body: listBody,
-    schemaType: 'ItemList',
+    alt: 'Ator em cena sombria',
+    hours: 29,
+  },
+  // --- Games
+  {
+    slug: 'resident-evil-requiem-recebe-demo-gratuita',
+    title: 'Resident Evil Requiem recebe demo gratuita na PS Store',
+    excerpt: 'Capcom libera o primeiro capítulo para PS5 e Xbox Series.',
+    category: 'games',
+    subject: 'PS5',
+    tags: ['ps5'],
+    author: 'juliana-prado',
+    cover: 'cover-04',
+    alt: 'Personagem em corredor escuro',
+    hours: 2,
+  },
+  {
+    slug: 'lego-one-piece-tera-jogo-cooperativo-em-2027',
+    title: 'LEGO One Piece terá jogo cooperativo em 2027',
+    excerpt: 'Estúdio confirma título para consoles e PC.',
+    category: 'games',
+    subject: 'PC',
+    tags: ['pc'],
+    author: 'bruno-nunes',
+    cover: 'cover-05',
+    alt: 'Peças de montar coloridas',
+    hours: 3,
+  },
+  {
+    slug: 'star-trek-infinite-ganha-dlc',
+    title: 'Star Trek: Infinite ganha DLC com a era de Strange New Worlds',
+    excerpt: 'Expansão adiciona uma nova nave e novas facções.',
+    category: 'games',
+    subject: 'PC',
+    tags: ['pc'],
+    author: 'bruno-nunes',
+    cover: 'cover-17',
+    alt: 'Nave espacial em órbita',
+    hours: 27,
+  },
+  {
+    slug: 'bad-day-tera-tie-in-mobile',
+    title: 'Bad Day terá tie-in mobile lançado junto com o filme',
+    excerpt: 'O jogo chega para assinantes em dezembro.',
+    category: 'games',
+    subject: 'Mobile',
+    author: 'juliana-prado',
+    cover: 'cover-06',
+    alt: 'Celular com jogo na tela',
+    hours: 1.2,
+  },
+  {
+    slug: 'eu-coloquei-aqueles-oculos-e-simplesmente-me-apaixonei',
+    title: 'Eu coloquei aqueles óculos e simplesmente me apaixonei',
+    excerpt: 'A primeira vez que testou o headset, o diretor decidiu filmar em realidade virtual.',
+    category: 'games',
+    subject: 'PC',
+    author: 'carla-menezes',
+    cover: 'cover-07',
+    alt: 'Pessoa usando óculos de realidade virtual',
+    hours: 13,
+  },
+  // --- Ofertas (layout de oferta, editoria Games)
+  {
+    slug: 'controle-xbox-edicao-especial-tem-queda-de-preco-na-amazon',
+    title: 'Controle Xbox edição especial tem queda de preço na Amazon',
+    excerpt: 'A Amazon derrubou o preço do controle em edição especial.',
+    lead: 'A Amazon derrubou o preço do controle sem fio em edição especial, e essa pode ser uma boa oportunidade para quem procurava um controle adicional. Compatível com Xbox Series X|S, Xbox One e PC, o modelo chama atenção pelo acabamento em cor vibrante.',
+    category: 'games',
+    subject: 'Descontos',
+    tags: ['oferta', 'descontos', 'xbox'],
+    author: 'rebeca-pinho',
+    cover: 'product-01',
+    alt: 'Controle sem fio de videogame',
+    hours: 4,
+    body: offerBody,
+  },
+  {
+    slug: 'monitores-gamer-em-promocao-o-que-vale-a-pena',
+    title: 'Monitores gamer em promoção: o que vale a pena nesta semana',
+    excerpt: 'Uma seleção de modelos com preço de demonstração.',
+    category: 'games',
+    subject: 'Descontos',
+    tags: ['oferta', 'descontos'],
+    author: 'rebeca-pinho',
+    cover: 'cover-09',
+    alt: 'Monitor em uma mesa',
+    hours: 20,
+    body: shortBody('monitores'),
+  },
+  {
+    slug: 'headsets-para-xbox-e-pc-ganham-desconto',
+    title: 'Headsets para Xbox e PC ganham desconto em campanha de setembro',
+    excerpt: 'Modelos com e sem fio entram na campanha.',
+    category: 'games',
+    subject: 'Descontos',
+    tags: ['oferta', 'descontos'],
+    author: 'rebeca-pinho',
+    cover: 'cover-10',
+    alt: 'Fone de ouvido sobre uma mesa',
+    hours: 22,
+    body: shortBody('headsets'),
+  },
+  {
+    slug: 'smartwatch-chega-com-oferta-especial',
+    title: 'Smartwatch chega com oferta especial no Mercado Livre',
+    excerpt: 'Relógio inteligente entra em oferta de demonstração.',
+    category: 'games',
+    subject: 'Descontos',
+    tags: ['oferta', 'descontos'],
+    author: 'rebeca-pinho',
+    cover: 'cover-11',
+    alt: 'Relógio inteligente no pulso',
+    hours: 23,
+    body: shortBody('relógios inteligentes'),
+  },
+  // --- Quadrinhos
+  {
+    slug: 'absolute-batman-passa-a-marca-de-1-milhao-de-copias',
+    title: 'Absolute Batman passa a marca de 1 milhão de cópias',
+    excerpt: 'O título é o mais vendido do selo.',
+    category: 'quadrinhos',
+    subject: 'DC Comics',
+    tags: ['dc-comics'],
+    author: 'juliana-prado',
+    cover: 'cover-12',
+    alt: 'Pilha de revistas em quadrinhos',
+    hours: 0.4,
+  },
+  {
+    slug: 'ultimate-spider-man-tera-arco-final-em-dezembro',
+    title: 'Ultimate Spider-Man terá arco final em dezembro',
+    excerpt: 'A editora confirma o encerramento da fase.',
+    category: 'quadrinhos',
+    subject: 'Marvel Comics',
+    tags: ['marvel-comics'],
+    author: 'bruno-nunes',
+    cover: 'cover-13',
+    alt: 'Página de quadrinho colorida',
+    hours: 0.9,
+  },
+  {
+    slug: 'one-piece-chega-ao-capitulo-1200',
+    title: 'One Piece chega ao capítulo 1.200 com edição especial',
+    excerpt: 'Marco é celebrado com capa comemorativa.',
+    category: 'quadrinhos',
+    subject: 'Mangá',
+    tags: ['manga'],
+    author: 'juliana-prado',
+    cover: 'cover-14',
+    alt: 'Mangá aberto sobre uma mesa',
+    hours: 0.3,
+  },
+  {
+    slug: 'editora-brasileira-lanca-antologia-de-terror',
+    title: 'Editora brasileira lança antologia de quadrinhos de terror',
+    excerpt: 'Doze autores nacionais assinam as histórias.',
+    category: 'quadrinhos',
+    subject: 'Independentes',
+    tags: ['independentes', 'terror'],
+    author: 'carla-menezes',
+    cover: 'cover-15',
+    alt: 'Capa de antologia em preto e branco',
+    hours: 3,
+  },
+  {
+    slug: 'a-grande-super-heroina-perdida-dos-quadrinhos',
+    title: 'A grande super-heroína "perdida" dos quadrinhos',
+    excerpt: 'Uma personagem que sumiu das bancas e virou lenda.',
+    category: 'quadrinhos',
+    subject: 'DC Comics',
+    tags: ['dc-comics'],
+    author: 'bruno-nunes',
+    cover: 'cover-16',
+    alt: 'Ilustração de heroína em pose de ação',
+    hours: 40,
+  },
+  // --- Animes
+  {
+    slug: 'netflix-revela-trailer-de-lego-one-piece',
+    title: 'Netflix revela trailer de LEGO One Piece com aventura inédita',
+    excerpt: 'O especial em duas partes adapta o arco de East Blue com humor e peças de montar.',
+    category: 'animes',
+    subject: 'Lançamentos',
+    tags: ['lancamentos'],
+    author: 'juliana-prado',
+    cover: 'cover-05',
+    alt: 'Personagens de montar em um navio',
+    hours: 6,
+  },
+  {
+    slug: 'lego-one-piece-tudo-o-que-sabemos',
+    title: 'LEGO One Piece: tudo o que sabemos sobre o especial',
+    excerpt: 'Elenco de dublagem, data e o que muda em relação ao mangá.',
+    category: 'animes',
+    subject: 'Lançamentos',
+    tags: ['lancamentos'],
+    author: 'juliana-prado',
+    cover: 'cover-06',
+    alt: 'Cena animada com piratas',
+    hours: 45,
+  },
+  {
+    slug: 'president-curtis-ganha-segunda-temporada',
+    title: 'President Curtis ganha segunda temporada no Adult Swim',
+    excerpt: 'A sátira política animada renova antes da estreia da primeira.',
+    category: 'animes',
+    subject: 'Animação',
+    tags: ['animacao'],
+    author: 'bruno-nunes',
+    cover: 'cover-07',
+    alt: 'Personagem animado em um palanque',
+    hours: 60,
+  },
+  {
+    slug: 'as-series-que-moldaram-o-humor-absurdo',
+    title: 'As séries que moldaram o humor absurdo dos anos 2000',
+    excerpt: 'De Mighty Boosh a Flight of the Conchords.',
+    category: 'animes',
+    subject: 'Animação',
+    tags: ['animacao'],
+    author: 'carla-menezes',
+    cover: 'cover-08',
+    alt: 'Colagem de personagens de TV',
+    hours: 70,
+  },
+  // --- Vídeos
+  {
+    slug: 'ahsoka-o-que-o-trailer-da-2a-temporada-revela',
+    title: 'Ahsoka: o que o trailer da 2ª temporada revela sobre Thrawn',
+    excerpt: 'A redação analisa quadro a quadro o retorno do Grande Almirante.',
+    category: 'videos',
+    subject: 'Star Wars',
+    tags: ['star-wars', 'trailers'],
+    author: 'bruno-nunes',
+    cover: 'still-01',
+    alt: 'Personagem em armadura diante de uma nave',
+    hours: 5,
+    template: 'video',
+  },
+  {
+    slug: 'como-strange-new-worlds-recriou-bonecos-dos-anos-60',
+    title: 'Como Strange New Worlds recriou bonecos dos anos 60',
+    excerpt: 'Os bastidores do episódio-marionete.',
+    category: 'videos',
+    subject: 'Clipes',
+    tags: ['clipes'],
+    author: 'bruno-nunes',
+    cover: 'still-02',
+    alt: 'Marionetes em um set',
+    hours: 8,
+    template: 'video',
+  },
+  {
+    slug: 'tom-hardy-explica-o-novo-taboo',
+    title: 'Tom Hardy explica o novo Taboo',
+    excerpt: 'Entrevista sobre a segunda temporada.',
+    category: 'videos',
+    subject: 'Entrevistas',
+    tags: ['entrevistas'],
+    author: 'carla-menezes',
+    cover: 'still-03',
+    alt: 'Ator em entrevista',
+    hours: 9,
+    template: 'video',
+  },
+  {
+    slug: 'colombiana-por-que-o-filme-voltou-ao-top-10',
+    title: 'Colombiana: por que o filme voltou ao Top 10',
+    excerpt: 'Análise em vídeo do fenômeno.',
+    category: 'videos',
+    subject: 'Clipes',
+    tags: ['clipes'],
+    author: 'juliana-prado',
+    cover: 'still-04',
+    alt: 'Cena de ação noturna',
+    hours: 12,
+    template: 'video',
+  },
+  {
+    slug: 'bad-day-bastidores-com-cameron-diaz',
+    title: 'Bad Day: bastidores com Cameron Diaz',
+    excerpt: 'A atriz mostra o set da comédia de ação.',
+    category: 'videos',
+    subject: 'Entrevistas',
+    tags: ['entrevistas'],
+    author: 'juliana-prado',
+    cover: 'still-05',
+    alt: 'Set de filmagem com equipe',
+    hours: 14,
+    template: 'video',
+  },
+  // --- Especiais
+  {
+    slug: 'as-transformacoes-mais-extremas-dos-astros-da-marvel',
+    title: 'As transformações mais extremas dos astros da Marvel',
+    excerpt: 'Da preparação física às próteses: o que os atores fizeram para entrar no universo.',
+    category: 'especiais',
+    subject: 'Reportagem',
+    tags: ['reportagem', 'marvel'],
+    author: 'juliana-prado',
+    cover: 'cover-01',
+    alt: 'Ator em maquiagem de prótese',
+    hours: 48,
+  },
+  {
+    slug: 'duas-estrelas-para-o-novo-faroeste-de-taylor-sheridan',
+    title: 'Duas estrelas para o novo faroeste de Taylor Sheridan',
+    excerpt: 'Landman é uma mistura instável de drama familiar e thriller de petróleo.',
+    category: 'especiais',
+    subject: 'Crítica',
+    tags: ['critica', 'reviews'],
+    author: 'carla-menezes',
+    cover: 'cover-02',
+    alt: 'Campo de petróleo ao pôr do sol',
+    hours: 72,
+    schemaType: 'Review',
+  },
+  {
+    slug: 'my-brilliant-career-e-a-dificuldade-de-ser-misteriosa',
+    title: 'My Brilliant Career e a dificuldade de ser misteriosa no streaming',
+    excerpt: 'A minissérie cultivou uma imagem enigmática, corroída por controvérsias recentes.',
+    category: 'especiais',
+    subject: 'Crítica',
+    tags: ['critica'],
+    author: 'carla-menezes',
+    cover: 'cover-03',
+    alt: 'Mulher olhando por uma janela',
+    hours: 96,
   },
 ];
 
-function buildArticle(seed: FixtureArticleSeed): Article {
-  const category = fixtureCategories.find((c) => c.id === seed.categoryId) ?? null;
-  const tags = seed.tagIds.map((id) => fixtureTags.find((t2) => t2.id === id)).filter((t2): t2 is Tag => Boolean(t2));
-  const authors = seed.authorIds
-    .map((id) => fixtureAuthors.find((a) => a.id === id))
-    .filter((a): a is Author => Boolean(a));
-  const cover = IMG(seed.cover, 1600, 900, seed.title);
-  const words = seed.body.reduce((acc, block) => {
-    if (block.type === 'paragraph' || block.type === 'quote') {
+const NOW = Date.parse(FIXTURE_NOW_ISO);
+const iso = (hoursBefore: number) => new Date(NOW - hoursBefore * 3_600_000).toISOString();
+
+function wordsOf(blocks: ContentBlock[]): number {
+  return blocks.reduce((acc, b) => {
+    if (b.type === 'paragraph' || b.type === 'quote') {
       return (
         acc +
-        block.content
+        b.content
           .map((n) => (n.type === 'text' ? n.text : ''))
           .join(' ')
           .split(/\s+/).length
       );
     }
-    if (block.type === 'heading') return acc + block.text.split(/\s+/).length;
-    return acc;
+    return b.type === 'heading' ? acc + b.text.split(/\s+/).length : acc;
   }, 0);
+}
+
+function build(seed: Seed): Article {
+  const category = fixtureCategories.find((c) => c.slug === seed.category) ?? null;
+  const tags = (seed.tags ?? [])
+    .map((slug) => fixtureTags.find((x) => x.slug === slug))
+    .filter((x): x is Tag => Boolean(x));
+  const subjectTag = seed.subject ? fixtureTags.find((x) => x.name === seed.subject) : undefined;
+  if (subjectTag && !tags.includes(subjectTag)) tags.unshift(subjectTag);
+  const authors = fixtureAuthors.filter((a) => a.slug === seed.author);
+  const cover = IMG(seed.cover, seed.alt);
+  cover.credit = 'Imagem de demonstração';
+  const body = seed.body ?? shortBody(seed.title.toLowerCase());
+  const layout: ArticleLayout = resolveLayout(tags);
+  const publishedAt = iso(seed.hours);
+  const editedAt = seed.editedHoursAfter
+    ? new Date(Date.parse(publishedAt) + seed.editedHoursAfter * 3_600_000).toISOString()
+    : null;
 
   return {
-    id: seed.id,
+    id: `art-${seed.slug.slice(0, 40)}`,
     brand: 'mn',
     slug: seed.slug,
-    template: seed.template,
+    template: seed.template ?? 'standard',
+    layout,
     title: seed.title,
-    ...(seed.subtitle ? { subtitle: seed.subtitle } : {}),
+    ...(seed.lead ? { subtitle: seed.lead } : {}),
     excerpt: seed.excerpt,
-    ...(category ? { kicker: category.name } : {}),
     cover,
     authors,
     category,
     tags,
-    publishedAt: seed.publishedAt,
-    updatedAt: seed.updatedAt,
+    publishedAt,
+    updatedAt: editedAt ?? publishedAt,
     status: 'published',
-    readingMinutes: readingMinutes(words),
-    ...(seed.commercial ? { commercialKind: seed.commercial.kind, commercial: seed.commercial } : {}),
-    ...(seed.review ? { review: seed.review } : {}),
-    ...(seed.videoId ? { videoId: seed.videoId } : {}),
-    body: seed.body,
+    readingMinutes: readingMinutes(wordsOf(body)),
+    ...(layout === 'offer' ? { commercialKind: 'affiliate' as const } : {}),
+    body,
+    editedAt,
     seo: {
       title: seed.title,
       description: seed.excerpt,
       ogImage: cover,
       noindex: false,
       nofollow: false,
-      schemaType: seed.schemaType,
+      schemaType: seed.schemaType ?? 'NewsArticle',
     },
+    ...(layout === 'offer'
+      ? {
+          commercial: {
+            kind: 'affiliate' as const,
+            brandName: 'Lojas parceiras',
+            disclosure:
+              'Este conteúdo contém links de afiliados. O Máquina Nerd pode receber comissão por compras feitas por estes links, sem alteração no valor final.',
+          },
+        }
+      : {}),
   };
 }
 
-export const fixtureArticles: Article[] = seeds.map(buildArticle);
+export const fixtureArticles: Article[] = seeds.map(build);
+
+/** A draft only the preview can open. */
+export const fixtureDraft: Article = {
+  ...build({
+    slug: 'rascunho-de-demonstracao',
+    title: 'Rascunho de demonstração',
+    excerpt: 'Só a pré-visualização abre esta matéria.',
+    category: 'cinema',
+    author: 'rafael-lima',
+    cover: 'cover-12',
+    alt: 'Mesa de redação',
+    hours: 0,
+  }),
+  status: 'draft',
+  publishedAt: null,
+};
 
 export function toSummary(article: Article): ArticleSummary {
-  const { body: _body, seo: _seo, commercial: _commercial, review: _review, ...summary } = article;
+  const { body: _body, seo: _seo, commercial: _commercial, review: _review, editedAt: _editedAt, ...summary } = article;
   return summary;
 }
 
-export const fixtureWatchTitles: WatchTitle[] = [
-  {
-    id: 'wt-ahsoka',
-    cinerieSlug: 'ahsoka',
-    title: 'Ahsoka — 2ª temporada',
-    poster: IMG('poster-01', 800, 1200, 'Pôster de Ahsoka'),
-    still: IMG('still-01', 1600, 900, ''),
-    kind: 'series',
-    availability: [{ platform: 'Disney+', type: 'stream', note: 'Estreia 12 dez' }],
-    updatedAt: '2026-08-27T08:00:00-03:00',
-    url: 'https://cinerie.com/series/ahsoka',
-  },
-  {
-    id: 'wt-lanterns',
-    cinerieSlug: 'lanterns',
-    title: 'Lanterns',
-    poster: IMG('poster-02', 800, 1200, 'Pôster de Lanterns'),
-    still: IMG('still-02', 1600, 900, ''),
-    kind: 'series',
-    availability: [{ platform: 'HBO Max', type: 'stream', note: 'Episódios semanais' }],
-    updatedAt: '2026-08-27T08:00:00-03:00',
-    url: 'https://cinerie.com/series/lanterns',
-  },
-  {
-    id: 'wt-lego-one-piece',
-    cinerieSlug: 'lego-one-piece',
-    title: 'LEGO One Piece',
-    poster: IMG('poster-03', 800, 1200, 'Pôster de LEGO One Piece'),
-    still: IMG('still-03', 1600, 900, ''),
-    kind: 'movie',
-    availability: [{ platform: 'Netflix', type: 'stream', note: 'Especial em 2 partes' }],
-    updatedAt: '2026-08-27T08:00:00-03:00',
-    url: 'https://cinerie.com/filmes/lego-one-piece',
-  },
-  {
-    id: 'wt-bad-day',
-    cinerieSlug: 'bad-day',
-    title: 'Bad Day',
-    poster: IMG('poster-04', 800, 1200, 'Pôster de Bad Day'),
-    still: IMG('still-04', 1600, 900, ''),
-    kind: 'movie',
-    availability: [{ platform: 'Netflix', type: 'stream', note: 'Estreia 11 dez' }],
-    updatedAt: '2026-08-27T08:00:00-03:00',
-    url: 'https://cinerie.com/filmes/bad-day',
-  },
-];
-
-export const fixturePoll: Poll = {
-  id: 'poll-dc-marvel',
-  question: 'Quem domina 2026 no streaming: DC Studios ou Marvel?',
-  status: 'open',
-  options: [
-    { id: 'opt-dc', label: 'DC Studios', image: IMG('cover-03', 1600, 900, ''), votes: 5_400 },
-    { id: 'opt-marvel', label: 'Marvel', image: IMG('cover-13', 1600, 900, ''), votes: 4_600 },
-  ],
-  totalVotes: 10_000,
-  source: 'cinerie',
-};
-
-export const fixtureLiveEvent: LiveEvent = {
-  id: 'live-comic-con',
-  slug: 'comic-con-2026',
-  title: 'Cobertura Comic-Con 2026',
-  status: 'live',
-  startedAt: '2026-08-19T09:00:00-03:00',
-  entries: [
-    {
-      id: 'live-1',
-      time: '2026-08-19T16:04:00-03:00',
-      title: 'Ahsoka T2 ganha trailer completo no painel da Lucasfilm',
-      text: 'O painel encerrou com o trailer completo da segunda temporada, exibido duas vezes a pedido do público.',
-      important: true,
-    },
-    {
-      id: 'live-2',
-      time: '2026-08-19T14:30:00-03:00',
-      title: 'Bruckheimer confirma no palco as conversas com Johnny Depp',
-      text: 'O produtor foi direto ao ser questionado e confirmou negociações em andamento.',
-    },
-    {
-      id: 'live-3',
-      time: '2026-08-19T11:10:00-03:00',
-      title: 'DC Studios celebra os 9,3 milhões de Lanterns e provoca anúncio',
-      text: 'A apresentação abriu com os números da estreia e terminou com um teaser de dez segundos.',
-    },
-    {
-      id: 'live-4',
-      time: '2026-08-19T09:05:00-03:00',
-      title: 'Portões abertos: o que esperar do primeiro dia',
-      text: 'A fila começou a se formar às 5h; o primeiro painel é às 10h30.',
-    },
-  ],
-};
-
 export const fixtureRedirects = [
   {
-    from: '/2026/08/resident-evil-2026-revela-mudanca-em-monstro-classico',
-    to: '/series/resident-evil-2026-revela-mudanca-em-monstro-classico',
+    from: '/2026/08/resident-evil-de-2026-revela-mudanca-em-monstro-classico',
+    to: '/cinema/resident-evil-de-2026-revela-mudanca-em-monstro-classico',
     status: 301 as const,
   },
   { from: '/feed', to: '/feed.xml', status: 301 as const },
-  { from: '/comments/feed', to: '/feed.xml', status: 301 as const },
-  { from: '/categoria/series', to: '/series', status: 301 as const },
   { from: '/tag/antigo-removido', to: '/', status: 410 as const },
 ];

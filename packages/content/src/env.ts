@@ -55,12 +55,10 @@ const baseSchema = z.object({
 
   MEDIA_ALLOWED_HOSTS: z.string().default(''),
 
-  REVALIDATE_MAX_SKEW_SECONDS: z.coerce.number().int().positive().max(3600).default(300),
-
   SENTRY_DSN: z.string().optional(),
   LOG_LEVEL: z.enum(['silent', 'error', 'warn', 'info', 'debug']).default('info'),
 
-  /** Public search / revalidate rate limiting, per IP per minute. */
+  /** Searches one client may run per minute (`/busca`), per instance. */
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(60),
   /**
    * Whether a reverse proxy sits in front and `x-forwarded-for` may be trusted.

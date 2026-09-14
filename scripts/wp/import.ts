@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { ContentBlock, Image } from '@mn/content';
-import { DESK_SLUGS, slugify, toPlainText } from '@mn/content';
+import { DESK_SLUGS, EDITORIA_NAMES, isEditoriaSlug, slugify, toPlainText } from '@mn/content';
 
 import {
   COMMON_FLAGS,
@@ -28,7 +28,7 @@ import {
 import { WordPressArchive } from './archive';
 import { isLoopbackHost } from '@mn/content/security/address';
 import { KalElTarget } from './target';
-import { classifyCategory, deskOf, deskFor, loadCategoryMap, type CategoryMap } from './taxonomy';
+import { WP_DESKS_ALSO_TAGGED, classifyCategory, deskOf, deskFor, loadCategoryMap, type CategoryMap } from './taxonomy';
 import { emptyReport, htmlToBlocks, shortcodeAssetRef, type TransformReport } from './transform';
 
 /**
@@ -367,13 +367,31 @@ async function main(): Promise<void> {
         desk,
         () =>
           target!.createCategory(
-            { name: term.name, slug: desk, description: term.description || null },
+            // A renamed desk takes the editoria's name, not the archive's ("Filmes" is now Cinema).
+            {
+              name: isEditoriaSlug(desk) ? EDITORIA_NAMES[desk] : term.name,
+              slug: desk,
+              description: term.description || null,
+            },
             idempotencyKey('category', term.id),
           ),
         indexes.categoryByWpId,
         indexes.categoryBySlug,
         existingBySlug.categories,
       );
+
+      // `reviews` is filed under Especiais and also kept as a tag, so its archive survives.
+      if (WP_DESKS_ALSO_TAGGED.has(slug)) {
+        await ensureTerm(
+          'tag',
+          term.id,
+          slug,
+          () => target!.createTag({ name: term.name, slug }, idempotencyKey('tag', term.id)),
+          indexes.tagByWpId,
+          indexes.tagBySlug,
+          existingBySlug.tags,
+        );
+      }
     }
   }
 
@@ -924,16 +942,6 @@ function blocksToKalElNodes(blocks: ContentBlock[], indexes: Indexes): Record<st
           content: block.rows.map((row) => row.map((cell) => inline(cell))),
         });
         break;
-      case 'specTable':
-        nodes.push({
-          type: 'table',
-          attrs: { headers: [] },
-          content: block.rows.map((row) => [
-            [{ type: 'text', text: row.label, marks: [] }],
-            [{ type: 'text', text: row.value, marks: [] }],
-          ]),
-        });
-        break;
       case 'image': {
         const mediaId = mediaIdFor(block.image.url);
         if (!mediaId) break;
@@ -951,10 +959,6 @@ function blocksToKalElNodes(blocks: ContentBlock[], indexes: Indexes): Record<st
       case 'embed':
         nodes.push({ type: 'embed', attrs: { url: block.url, provider: block.provider } });
         break;
-      case 'callout':
-        // No callout node in the CMS: the words survive as a paragraph.
-        nodes.push({ type: 'paragraph', attrs: {}, content: inline(block.content) });
-        break;
       case 'sourceLink':
         nodes.push({
           type: 'source',
@@ -962,8 +966,8 @@ function blocksToKalElNodes(blocks: ContentBlock[], indexes: Indexes): Record<st
         });
         break;
       default:
-        // gallery, comparison, buyBox, ad and whereToWatch are front-end constructs; a
-        // WordPress body never produces them.
+        // gallery and product are front-end constructs; a WordPress body never produces
+        // them.
         break;
     }
   }

@@ -35,6 +35,9 @@ function headers(body: string, overrides: Record<string, string> = {}) {
   });
 }
 
+/** Six hours before now: far outside the five-minute window this used to enforce. */
+const HOURS_AGO = () => new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+
 describe('webhook verification', () => {
   it('accepts a correctly signed delivery', async () => {
     const body = payload();
@@ -43,7 +46,6 @@ describe('webhook verification', () => {
       rawBody: body,
       headers: headers(body),
       store: new MemoryNonceStore(),
-      maxSkewSeconds: 300,
     });
     expect(verdict.ok).toBe(true);
   });
@@ -57,7 +59,6 @@ describe('webhook verification', () => {
       rawBody: tampered,
       headers: signed,
       store: new MemoryNonceStore(),
-      maxSkewSeconds: 300,
     });
     expect(verdict).toMatchObject({ ok: false, status: 401 });
   });
@@ -71,7 +72,6 @@ describe('webhook verification', () => {
       rawBody: body,
       headers: wrong,
       store: new MemoryNonceStore(),
-      maxSkewSeconds: 300,
     });
     expect(verdict).toMatchObject({ ok: false, status: 401 });
   });
@@ -84,7 +84,6 @@ describe('webhook verification', () => {
       rawBody: body,
       headers: bare,
       store: new MemoryNonceStore(),
-      maxSkewSeconds: 300,
     });
     expect(verdict).toMatchObject({ ok: false, status: 401 });
   });
@@ -96,7 +95,6 @@ describe('webhook verification', () => {
       rawBody: body,
       headers: headers(body, { 'x-kal-el-event': 'article.deleted' }),
       store: new MemoryNonceStore(),
-      maxSkewSeconds: 300,
     });
     expect(verdict).toMatchObject({ ok: false, status: 400 });
   });
@@ -109,41 +107,51 @@ describe('webhook verification', () => {
       rawBody: body,
       headers: headers(body),
       store,
-      maxSkewSeconds: 300,
     });
     const second = await verifyWebhook({
       secret: SECRET,
       rawBody: body,
       headers: headers(body),
       store,
-      maxSkewSeconds: 300,
     });
     expect(first.ok).toBe(true);
     expect(second).toMatchObject({ ok: false, status: 409 });
   });
 
-  it('rejects a stale publication outside the freshness window', async () => {
-    const body = payload({ publishedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString() });
-    const verdict = await verifyWebhook({
+  it.each(['article.published', 'article.updated'])(
+    'accepts a %s delivery however old its publishedAt',
+    async (event) => {
+      // `publishedAt` is not the age of the delivery. Kal El retries a refused delivery with
+      // backoff, so with a freshness window a portal that was restarting when a story went out
+      // refused every retry of it, and the story stayed stale.
+      const body = payload({ publishedAt: HOURS_AGO() });
+      const verdict = await verifyWebhook({
+        secret: SECRET,
+        rawBody: body,
+        headers: headers(body, { 'x-kal-el-event': event }),
+        store: new MemoryNonceStore(),
+      });
+      expect(verdict.ok).toBe(true);
+    },
+  );
+
+  it('leaves replaying an old delivery to the nonce, which still refuses it', async () => {
+    const store = new MemoryNonceStore();
+    const body = payload({ publishedAt: HOURS_AGO() });
+    const first = await verifyWebhook({
       secret: SECRET,
       rawBody: body,
       headers: headers(body),
-      store: new MemoryNonceStore(),
-      maxSkewSeconds: 300,
+      store,
     });
-    expect(verdict).toMatchObject({ ok: false, status: 400 });
-  });
-
-  it('accepts an old publishedAt on article.updated, which legitimately carries one', async () => {
-    const body = payload({ publishedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString() });
-    const verdict = await verifyWebhook({
+    const replay = await verifyWebhook({
       secret: SECRET,
       rawBody: body,
-      headers: headers(body, { 'x-kal-el-event': 'article.updated' }),
-      store: new MemoryNonceStore(),
-      maxSkewSeconds: 300,
+      headers: headers(body),
+      store,
     });
-    expect(verdict.ok).toBe(true);
+    expect(first.ok).toBe(true);
+    expect(replay).toMatchObject({ ok: false, status: 409 });
   });
 
   it('rejects a payload that is not the agreed shape', async () => {
@@ -153,7 +161,6 @@ describe('webhook verification', () => {
       rawBody: body,
       headers: headers(body),
       store: new MemoryNonceStore(),
-      maxSkewSeconds: 300,
     });
     expect(verdict).toMatchObject({ ok: false, status: 400 });
   });

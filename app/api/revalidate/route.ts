@@ -1,6 +1,15 @@
 import { revalidateTag } from 'next/cache';
 import { NextResponse } from 'next/server';
-import { TAG, articleSlugTag, articleTag, authorTag, categoryTag, isValidSlug, tagTag } from '@mn/content';
+import {
+  EDITORIA_SLUGS,
+  TAG,
+  articleSlugTag,
+  articleTag,
+  authorTag,
+  categoryTag,
+  isValidSlug,
+  tagTag,
+} from '@mn/content';
 import { serverEnv } from '@mn/content/env';
 import { MemoryNonceStore, verifyWebhook } from '@mn/content/security/webhook';
 import type { KalElArticlePublishedPayload } from '@mn/content/kalel/dto';
@@ -20,9 +29,9 @@ import { correlationId, logger } from '../../../lib/logger';
  * stale until their own ISR window elapses, which is up to five minutes of a new story
  * missing from its own section.
  *
- * Kal El sends no timestamp header, so replay protection is the delivery nonce plus the
- * signed `publishedAt` window (see `@mn/content/security/webhook.ts` for why, and
- * KAL-EL-DISCOVERY.md for the CMS change that would strengthen it).
+ * Kal El sends no timestamp header, so replay protection is the delivery nonce alone (see
+ * `@mn/content/security/webhook.ts` for why there is no freshness window, and
+ * KAL-EL-DISCOVERY.md for the CMS change that would add a signed timestamp).
  */
 
 export const dynamic = 'force-dynamic';
@@ -30,15 +39,15 @@ export const runtime = 'nodejs';
 
 const store = new MemoryNonceStore();
 
+/** A delivery names one article; nothing legitimate comes near this. */
+const MAX_BODY_BYTES = 64 * 1024;
+
 export async function POST(request: Request): Promise<Response> {
   const cid = correlationId(request.headers);
 
   let secret: string | undefined;
-  let maxSkewSeconds = 300;
   try {
-    const env = serverEnv();
-    secret = env.KAL_EL_WEBHOOK_SECRET;
-    maxSkewSeconds = env.REVALIDATE_MAX_SKEW_SECONDS;
+    secret = serverEnv().KAL_EL_WEBHOOK_SECRET;
   } catch {
     logger.error('revalidate.env-invalid', { correlationId: cid });
     return NextResponse.json({ error: 'not configured' }, { status: 503 });
@@ -49,19 +58,19 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: 'not configured' }, { status: 503 });
   }
 
-  // The signature covers the raw bytes; re-serialising a parsed body would change them.
-  const rawBody = await request.text();
-  if (rawBody.length > 64 * 1024) {
+  // Refused on the declared size before a byte is read, and again on the bytes actually
+  // read, for a sender that declares no length at all.
+  if (Number(request.headers.get('content-length') ?? '0') > MAX_BODY_BYTES) {
     return NextResponse.json({ error: 'payload too large' }, { status: 413 });
   }
 
-  const verdict = await verifyWebhook({
-    secret,
-    rawBody,
-    headers: request.headers,
-    store,
-    maxSkewSeconds,
-  });
+  // The signature covers the raw bytes; re-serialising a parsed body would change them.
+  const rawBody = await request.text();
+  if (Buffer.byteLength(rawBody) > MAX_BODY_BYTES) {
+    return NextResponse.json({ error: 'payload too large' }, { status: 413 });
+  }
+
+  const verdict = await verifyWebhook({ secret, rawBody, headers: request.headers, store });
 
   if (!verdict.ok) {
     // A replay is not an error to alert on: at-least-once delivery means the sender is
@@ -87,9 +96,9 @@ export async function POST(request: Request): Promise<Response> {
     for (const slug of relations.tags) tags.add(tagTag(slug));
     for (const slug of relations.authors) tags.add(authorTag(slug));
   } else {
-    // Without the relations, purge every desk: a listing showing yesterday's front page
-    // is worse than a handful of extra ISR rebuilds.
-    for (const desk of ['filmes', 'series', 'quadrinhos', 'games', 'animes']) tags.add(categoryTag(desk));
+    // Without the relations, purge every editoria: a listing showing yesterday's front
+    // page is worse than a handful of extra ISR rebuilds.
+    for (const desk of EDITORIA_SLUGS) tags.add(categoryTag(desk));
   }
 
   for (const tag of tags) revalidateTag(tag);

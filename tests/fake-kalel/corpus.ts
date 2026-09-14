@@ -45,12 +45,13 @@ export interface Row {
 }
 
 const DESKS = [
-  { slug: 'filmes', name: 'Filmes' },
-  { slug: 'series', name: 'Séries' },
-  { slug: 'quadrinhos', name: 'Quadrinhos' },
+  { slug: 'cinema', name: 'Cinema' },
+  { slug: 'series-e-tv', name: 'Séries e TV' },
   { slug: 'games', name: 'Games' },
+  { slug: 'quadrinhos', name: 'Quadrinhos' },
   { slug: 'animes', name: 'Animes' },
-  { slug: 'reviews', name: 'Reviews' },
+  { slug: 'videos', name: 'Vídeos' },
+  { slug: 'especiais', name: 'Especiais' },
 ] as const;
 
 export const categories: Row[] = DESKS.map((desk, i) => ({
@@ -64,7 +65,17 @@ export const categories: Row[] = DESKS.map((desk, i) => ({
   updatedAt: iso(400),
 }));
 
-const TAG_SLUGS = ['marvel', 'netflix', 'longform', 'ao-vivo', 'patrocinado', 'trailer'];
+// The last two are reserved: the page-layout switches an editor picks from the tag picker.
+const TAG_SLUGS = [
+  'marvel',
+  'netflix',
+  'longform',
+  'ao-vivo',
+  'patrocinado',
+  'trailer',
+  'capa-em-tela-cheia',
+  'oferta',
+];
 
 export const tags: Row[] = TAG_SLUGS.map((slug, i) => ({
   id: uuid(0x7a, i),
@@ -218,6 +229,8 @@ function articleAt(i: number): Row {
   if (i % 9 === 0) articleTags.push(uuid(0x7a, 2)); // longform
   if (i === 3) articleTags.push(uuid(0x7a, 3)); // ao-vivo
   if (i === 7) articleTags.push(uuid(0x7a, 4)); // patrocinado
+  if (i === 2) articleTags.push(uuid(0x7a, 6)); // capa-em-tela-cheia: the overlay layout
+  if (i === 4) articleTags.push(uuid(0x7a, 7)); // oferta: lives at /ofertas/{slug}
 
   return {
     id: uuid(0xf0, i),
@@ -284,7 +297,7 @@ export const redirects: Row[] = [
     id: uuid(0x4e, 0),
     siteId: SITE_ID,
     sourcePath: '/2019/07/materia-antiga',
-    targetPath: '/filmes/resident-evil-de-2026-revela-mudanca-em-monstro-classico',
+    targetPath: '/cinema/resident-evil-de-2026-revela-mudanca-em-monstro-classico',
     kind: '301',
     createdAt: iso(100),
   },

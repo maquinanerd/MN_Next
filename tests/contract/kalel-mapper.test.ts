@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Author, Category, Image, Tag } from '@mn/content';
 import {
+  editedAt,
   isBrandUnsafe,
   mapArticle,
   mapArticleSummary,
@@ -53,12 +54,16 @@ describe('the fixtures satisfy the real Kal El schema', () => {
 });
 
 describe('taxonomy mapping', () => {
-  it('derives avatar initials and a stable colour from the author id', () => {
-    const first = mapAuthor(AUTHOR);
-    const second = mapAuthor(AUTHOR);
-    expect(first.initials).toBe('RL');
-    expect(first.avatarColor).toBe(second.avatarColor);
-    expect(first.avatarColor.startsWith('var(--mn-author-')).toBe(true);
+  it('never invents a portrait: without an avatar in the CMS there is none', () => {
+    // The kit forbids the initials disc (docs/04): no real portrait, name only.
+    const author = mapAuthor({ ...AUTHOR, avatarMediaId: null });
+    expect(author.avatar).toBeUndefined();
+    expect(Object.keys(author)).not.toContain('initials');
+  });
+
+  it('uses the CMS portrait when there is one', () => {
+    const media = new Map([[MEDIA.id, mapMedia(MEDIA)]]);
+    expect(mapAuthor({ ...AUTHOR, avatarMediaId: MEDIA.id }, media).avatar?.url).toBe(`/media/${MEDIA.id}`);
   });
 
   it('substitutes an empty description rather than null', () => {
@@ -94,13 +99,16 @@ describe('mapDocument', () => {
     expect(heading.id).toBe('o-que-muda-em-relacao-aos-jogos');
   });
 
-  it('reads a two-column table as a spec sheet', () => {
+  it('keeps a two-column table as a table, cell for cell', () => {
     const { blocks } = mapDocument(ARTICLE.document.nodes, { media: ctx.media });
-    const spec = blocks.find((b) => b.type === 'specTable');
-    if (spec?.type !== 'specTable') throw new Error('expected a specTable');
-    expect(spec.rows).toEqual([
-      { label: 'Páginas', value: '2.000' },
-      { label: 'Editora', value: 'Panini' },
+    const table = blocks.find((b) => b.type === 'table');
+    if (table?.type !== 'table') throw new Error('expected a table');
+    const text = table.rows.map((row) =>
+      row.map((cell) => cell.map((n) => (n.type === 'text' ? n.text : '')).join('')),
+    );
+    expect(text).toEqual([
+      ['Páginas', '2.000'],
+      ['Editora', 'Panini'],
     ]);
   });
 
@@ -184,8 +192,17 @@ describe('mapArticleSummary', () => {
     expect(summary).not.toBeNull();
     expect(summary?.category?.slug).toBe('series');
     expect(summary?.authors[0]?.name).toBe('Rafael Lima');
-    expect(summary?.kicker).toBe('Séries de TV');
     expect(summary?.cover?.url).toBe(`/media/${MEDIA.id}`);
+    expect(summary?.layout).toBe('standard');
+  });
+
+  it('reads the page layout from the reserved tags the CMS has no field for', () => {
+    const overlay = { ...TAG, id: '99999999-0000-4000-8000-000000000001', slug: 'capa-em-tela-cheia', name: 'Capa' };
+    const ctx = context();
+    ctx.tags.set(overlay.id, mapTag(overlay));
+    expect(mapArticleSummary({ ...ARTICLE, tags: [overlay.id] }, ctx)?.layout).toBe('overlay');
+    // An affiliate article is an offer page, whatever else it carries.
+    expect(mapArticleSummary({ ...ARTICLE, tags: [overlay.id, AFFILIATE_TAG.id] }, ctx)?.layout).toBe('offer');
   });
 
   it('returns null when the article has no slug, so no card can 404', () => {
@@ -221,6 +238,49 @@ describe('mapArticle', () => {
   it('recomputes reading time from the document', () => {
     const result = mapArticle(ARTICLE, context());
     expect(result?.article.readingMinutes).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('editedAt — "Atualizado em" only for a real edit', () => {
+  it('is null for an article imported years after it was published', () => {
+    // Imported: created and last written at import time, published in 2019.
+    expect(
+      editedAt({
+        publishedAt: '2019-03-01T10:00:00Z',
+        createdAt: '2026-09-01T12:00:00Z',
+        updatedAt: '2026-09-01T12:00:03Z',
+      }),
+    ).toBeNull();
+  });
+
+  it('is null for the write that publishes the article', () => {
+    expect(
+      editedAt({
+        publishedAt: '2026-09-10T10:00:00Z',
+        createdAt: '2026-09-10T09:00:00Z',
+        updatedAt: '2026-09-10T10:02:00Z',
+      }),
+    ).toBeNull();
+  });
+
+  it('is the update time for an edit after publication', () => {
+    expect(
+      editedAt({
+        publishedAt: '2026-09-10T10:00:00Z',
+        createdAt: '2026-09-10T09:00:00Z',
+        updatedAt: '2026-09-11T08:30:00Z',
+      }),
+    ).toBe('2026-09-11T08:30:00Z');
+  });
+
+  it('is the update time for an imported article edited after the import', () => {
+    expect(
+      editedAt({
+        publishedAt: '2019-03-01T10:00:00Z',
+        createdAt: '2026-09-01T12:00:00Z',
+        updatedAt: '2026-09-05T15:00:00Z',
+      }),
+    ).toBe('2026-09-05T15:00:00Z');
   });
 });
 

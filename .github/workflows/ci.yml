@@ -33,8 +33,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      # No `version`: the action reads `packageManager` from package.json, and refuses both.
       - uses: pnpm/action-setup@v4
-        with: { version: 11 }
       - uses: actions/setup-node@v4
         with: { node-version-file: .nvmrc, cache: pnpm }
       - run: pnpm install --frozen-lockfile
@@ -50,7 +50,10 @@ jobs:
   # and split by suite so the report says which gate failed rather than "e2e".
   browser:
     name: ${{ matrix.gate }}
-    runs-on: ubuntu-latest
+    # The visual baselines are rendered on Windows, where the project is developed, and
+    # glyph rasterisation moves line breaks between platforms: a Linux render of the same
+    # page comes out taller. The visual gate runs where its baselines were made.
+    runs-on: ${{ matrix.gate == 'visual' && 'windows-latest' || 'ubuntu-latest' }}
     timeout-minutes: 30
     needs: static
     strategy:
@@ -63,8 +66,8 @@ jobs:
         gate: [e2e, a11y, visual, kalel]
     steps:
       - uses: actions/checkout@v4
+      # No `version`: the action reads `packageManager` from package.json, and refuses both.
       - uses: pnpm/action-setup@v4
-        with: { version: 11 }
       - uses: actions/setup-node@v4
         with: { node-version-file: .nvmrc, cache: pnpm }
       - run: pnpm install --frozen-lockfile
@@ -91,13 +94,50 @@ jobs:
     needs: static
     steps:
       - uses: actions/checkout@v4
+      # No `version`: the action reads `packageManager` from package.json, and refuses both.
       - uses: pnpm/action-setup@v4
-        with: { version: 11 }
       - uses: actions/setup-node@v4
         with: { node-version-file: .nvmrc, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test:performance
+
+  # The image a deployment actually runs. Built in fixture mode, which needs neither a CMS
+  # nor a secret, so every pull request proves the Dockerfile itself: pnpm on Alpine, the
+  # native `sharp` binary, the standalone trace and the non-root runner.
+  image:
+    name: Container image
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: static
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: >-
+          docker build
+          --build-arg APP_ENV=test
+          --build-arg CONTENT_SOURCE=fixture
+          --build-arg NEXT_PUBLIC_SITE_URL=https://www.maquinanerd.test
+          --build-arg KAL_EL_WEBHOOK_SECRET=ci-placeholder-webhook-secret-000000
+          --build-arg KAL_EL_PREVIEW_SECRET=ci-placeholder-preview-secret-000000
+          --tag maquinanerd-portal:ci .
+      - name: Serves, as a user that is not root
+        run: |
+          set -euo pipefail
+          docker run --detach --name portal --publish 3000:3000 \
+            --env APP_ENV=test --env CONTENT_SOURCE=fixture \
+            --env KAL_EL_WEBHOOK_SECRET=ci-placeholder-webhook-secret-000000 \
+            --env KAL_EL_PREVIEW_SECRET=ci-placeholder-preview-secret-000000 \
+            maquinanerd-portal:ci
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/health; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:3000/api/health
+          curl -fsS -o /dev/null http://127.0.0.1:3000/
+          test "$(docker exec portal id -u)" != "0"
+      - if: failure()
+        run: docker logs portal || true
 
   # A migration tool that only runs by hand rots. This proves each one at least starts,
   # parses its flags and prints help — without touching WordPress or Kal El.
@@ -108,14 +148,15 @@ jobs:
     needs: static
     steps:
       - uses: actions/checkout@v4
+      # No `version`: the action reads `packageManager` from package.json, and refuses both.
       - uses: pnpm/action-setup@v4
-        with: { version: 11 }
       - uses: actions/setup-node@v4
         with: { node-version-file: .nvmrc, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm wp:import --help
       - run: pnpm redirects:build --help
       - run: pnpm urls:verify --help
+      - run: pnpm kalel:provision --help
 
   # Nothing that must never be committed may enter the tree.
   hygiene:
@@ -127,7 +168,8 @@ jobs:
       - name: Refuse forbidden paths
         run: |
           set -euo pipefail
-          bad=$(git ls-files | grep -E '(^|/)\.env($|\.)|\.zip$|^\.next/|^artifacts/|^\.migration-reference/|^uploads/' || true)
+          # `.env.example` is the one env file that belongs in the tree: names, no values.
+          bad=$(git ls-files | grep -E '(^|/)\.env($|\.)|\.zip$|^\.next/|^artifacts/|^\.migration-reference/|^maquina-nerd-kit/|^uploads/' | grep -vE '(^|/)\.env\.example$' || true)
           if [ -n "$bad" ]; then
             echo "These files must never be committed:"
             echo "$bad"
@@ -139,7 +181,8 @@ jobs:
           # `ke_st.` is the Kal El service-token prefix. Test fixtures use an obvious
           # placeholder, which this pattern deliberately still catches — a token-shaped
           # string does not belong in the tree either way.
-          if git grep -nE 'ke_st\.[A-Za-z0-9]{16,}' -- ':!tests' ':!docs' ; then
+          # `playwright.kalel.config.ts` hands the stand-in CMS an all-zero fake token.
+          if git grep -nE 'ke_st\.[A-Za-z0-9]{16,}' -- ':!tests' ':!docs' ':!playwright.kalel.config.ts' ; then
             echo "A Kal El service token appears in source."
             exit 1
           fi

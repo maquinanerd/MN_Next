@@ -24,17 +24,42 @@ import { CliError } from './cli';
 export { DESK_SLUGS };
 
 /**
+ * WordPress desk categories whose slug the new front end changed (kit docs/03 fixes the
+ * editoria slugs as `cinema`, `series-e-tv`, …). The archive files 41.020 posts under the
+ * old six; without this they would all land with no editoria and no public URL.
+ *
+ * `reviews` becomes Especiais, whose subjects are "Reportagem, Crítica, Lista". It is also
+ * kept as a tag (`WP_DESKS_ALSO_TAGGED`), so the footer's "Reviews" keeps an archive at
+ * `/tag/reviews`.
+ */
+export const WP_DESK_ALIASES: Readonly<Record<string, string>> = {
+  filmes: 'cinema',
+  series: 'series-e-tv',
+  reviews: 'especiais',
+};
+
+export const WP_DESKS_ALSO_TAGGED: ReadonlySet<string> = new Set(['reviews']);
+
+/**
  * Which desk wins when a post is filed under two.
  *
- * Most specific first. `reviews` leads because it is a *format* the portal renders with
- * its own template and its own index — a review of a film is a review before it is a
- * film — and the rest run from the narrowest medium to the broadest.
+ * Most specific first. Especiais leads because a WordPress review is a *format* before it
+ * is a medium — a review of a film is a review before it is a film — and the rest run from
+ * the narrowest medium to the broadest.
  *
  * This decides 190 of 41.318 posts (0,46%). It is written down rather than left to map
  * iteration order because a rule that picks silently is a rule nobody can check, and
  * `--category-map` overrides it per slug for the cases an editor disagrees with.
  */
-export const DESK_PRECEDENCE: readonly string[] = ['reviews', 'animes', 'quadrinhos', 'games', 'series', 'filmes'];
+export const DESK_PRECEDENCE: readonly string[] = [
+  'especiais',
+  'animes',
+  'quadrinhos',
+  'games',
+  'videos',
+  'series-e-tv',
+  'cinema',
+];
 
 export type CategoryMap = Map<string, string>;
 
@@ -74,13 +99,18 @@ export async function loadCategoryMap(file: string): Promise<CategoryMap> {
 
 /** Whether a WordPress category becomes a desk, or a tag alongside the rest. */
 export function classifyCategory(slug: string, overrides: CategoryMap = new Map()): 'desk' | 'tag' {
-  return DESK_SLUGS.includes(slug) || overrides.has(slug) ? 'desk' : 'tag';
+  return deskOf(slug, overrides) !== null ? 'desk' : 'tag';
 }
 
-/** The desk a WordPress category slug stands for, if it stands for one. */
+/**
+ * The desk a WordPress category slug stands for, if it stands for one. The operator's map
+ * wins over the built-in aliases, which win over nothing.
+ */
 export function deskOf(slug: string, overrides: CategoryMap = new Map()): string | null {
+  const mapped = overrides.get(slug);
+  if (mapped) return mapped;
   if (DESK_SLUGS.includes(slug)) return slug;
-  return overrides.get(slug) ?? null;
+  return WP_DESK_ALIASES[slug] ?? null;
 }
 
 /**

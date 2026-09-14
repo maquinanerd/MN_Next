@@ -1,6 +1,8 @@
+import { NextRequest } from 'next/server';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import robots from '../../app/robots';
+import robots, { dynamic as robotsRendering } from '../../app/robots';
+import { middleware } from '../../middleware';
 import { resetEnvCache } from '../../packages/content/src/env';
 import { contentRepository, setContentRepository } from '../../packages/content/src/provider';
 
@@ -99,5 +101,26 @@ describe('robots.txt decides from APP_ENV, not from the hostname', () => {
   it('still closes a host that only the name betrays', () => {
     deployAs({ ...CREDENTIALS, APP_ENV: 'production', NEXT_PUBLIC_SITE_URL: 'https://staging.maquinanerd.com.br' });
     expect(disallowsEverything(robots())).toBe(true);
+  });
+
+  it('is decided when it is requested, not frozen into the build', () => {
+    // Prerendered, it would keep the build's APP_ENV whatever the container runs with.
+    expect(robotsRendering).toBe('force-dynamic');
+  });
+});
+
+describe('outside production every response says noindex', () => {
+  const indexing = (url: string): string | null => middleware(new NextRequest(url)).headers.get('x-robots-tag');
+
+  it.each(['staging', 'test', 'development'])('in %s, whatever robots.txt says', (appEnv) => {
+    // robots.txt only asks a crawler not to fetch. A staging URL pasted in a chat is
+    // fetched anyway, and a fetched page without this header may be indexed.
+    deployAs({ APP_ENV: appEnv });
+    expect(indexing('https://homolog.maquinanerd.com.br/cinema')).toBe('noindex, nofollow');
+  });
+
+  it('not in production', () => {
+    deployAs({ APP_ENV: 'production' });
+    expect(indexing('https://www.maquinanerd.com.br/cinema')).toBeNull();
   });
 });

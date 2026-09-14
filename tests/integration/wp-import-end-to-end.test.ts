@@ -130,7 +130,8 @@ describe('wp:import against a live pair of stand-ins', () => {
       // A WordPress category that is not one of the six desks becomes a tag rather than
       // a route segment. `noticias` is on every post in the real archive; importing it
       // as a category would create a section the portal has no template for.
-      expect(store.categories.map((c) => c['slug']).sort()).toEqual(['filmes', 'series']);
+      // The archive's `filmes` and `series` arrive under the editorias the kit names.
+      expect(store.categories.map((c) => c['slug']).sort()).toEqual(['cinema', 'series-e-tv']);
       expect(store.tags.map((t) => t['slug'])).toContain('noticias');
       expect(summary.counts['categoriesAsTags']).toBe(expected.categoriesInWordPress - expected.categories);
       expect(store.authors).toHaveLength(expected.authors);

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { legacyRedirect, normalise, safeInternalPath } from '../../lib/redirects';
+import { RENAMED_DESKS } from '@mn/content';
+
+import { RENAMED_DESK_REDIRECTS, legacyRedirect, normalise, safeInternalPath } from '../../lib/redirects';
 
 /**
  * The redirect table is operator data, so the destination validator is treated as a
@@ -47,12 +49,34 @@ describe('normalise', () => {
 describe('legacyRedirect', () => {
   const noParams = new URLSearchParams();
 
-  it('resolves an exact table entry', () => {
-    expect(legacyRedirect('/categoria/series', noParams)).toEqual({ to: '/series', status: 301 });
+  it('resolves an exact table entry, straight to the renamed editoria', () => {
+    expect(legacyRedirect('/categoria/series', noParams)).toEqual({ to: '/series-e-tv', status: 301 });
   });
 
   it('is insensitive to a trailing slash', () => {
-    expect(legacyRedirect('/categoria/series/', noParams)).toEqual({ to: '/series', status: 301 });
+    expect(legacyRedirect('/categoria/series/', noParams)).toEqual({ to: '/series-e-tv', status: 301 });
+  });
+
+  it('sends the renamed desks to their new editorias, in one hop', () => {
+    expect(legacyRedirect('/filmes', noParams)).toEqual({ to: '/cinema', status: 301 });
+    expect(legacyRedirect('/series', noParams)).toEqual({ to: '/series-e-tv', status: 301 });
+    expect(legacyRedirect('/noticias', noParams)).toEqual({ to: '/', status: 301 });
+    expect(legacyRedirect('/reviews', noParams)).toEqual({ to: '/tag/reviews', status: 301 });
+  });
+
+  it('keeps the page and the slug under a renamed desk', () => {
+    expect(legacyRedirect('/filmes/page/3', noParams)).toEqual({ to: '/cinema/page/3', status: 301 });
+    expect(legacyRedirect('/series/uma-materia', noParams)).toEqual({ to: '/series-e-tv/uma-materia', status: 301 });
+    expect(legacyRedirect('/noticias/page/2', noParams)).toEqual({ to: '/page/2', status: 301 });
+  });
+
+  it('agrees with the site policy on which desks were renamed', () => {
+    // The edge copy exists to keep the content package out of the middleware bundle.
+    expect(RENAMED_DESK_REDIRECTS).toEqual(RENAMED_DESKS);
+  });
+
+  it('sends the old advertising page to its new address', () => {
+    expect(legacyRedirect('/publicidade', noParams)).toEqual({ to: '/anuncie', status: 301 });
   });
 
   it('sends every WordPress feed shape to the RSS route', () => {
@@ -77,7 +101,8 @@ describe('legacyRedirect', () => {
   });
 
   it('returns null for a path it does not own, so the route can render', () => {
-    expect(legacyRedirect('/series/uma-materia-atual', noParams)).toBeNull();
+    expect(legacyRedirect('/series-e-tv/uma-materia-atual', noParams)).toBeNull();
+    expect(legacyRedirect('/ofertas/uma-oferta', noParams)).toBeNull();
   });
 
   it('never produces an off-site destination', () => {

@@ -5,18 +5,22 @@ import { startFakeKalEl } from './server';
 /**
  * Runs the stand-in CMS as a process, so Playwright can boot the application against it
  * exactly as it would boot against the real one — same base URL shape, same bearer
- * token, same two pagination models.
+ * token, same pagination models.
  *
  * This is the only way to exercise `CONTENT_SOURCE=kalel` without credentials. Every
  * other suite runs on the fixture provider, which returns domain objects and therefore
  * never touches the DTO schemas, the mapper, the taxonomy hydration or the media proxy.
+ *
+ * `FAKE_KALEL_LEGACY_ARTICLE_LIST=1` answers article lists as Kal El did before kal-el#7
+ * (no `offset`, no `total`) — what readiness has to report as degraded.
  */
 
 const port = Number(process.env.FAKE_KALEL_PORT ?? 4010);
+const legacyArticleList = process.env.FAKE_KALEL_LEGACY_ARTICLE_LIST === '1';
 
-startFakeKalEl(port)
+startFakeKalEl(port, { legacyArticleList })
   .then((fake) => {
-    console.log(JSON.stringify({ event: 'fake-kalel.listening', url: fake.url, siteId: SITE_ID }));
+    console.log(JSON.stringify({ event: 'fake-kalel.listening', url: fake.url, siteId: SITE_ID, legacyArticleList }));
     // Printed so an operator running this by hand can copy the two values it needs.
     if (process.env.FAKE_KALEL_PRINT_ENV === '1') {
       console.log(`KAL_EL_BASE_URL=${fake.url}`);

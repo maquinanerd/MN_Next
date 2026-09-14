@@ -78,15 +78,22 @@ X-Kal-El-Signature: sha256=<hex hmac-sha256 do corpo bruto>
 ### Divergência registrada: não existe timestamp assinado
 
 O contrato-alvo (`docs/02-kalel-integration.md`) presume `timestamp ≤ 5 min` no header.
-**O Kal El não envia timestamp.** A proteção contra replay foi construída com o que existe:
+**O Kal El não envia timestamp.** A proteção foi construída com o que existe:
 
-1. `X-Kal-El-Idempotency` como nonce, com claim **atômico** (`MemoryNonceStore.claim`);
-2. o `publishedAt` **assinado** limita quão antiga uma publicação pode ser.
+1. `X-Kal-El-Signature`, o HMAC do corpo bruto: entrega forjada ou alterada é recusada;
+2. `X-Kal-El-Idempotency` como nonce, com claim **atômico** (`MemoryNonceStore.claim`):
+   uma reentrega é confirmada com 200 e descartada.
 
-Isso impede replay de uma entrega capturada. É mais fraco do que um timestamp assinado
-apenas contra um adversário que consiga forjar `publishedAt` — o que a assinatura já
-impede. **Mudança sugerida ao Kal El:** incluir `issuedAt` e `eventId` no payload
-assinado.
+**Não há janela de frescor.** Uma versão anterior recusava `article.published` com
+`publishedAt` mais velho que 5 minutos. Só que `publishedAt` não mede a idade da entrega: o
+worker retenta com backoff, até 5 vezes, e um portal reiniciando na hora da publicação
+recusava todas as tentativas — a matéria ficava velha até vencer o ISR. A janela não
+protegia nada que o nonce já não protegesse; um replay depois do TTL do nonce só purga um
+cache outra vez.
+
+**Mudança sugerida ao Kal El:** incluir `issuedAt` (por tentativa) e `eventId` no payload
+assinado. Com eles o portal volta a ter janela, medida sobre a entrega e não sobre a
+publicação.
 
 > **Operação multi-instância.** O nonce store é em processo. Com mais de uma instância o
 > pior caso é uma revalidação redundante — nunca um efeito colateral duplicado, porque
@@ -145,7 +152,8 @@ legítimo de um rascunho abriria **qualquer** slug não publicado que alguém ad
 ## Mudança aplicada no Kal El
 
 Uma única mudança, isolada, testada e em **commit separado no repositório do Kal El**
-(branch `feat/article-slug-filter`, commit `83ad1e8`):
+(branch `feat/article-slug-filter`, commit `83ad1e8`,
+[PR #6](https://github.com/maquinanerd/kal-el/pull/6)):
 
 - `slug` em `articleListQuerySchema`;
 - uma condição `eq(articles.slug, …)` em `listArticles`;
@@ -160,6 +168,61 @@ O adaptador continua correto **sem** essa mudança: como o schema da query não 
 uma instância sem o patch ignora o parâmetro e responde com o artigo mais recente — por
 isso o resultado é sempre reconferido contra o slug pedido e, se divergir, cai no índice
 completo. Correto nos dois casos, uma ida e volta no caso corrigido.
+
+## Segunda mudança no Kal El: ordem de publicação, página por offset, relações completas
+
+Veio do kit de frontend (2026-09-10). O kit pagina editoria e "mais notícias" por número de
+página (`/cinema/page/3`, `/page/2`) e ordena por data de publicação. A API só oferecia
+cursor opaco em `updatedAt DESC`: corrigir um erro de digitação numa matéria de 2019 a
+trazia para o topo da home, e a página 40 exigia percorrer as 39 anteriores.
+
+Branch `feat/delivery-published-order` (sobre `feat/article-slug-filter`), commit `89c9eeb`,
+[PR #7](https://github.com/maquinanerd/kal-el/pull/7):
+
+| Parte                                                                     | O que muda                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/contracts/src/editorial.ts`                                     | `order: 'updated' \| 'published'` (padrão `updated`, compatível) e `offset` (0–100 000) em `articleListQuerySchema`                                                                                                                                                        |
+| `apps/api/src/services/articles.ts`                                       | ordem `published_at DESC NULLS LAST, id DESC`; cursor com prefixo por ordem (`p\|…`), recusado se trocar de ordem no meio; com `offset`, resposta traz `total`; `tags` e `entities` hidratados na listagem; filtros de categoria/tag por subconsulta (sem duplicar linhas) |
+| `packages/db/src/schema/editorial.ts` + `drizzle/0006_nasty_namorita.sql` | índice `articles_site_status_published_idx (site_id, status, published_at DESC NULLS LAST, id DESC)`                                                                                                                                                                       |
+| `apps/api/tests/article-list-order.test.ts`                               | 10 casos contra Postgres real                                                                                                                                                                                                                                              |
+
+Resultado: `article-list-order` + `article-slug-filter` 26/26; suíte completa da API
+**179/179** (24 arquivos) em Postgres local.
+
+**Compatibilidade.** O portal não depende da mudança para estar correto. O adaptador
+(`packages/content/src/kalel/repository.ts`) pede `order=published&offset=…` e confere a
+resposta: se vier `total`, usa a janela; se não vier (instância sem o patch, que ignora
+parâmetros desconhecidos porque o schema não é `.strict()`), percorre o cursor e ordena por
+`publishedAt` em memória. Os dois caminhos estão cobertos em
+`tests/integration/repository.test.ts`.
+
+**Para ir ao ar com a ordem certa e paginação O(1):** feito em 2026-09-14 — kal-el#6 e #7
+mergeados, API publicada no Coolify, migração `0006` aplicada no boot. A migração não pode
+usar `CONCURRENTLY`: o migrador do drizzle aplica as pendentes numa transação só. Ela usa
+`SET LOCAL lock_timeout = '5s'` (falha rápido em vez de enfileirar escritas) e
+`CREATE INDEX IF NOT EXISTS`; numa instância com acervo grande, crie o índice antes, à mão,
+com `CREATE INDEX CONCURRENTLY IF NOT EXISTS …`, e a migração vira no-op.
+
+## Layout de matéria: tag reservada
+
+O kit tem três composições de matéria (padrão, capa em tela cheia, oferta) e o Kal El não
+tem campo para escolher. A escolha é feita por tag reservada, lida em
+`packages/content/src/paths.ts` (`resolveLayout`, `articlePath`):
+
+| Tag                             | Layout  | URL                                                   |
+| ------------------------------- | ------- | ----------------------------------------------------- |
+| (nenhuma)                       | padrão  | `/{editoria}/{slug}`                                  |
+| `capa-em-tela-cheia`            | overlay | `/{editoria}/{slug}`                                  |
+| `oferta`, `ofertas`, `afiliado` | oferta  | `/ofertas/{slug}` (a URL de editoria redireciona 308) |
+
+Tags reservadas não viram página de tag (`/tag/oferta` é 404) nem aparecem como assunto.
+`pnpm kalel:provision` cria as duas tags canônicas no site.
+
+_Proposta ao Kal El:_ um campo `presentation.layout` (`standard | full-bleed | offer`) no
+artigo, validado pelo contrato, e um bloco `product` (nome, loja, preço, preço anterior,
+URL de afiliado, `checkedAt`) no documento. Enquanto não existem, o card de produto da
+matéria de oferta só aparece no modo demonstração: com o Kal El, a matéria de oferta
+renderiza o texto e o aviso de afiliados, sem inventar preço.
 
 ## Verificação sem credenciais: o CMS de contrato
 

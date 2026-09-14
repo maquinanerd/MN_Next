@@ -1,0 +1,21 @@
+.git
+node_modules
+**/node_modules
+.next
+artifacts
+coverage
+playwright-report
+test-results
+.migration-reference
+maquina-nerd-kit
+*.zip
+*.sql
+*.sql.gz
+.env
+.env.*
+!.env.example
+tests/e2e/__screenshots__
+*.log
+# Fixture photographs: only the fixture provider and its demo sponsored cards use them, and
+# no deployment that serves readers may run that provider (packages/content/src/env.ts).
+public/fixtures

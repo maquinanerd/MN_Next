@@ -105,15 +105,18 @@ describe('htmlToBlocks', () => {
     expect(report.unknown['auto-embed:unknown']).toBe(1);
   });
 
-  it('reads a two-column table as a spec sheet', () => {
+  it('keeps a two-column spec sheet as a table, cell for cell', () => {
     const { blocks } = convert(
       '<table><tr><td>Páginas</td><td>2.000</td></tr><tr><td>Editora</td><td>Panini</td></tr></table>',
     );
-    const spec = blocks.find((b) => b.type === 'specTable');
-    if (spec?.type !== 'specTable') throw new Error('expected a specTable');
-    expect(spec.rows).toEqual([
-      { label: 'Páginas', value: '2.000' },
-      { label: 'Editora', value: 'Panini' },
+    const table = blocks.find((b) => b.type === 'table');
+    if (table?.type !== 'table') throw new Error('expected a table');
+    const text = table.rows.map((row) =>
+      row.map((cell) => cell.map((n) => (n.type === 'text' ? n.text : '')).join('')),
+    );
+    expect(text).toEqual([
+      ['Páginas', '2.000'],
+      ['Editora', 'Panini'],
     ]);
   });
 

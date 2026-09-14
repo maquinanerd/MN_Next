@@ -1,6 +1,6 @@
 import { cache } from 'react';
 
-import { DESK_SLUGS, isContentError } from '@mn/content';
+import { DESK_SLUGS, articlePath, isContentError, isReservedTag } from '@mn/content';
 
 import { repo } from './content';
 import { logger } from './logger';
@@ -40,12 +40,15 @@ export const legacyPath = cache(async (slug: string): Promise<string | null> => 
 
   try {
     const article = await repo().getArticleBySlug(slug);
-    const desk = article?.category?.slug;
-    // The article's own desk, not the requested segment: this is the canonical address.
-    if (article && desk) return validated(`/${desk}/${article.slug}`);
+    // The article's own address — its editoria, or /ofertas for an offer page — never
+    // the requested segment: this is the canonical URL.
+    const path = article ? articlePath(article) : null;
+    if (path) return validated(path);
 
     // Not an article. On the old site this segment could equally be a category archive,
     // and 8.613 of those categories are tags here — `/netflix` was 2.362 posts.
+    // A reserved tag (`oferta`, `ao-vivo`…) has no archive: redirecting to it would end in 404.
+    if (isReservedTag(slug)) return null;
     const tag = await repo().getTag(slug, 1);
     if (tag) return validated(`/tag/${tag.tag.slug}`);
 

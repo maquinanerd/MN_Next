@@ -1,66 +1,58 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { safeSlugParam } from '@mn/content';
-import { ArticleBody, ArticleHeader, Editorial } from '@mn/ui';
+import { articlePath, safeSlugParam } from '@mn/content';
+import { ArticleBody, Lead } from '@mn/ui';
 
-import { repo } from '../../../lib/content';
+import { Header } from '../../../components/Chrome';
+import { repo, toBlocos } from '../../../lib/content';
 import { previewAllows } from '../../../lib/preview';
-import { seoContext } from '../../../lib/seo-context';
 
 /**
- * Category-less preview surface.
+ * Preview of an article that has no editoria yet, so it has no public address. Once it
+ * has one, the reader is sent there, to see the real template in its real shell.
  *
- * Reached when a Kal El preview token opens an article that has no desk yet, so
- * `/{categoria}/{slug}` does not exist. Once the article has a category, the reader is
- * sent to the canonical path so the preview shows the real template in its real shell.
- *
- * Always dynamic and never indexable. Outside draft mode it is a 404, so the URL is not
- * a public back door into unpublished copy.
+ * Dynamic, never indexable, and a 404 outside a preview grant that names this slug.
  */
 export const dynamic = 'force-dynamic';
 
 export async function generateMetadata(): Promise<Metadata> {
-  return {
-    title: 'Pré-visualização',
-    robots: { index: false, follow: false, nocache: true },
-  };
+  return { title: 'Pré-visualização', robots: { index: false, follow: false, nocache: true } };
 }
 
 export default async function PreviewPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug: raw } = await params;
-  const slug = safeSlugParam(raw);
+  const slug = safeSlugParam((await params).slug);
   if (!slug) notFound();
-
-  // The grant must name this exact slug: a preview session is not a master key.
   if (!(await previewAllows(slug))) notFound();
 
   const article = await repo().getArticleBySlug(slug, { preview: true });
   if (!article) notFound();
-  if (article.category) redirect(`/${article.category.slug}/${article.slug}`);
-
-  const canonical = `${seoContext().siteUrl}/preview/${article.slug}`;
+  const path = articlePath(article);
+  if (path) redirect(path);
 
   return (
     <>
-      <div className="mn-breaking">
-        <Editorial>
-          <span className="mn-breaking__badge">Pré-visualização</span>{' '}
-          <span className="mn-breaking__text">
-            Versão não publicada, sem editoria definida.{' '}
-            <Link href="/api/preview/disable">Sair da pré-visualização</Link>
-          </span>
-        </Editorial>
+      <div role="note" className="bg-mn-red-text text-white">
+        <div className="wrap flex min-h-36 flex-wrap items-center gap-x-12 py-8 text-12">
+          <strong className="font-bold">Pré-visualização.</strong>
+          <span>Versão não publicada, ainda sem editoria.</span>
+          <form method="post" action="/api/preview/disable">
+            <button
+              type="submit"
+              className="cursor-pointer border-0 bg-transparent p-0 text-12 text-white underline underline-offset-3"
+            >
+              Sair da pré-visualização
+            </button>
+          </form>
+        </div>
       </div>
-
-      <Editorial>
-        <article className="mn-article">
-          <div>
-            <ArticleHeader article={article} shareUrl={canonical} priorityImage={false} />
-            <ArticleBody blocks={article.body} showAds={false} />
-          </div>
+      <Header />
+      <main id="conteudo" className="wrap pt-20 pb-64 tab:pt-32">
+        <article className="max-w-760">
+          <h1 className="m-0 text-25 leading-[1.12] font-extrabold tracking-[-0.035em] tab:text-28">{article.title}</h1>
+          <Lead>{article.subtitle ?? article.excerpt}</Lead>
+          <ArticleBody blocos={toBlocos(article.body, article.title)} cor="var(--color-mn-red)" />
         </article>
-      </Editorial>
+      </main>
     </>
   );
 }
