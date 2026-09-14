@@ -176,6 +176,7 @@ describe('client/server boundary', () => {
 
   const serverOnlyModules = [
     '@mn/content/env',
+    '@mn/content/logger',
     '@mn/content/provider',
     '@mn/content/kalel/',
     '../lib/content',

@@ -4,6 +4,7 @@ import type { z } from 'zod';
 
 import { ContentError } from '../errors';
 import { redact, serverEnv } from '../env';
+import { logger } from '../logger';
 import { kalelEnvelope, kalelErrorSchema } from './dto';
 
 /**
@@ -54,6 +55,18 @@ function jitter(baseMs: number): number {
   return Math.round(baseMs * (0.5 + Math.random()));
 }
 
+/** Transport events that are alerts rather than dependency blips (RUNBOOK §2). */
+const ALERT_EVENTS: ReadonlySet<string> = new Set(['kalel.contract.violation']);
+
+/**
+ * Where the transport's events go when the caller does not say: the structured logger,
+ * at `error` for an alert and `warn` for everything else it reports.
+ */
+export function logTransportEvent(event: string, meta: Record<string, unknown>): void {
+  if (ALERT_EVENTS.has(event)) logger.error(event, meta);
+  else logger.warn(event, meta);
+}
+
 export class KalElTransport {
   private readonly baseUrl: string;
   private readonly token: string;
@@ -81,6 +94,9 @@ export class KalElTransport {
       token: env.KAL_EL_SERVICE_TOKEN,
       siteId: env.KAL_EL_SITE_ID,
       timeoutMs: env.KAL_EL_TIMEOUT_MS,
+      // The one construction site the application uses, so the one place a missing
+      // logger would silently drop `kalel.contract.violation`.
+      onLog: logTransportEvent,
       ...overrides,
     });
   }

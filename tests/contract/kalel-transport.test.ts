@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
+import { resetEnvCache } from '../../packages/content/src/env';
 import { ContentError } from '../../packages/content/src/errors';
 import { KalElTransport } from '../../packages/content/src/kalel/transport';
 import { kalelArticleListSchema } from '../../packages/content/src/kalel/dto';
@@ -188,5 +189,50 @@ describe('KalElTransport.write', () => {
       }),
     ).rejects.toMatchObject({ kind: 'unavailable' });
     expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+});
+
+describe('KalElTransport.fromEnv', () => {
+  // The construction path the application uses. It used to leave `onLog` a no-op, so the
+  // alert the runbook pages on was never written by anything that ran in production.
+  const KEYS = ['CONTENT_SOURCE', 'KAL_EL_BASE_URL', 'KAL_EL_SITE_ID', 'KAL_EL_SERVICE_TOKEN', 'LOG_LEVEL'] as const;
+  const saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
+
+  beforeEach(() => {
+    process.env.CONTENT_SOURCE = 'kalel';
+    process.env.KAL_EL_BASE_URL = 'https://cms.example.com';
+    process.env.KAL_EL_SITE_ID = SITE_ID;
+    process.env.KAL_EL_SERVICE_TOKEN = 'ke_st.testtokenvalue000000000';
+    process.env.LOG_LEVEL = 'warn';
+    resetEnvCache();
+  });
+
+  afterEach(() => {
+    for (const key of KEYS) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+    resetEnvCache();
+    vi.restoreAllMocks();
+  });
+
+  it('logs a contract violation without being handed a logger', async () => {
+    const lines: string[] = [];
+    const capture = (...data: unknown[]) => {
+      lines.push(String(data[0]));
+    };
+    vi.spyOn(console, 'error').mockImplementation(capture);
+    vi.spyOn(console, 'warn').mockImplementation(capture);
+
+    const fetchImpl = vi.fn(async () => jsonResponse({ data: { items: [{ id: 'not-a-uuid' }], nextCursor: null } }));
+    const transport = KalElTransport.fromEnv({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    await expect(transport.read(kalelArticleListSchema, { path: '/x' })).rejects.toMatchObject({ kind: 'contract' });
+
+    const events = lines.map((line) => JSON.parse(line) as { event: string; level: string; path?: string });
+    expect(events).toContainEqual(
+      expect.objectContaining({ event: 'kalel.contract.violation', level: 'error', path: '/x' }),
+    );
+    // The line names the path and the field, never the credential that fetched it.
+    expect(lines.join('\n')).not.toContain('testtokenvalue');
   });
 });
