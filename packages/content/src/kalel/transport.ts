@@ -37,6 +37,11 @@ export interface ReadRequest {
   revalidate?: number | false;
   /** `no-store` for search and preview; everything else is tag-cached. */
   noStore?: boolean;
+  /**
+   * `false` for one attempt only — no retry, no wait on `retry-after`: for a probe that
+   * must answer inside its own deadline rather than a reader's.
+   */
+  retry?: boolean;
   correlationId?: string;
 }
 
@@ -148,7 +153,7 @@ export class KalElTransport {
 
     let lastError: unknown;
     for (let attempt = 0; attempt <= 1; attempt += 1) {
-      const isLastAttempt = attempt === 1;
+      const isLastAttempt = attempt === 1 || req.retry === false;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
       try {

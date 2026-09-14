@@ -26,9 +26,11 @@ import { handleWrite } from './writes';
  *     application parses with. A fake that drifts toward "whatever makes the app pass"
  *     proves nothing, so this one fails loudly instead, with a 500 naming the field.
  *  2. **It behaves like the real thing where the real thing is awkward.** Articles page
- *     by opaque cursor; media pages by `limit`/`offset` and reports `total`. Those are
- *     two different models in one API, and the whole point of running against this is to
- *     catch code that assumes one.
+ *     by opaque cursor, or — as Kal El does since kal-el#7 — by `offset`, and then report
+ *     a `total`; media pages by `limit`/`offset` and always reports `total`. Those are
+ *     different models in one API, and the whole point of running against this is to
+ *     catch code that assumes one. `legacyArticleList` answers lists the way Kal El did
+ *     before that change, for the code paths that must survive such an instance.
  *
  * Authentication is checked the way the CMS checks it: a bearer service token, refused
  * with 401 when absent or wrong. That is what proves the delivery path never depends on
@@ -45,6 +47,12 @@ export interface FakeKalElOptions {
   writable?: boolean;
   /** Start with nothing, so a creation count means something. */
   empty?: boolean;
+  /**
+   * Answer article lists as Kal El did before kal-el#7: `order` and `offset` ignored (the
+   * query schema is not strict, so unknown parameters pass silently), `updatedAt` order,
+   * cursor paging only, and never a `total`.
+   */
+  legacyArticleList?: boolean;
 }
 
 export interface FakeKalEl {
@@ -74,18 +82,38 @@ const JPEG_BYTES = Buffer.from(
   'base64',
 );
 
+type ListOrder = 'updated' | 'published';
+
 /**
  * Cursor pagination, opaque to the caller.
  *
  * Base64 of an offset rather than the offset itself: the application must not be able to
- * do arithmetic on it, because against the real CMS it cannot.
+ * do arithmetic on it, because against the real CMS it cannot. Tagged with the order it
+ * was minted under, which Kal El enforces too: a cursor from one order is a 400 in the
+ * other, rather than a silently wrong page.
  */
-const encodeCursor = (offset: number): string => Buffer.from(`o:${offset}`).toString('base64url');
-const decodeCursor = (cursor: string | undefined): number => {
+const encodeCursor = (offset: number, order: ListOrder): string =>
+  Buffer.from(`${order === 'published' ? 'p' : 'u'}:${offset}`).toString('base64url');
+const decodeCursor = (cursor: string | null, order: ListOrder): number | null => {
   if (!cursor) return 0;
   const raw = Buffer.from(cursor, 'base64url').toString('utf8');
-  const n = /^o:(\d+)$/.exec(raw);
-  return n?.[1] ? Number(n[1]) : 0;
+  const match = /^([pu]):(\d+)$/.exec(raw);
+  if (!match?.[2] || match[1] !== (order === 'published' ? 'p' : 'u')) return null;
+  return Number(match[2]);
+};
+
+/** `updatedAt DESC, id DESC` — the default order, and the only one before kal-el#7. */
+const byUpdatedDesc = (a: Row, b: Row): number =>
+  String(b['updatedAt']).localeCompare(String(a['updatedAt'])) || b.id.localeCompare(a.id);
+
+/** `published_at DESC NULLS LAST, id DESC`, as `order=published` asks. */
+const byPublishedDesc = (a: Row, b: Row): number => {
+  const pa = typeof a['publishedAt'] === 'string' ? a['publishedAt'] : null;
+  const pb = typeof b['publishedAt'] === 'string' ? b['publishedAt'] : null;
+  if (pa === pb) return b.id.localeCompare(a.id);
+  if (pa === null) return 1;
+  if (pb === null) return -1;
+  return pb.localeCompare(pa);
 };
 
 function summarise(article: Row): Row {
@@ -204,16 +232,38 @@ export async function startFakeKalEl(port = 0, options: FakeKalElOptions = {}): 
           const needle = (q.get('q') ?? '').toLowerCase();
           items = items.filter((a) => String(a['title']).toLowerCase().includes(needle));
         }
-        // The real service orders by updatedAt DESC, id DESC.
-        items = [...items].sort((a, b) => String(b['updatedAt']).localeCompare(String(a['updatedAt'])));
+        const legacy = options.legacyArticleList === true;
+        const order: ListOrder = !legacy && q.get('order') === 'published' ? 'published' : 'updated';
+        items = [...items].sort(order === 'published' ? byPublishedDesc : byUpdatedDesc);
 
         const limit = Math.min(Math.max(Number(q.get('limit') ?? 25), 1), 100);
-        const offset = decodeCursor(q.get('cursor') ?? undefined);
+        const rawOffset = legacy ? null : q.get('offset');
+        const rawCursor = q.get('cursor');
+        if (rawOffset !== null && rawCursor) {
+          return fail(res, 400, 'bad_request', 'cursor and offset cannot be combined');
+        }
+        let offset: number;
+        if (rawOffset !== null) {
+          if (!/^\d+$/.test(rawOffset) || Number(rawOffset) > 100_000) {
+            return fail(res, 400, 'bad_request', 'offset must be a whole number from 0 to 100000');
+          }
+          offset = Number(rawOffset);
+        } else {
+          const decoded = decodeCursor(rawCursor, order);
+          if (decoded === null) return fail(res, 400, 'bad_request', `invalid cursor for order=${order}`);
+          offset = decoded;
+        }
         const page = items.slice(offset, offset + limit);
-        const next = offset + limit < items.length ? encodeCursor(offset + limit) : null;
+        const next = offset + limit < items.length ? encodeCursor(offset + limit, order) : null;
 
         return json(res, 200, {
-          data: kalelArticleListSchema.parse({ items: page.map(summarise), nextCursor: next }),
+          data: kalelArticleListSchema.parse({
+            items: page.map(summarise),
+            nextCursor: next,
+            // kal-el#7 counts the filter for any query that names an offset — offset 0 included,
+            // which is what lets one request both fill a page and number the pagination.
+            ...(rawOffset === null ? {} : { total: items.length }),
+          }),
         });
       }
 

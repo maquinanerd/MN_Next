@@ -18,6 +18,9 @@ import { previewTokenFor } from '../fake-kalel/server';
 
 const DESKS = ['cinema', 'series-e-tv', 'games', 'quadrinhos', 'animes', 'videos', 'especiais'];
 
+/** The same build, against the pre-kal-el#7 stand-in (`playwright.kalel.config.ts`). */
+const LEGACY_APP_URL = `http://127.0.0.1:${Number(process.env.PLAYWRIGHT_KALEL_LEGACY_PORT ?? 3102)}`;
+
 test.describe('pages render from the CMS', () => {
   test('the home is built from real article rows', async ({ page }) => {
     await page.goto('/');
@@ -219,12 +222,28 @@ test.describe('discovery surfaces enumerate the real corpus', () => {
   });
 });
 
-test.describe('the delivery path never runs unauthenticated', () => {
-  test('readiness reports the CMS as reachable', async ({ request }) => {
+test.describe('readiness checks the contract, not just the host', () => {
+  test('is ready against a Kal El that numbers its lists', async ({ request }) => {
+    // The probe is an authenticated list read with `offset`, so a 200 here means the
+    // token, the site id and the kal-el#7 `total` all work — not merely that a port answers.
     const res = await request.get('/api/health?ready=1');
     expect(res.status()).toBe(200);
+    expect(await res.json()).toEqual({ status: 'ok', checks: { env: 'ok', kalel: 'ok', contract: 'ok' } });
   });
 
+  test('is degraded against a Kal El without the offset change', async ({ request }) => {
+    // The second application points at a stand-in answering lists as Kal El did before
+    // kal-el#7: `offset` ignored, no `total`. Pages still render by walking the cursor,
+    // but that is not the deployment the runbook signs off, so it must not take traffic.
+    const res = await request.get(`${LEGACY_APP_URL}/api/health?ready=1`);
+    expect(res.status()).toBe(503);
+    expect(await res.json()).toEqual({ status: 'degraded', checks: { env: 'ok', kalel: 'ok', contract: 'degraded' } });
+    // Liveness is untouched: restarting the container would not deploy the CMS change.
+    expect((await request.get(`${LEGACY_APP_URL}/api/health`)).status()).toBe(200);
+  });
+});
+
+test.describe('the delivery path never runs unauthenticated', () => {
   test('no page leaks the service token', async ({ page }) => {
     for (const path of ['/', '/cinema', '/busca?q=trailer']) {
       await page.goto(path);

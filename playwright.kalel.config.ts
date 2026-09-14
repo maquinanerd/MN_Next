@@ -13,11 +13,41 @@ import { defineConfig, devices } from '@playwright/test';
  * (`tests/fake-kalel/`), and the application in `CONTENT_SOURCE=kalel` pointed at it with
  * a bearer token. One viewport, no screenshots — this gate is about whether the content
  * path works at all, not about how it looks.
+ *
+ * Plus a second pair, for the one thing a single stand-in cannot show: a Kal El without
+ * the publication-order change (kal-el#7), whose lists never carry `total`. Its
+ * application is the same build started a second time — it waits for the first server,
+ * which only answers once the build exists — so nothing is built twice.
  */
 
 const CMS_PORT = Number(process.env.FAKE_KALEL_PORT ?? 4010);
 const APP_PORT = Number(process.env.PLAYWRIGHT_KALEL_PORT ?? 3101);
+const LEGACY_CMS_PORT = Number(process.env.FAKE_KALEL_LEGACY_PORT ?? 4011);
+const LEGACY_APP_PORT = Number(process.env.PLAYWRIGHT_KALEL_LEGACY_PORT ?? 3102);
 const baseURL = `http://127.0.0.1:${APP_PORT}`;
+const legacyURL = `http://127.0.0.1:${LEGACY_APP_PORT}`;
+
+/** The application's environment against the stand-in on `cmsPort`, serving `siteUrl`. */
+function appEnv(cmsPort: number, siteUrl: string): Record<string, string> {
+  return {
+    APP_ENV: 'test',
+    // The whole point of this configuration.
+    CONTENT_SOURCE: 'kalel',
+    KAL_EL_BASE_URL: `http://127.0.0.1:${cmsPort}`,
+    KAL_EL_SITE_ID: '11111111-2222-4333-8444-555566667777',
+    KAL_EL_SERVICE_TOKEN: 'ke_st.fake0000000000000000000000000000',
+    KAL_EL_PREVIEW_SECRET: 'playwright-preview-secret-000000000000',
+    KAL_EL_WEBHOOK_SECRET: 'playwright-webhook-secret-000000000000',
+    // The URL this gate actually serves from, not a production-looking stand-in.
+    // The preview grant cookie is `Secure`, derived from this value: declare https
+    // while serving http and the browser silently drops the cookie, every preview
+    // 404s, and the failure looks like a broken redemption rather than a mismatched
+    // scheme. The fixture suite declares a production host because it asserts
+    // canonicals and robots; this one asserts the content path instead.
+    NEXT_PUBLIC_SITE_URL: siteUrl,
+    LOG_LEVEL: 'warn',
+  };
+}
 
 export default defineConfig({
   testDir: './tests/kalel',
@@ -55,24 +85,22 @@ export default defineConfig({
       url: `${baseURL}/api/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 300_000,
-      env: {
-        APP_ENV: 'test',
-        // The whole point of this configuration.
-        CONTENT_SOURCE: 'kalel',
-        KAL_EL_BASE_URL: `http://127.0.0.1:${CMS_PORT}`,
-        KAL_EL_SITE_ID: '11111111-2222-4333-8444-555566667777',
-        KAL_EL_SERVICE_TOKEN: 'ke_st.fake0000000000000000000000000000',
-        KAL_EL_PREVIEW_SECRET: 'playwright-preview-secret-000000000000',
-        KAL_EL_WEBHOOK_SECRET: 'playwright-webhook-secret-000000000000',
-        // The URL this gate actually serves from, not a production-looking stand-in.
-        // The preview grant cookie is `Secure`, derived from this value: declare https
-        // while serving http and the browser silently drops the cookie, every preview
-        // 404s, and the failure looks like a broken redemption rather than a mismatched
-        // scheme. The fixture suite declares a production host because it asserts
-        // canonicals and robots; this one asserts the content path instead.
-        NEXT_PUBLIC_SITE_URL: baseURL,
-        LOG_LEVEL: 'warn',
-      },
+      env: appEnv(CMS_PORT, baseURL),
+    },
+    {
+      command: `node --import tsx tests/fake-kalel/main.ts`,
+      url: `http://127.0.0.1:${LEGACY_CMS_PORT}/health`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+      env: { FAKE_KALEL_PORT: String(LEGACY_CMS_PORT), FAKE_KALEL_LEGACY_ARTICLE_LIST: '1' },
+    },
+    {
+      // No build of its own: the first application answering is the proof the build exists.
+      command: `pnpm exec tsx scripts/wait-for.ts ${baseURL}/api/health 330000 && pnpm start --port ${LEGACY_APP_PORT}`,
+      url: `${legacyURL}/api/health`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 360_000,
+      env: appEnv(LEGACY_CMS_PORT, legacyURL),
     },
   ],
 });
