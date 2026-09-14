@@ -79,10 +79,11 @@ faltar qualquer uma — inclusive `TRUST_PROXY`, que precisa ser respondida expl
 | Sinal                       | Onde        | O que significa                                                |
 | --------------------------- | ----------- | -------------------------------------------------------------- |
 | `GET /api/health`           | balanceador | processo vivo. Não depende do CMS de propósito                 |
-| `GET /api/health?ready=1`   | balanceador | ambiente válido **e** Kal El alcançável                        |
+| `GET /api/health?ready=1`   | operador    | ambiente válido, token aceito e contrato do Kal El (abaixo)    |
 | `content.optional-degraded` | log         | um módulo opcional caiu; a página continuou                    |
 | `kalel.contract.violation`  | log         | o CMS mudou de formato. **Alerta**                             |
 | `kalel.read.error`          | log         | indisponibilidade do CMS                                       |
+| `kalel.read.rate-limited`   | log         | o Kal El recusou o token por excesso de chamadas. **Alerta**   |
 | `revalidate.rejected`       | log         | webhook com assinatura ou evento inválido. Investigar          |
 | `revalidate.duplicate`      | log         | reentrega normal. Não é erro                                   |
 | `preview.rejected`          | log         | token de preview inválido ou expirado                          |
@@ -91,6 +92,22 @@ faltar qualquer uma — inclusive `TRUST_PROXY`, que precisa ser respondida expl
 
 Toda linha é JSON com `event`, `time` e um `correlationId` quando existe um. Segredos são
 removidos na saída; nenhum log carrega token.
+
+**`?ready=1`** faz a leitura sem a qual nada funciona: artigos publicados, `order=published`,
+`offset=0`, `limit=1`, autenticada e sem cache, uma tentativa em 2 s. Fora de `ok` responde
+503, e `checks` diz o motivo:
+
+| `checks`              | Significa                                                                    |
+| --------------------- | ---------------------------------------------------------------------------- |
+| `env: fail`           | ambiente inválido — o boot lista cada variável                               |
+| `kalel: unauthorized` | token revogado, de outro site ou sem `articles.read`                         |
+| `kalel: unreachable`  | o CMS não respondeu no prazo                                                 |
+| `kalel: fail`         | o CMS respondeu com outra recusa (5xx, 429, site inexistente)                |
+| `contract: fail`      | a lista não bate com o schema — ver `kalel.contract.violation`               |
+| `contract: degraded`  | a lista veio sem `total`: o Kal El não tem a ordem por publicação (kal-el#7) |
+
+O healthcheck do container usa só `/api/health`: uma queda do CMS não pode derrubar e
+reiniciar o portal dentro da mesma queda.
 
 ### Alertas que valem acordar alguém
 
@@ -376,9 +393,10 @@ curl -fsS http://127.0.0.1:3002/api/health
 curl -fsS 'http://127.0.0.1:3002/api/health?ready=1'
 ```
 
-- **O build lê o Kal El** (seção 4.4), então precisa das variáveis. Elas entram como
-  _secret_ do BuildKit (`portal_env`), montado só no `RUN pnpm build`: não ficam em camada
-  nem em `docker history`. Nunca passe o token como `--build-arg`.
+- **O build lê o Kal El** (seção 4.4), então precisa das variáveis. Neste compose elas
+  entram como _secret_ do BuildKit (`portal_env`), montado só no `RUN` do build: não ficam
+  em camada, em `docker history` nem em argumento de build. O Coolify não monta _secret_, e
+  o compose dele passa as mesmas variáveis como _build args_ (4.5.1).
 - `KAL_EL_BASE_URL` é a origem **https pública** do CMS, não o nome do serviço no compose:
   a validação de ambiente recusa origem em texto puro em produção.
 - Porta publicada só em `127.0.0.1:3002`: um proxy no próprio host usa
@@ -386,22 +404,53 @@ curl -fsS 'http://127.0.0.1:3002/api/health?ready=1'
   compartilhada com o serviço `portal` e dispensa a porta. Nunca publique em `0.0.0.0`:
   com `TRUST_PROXY=true` (o compose já define) quem chegasse direto forjaria
   `X-Forwarded-For`.
+- **`TRUST_PROXY=true` pressupõe um proxy que reescreve `X-Forwarded-For`**, como o Traefik
+  faz no padrão (sem `forwardedHeaders.insecure` nem `trustedIPs`): o limite da busca usa o
+  primeiro endereço do cabeçalho. Um CDN na frente que _acrescenta_ ao cabeçalho devolve
+  esse primeiro endereço ao chamador, que passa a forjá-lo — antes de pôr um, troque a chave
+  de `lib/rate-limit.ts` pelo cabeçalho do CDN.
 - **Uma instância.** Cache ISR e nonce do webhook vivem no processo (seção 3). Escalar
   horizontalmente exige cache handler e `NonceStore` compartilhados antes.
 - **Rollback de deploy:** marque cada imagem com o commit (`-t maquinanerd-portal:<sha>`) e
   volte com `docker compose up -d` na tag anterior. Nada no portal tem estado a migrar.
 
+### 4.5.1 No Coolify
+
+É como o staging roda, no mesmo servidor do Kal El, com `docker-compose.coolify.yml` — o
+mesmo modelo do compose do Kal El:
+
+1. **Recurso novo:** repositório `maquinanerd/MN_Next` (público), branch
+   `chore/maquina-nerd-kalel-migration`, build pack **Docker Compose**, arquivo
+   `/docker-compose.coolify.yml`.
+2. **Domínio** do serviço `portal` em **https** antes do primeiro deploy. O `sslip.io`
+   gerado serve; um host real precisa do DNS antes. `NEXT_PUBLIC_SITE_URL` sai daí e entra
+   no build — trocar o domínio exige redeploy.
+3. **Variáveis**, em Environment Variables: `KAL_EL_BASE_URL` (a origem https da API do
+   Kal El) e `KAL_EL_SITE_ID`. `MEDIA_ALLOWED_HOSTS` fica vazio: a mídia do Kal El exige
+   token e sai pelo proxy `/media/[id]`. `SERVICE_BASE64_64_WEBHOOK` e
+   `SERVICE_BASE64_64_PREVIEW` o Coolify gera.
+4. **Provisionamento** (seção 1.0), na máquina do operador, com `PORTAL_PUBLIC_URL` = o
+   domínio do passo 2 e `KAL_EL_WEBHOOK_SECRET` = o valor de `SERVICE_BASE64_64_WEBHOOK`:
+   `pnpm kalel:provision --apply --new-token`. O token de entrega aparece **uma vez**.
+5. **`KAL_EL_SERVICE_TOKEN`** colado direto no Coolify. Nunca em arquivo, chat ou commit.
+6. **Deploy.** Depois: `GET /api/health` → 200; `GET /api/health?ready=1` → 200 com
+   `"contract":"ok"`; `robots.txt` com `Disallow: /` e `X-Robots-Tag: noindex, nofollow`
+   enquanto `APP_ENV=staging`.
+
+O token chega ao build como _build arg_. Não fica na imagem que roda, mas quem inspeciona
+builds naquele host o vê — o mesmo grupo que já o lê no ambiente do container em execução.
+Lembre que é um token com escopos `*.manage` de taxonomia e SEO (seção 1.1): se o host mudar
+de mãos, revogue e emita outro.
+
 ## 5. Virada
 
-0. **Kal El pronto.** Mergear e publicar no CMS os PRs
-   [kal-el#6](https://github.com/maquinanerd/kal-el/pull/6) (filtro `?slug=`) e
-   [kal-el#7](https://github.com/maquinanerd/kal-el/pull/7) (ordem por publicação), nessa
-   ordem, rodando a migração `0006` — o `CREATE INDEX` trava escrita em `articles` enquanto
-   constrói, então rode fora do pico (ver [KAL-EL-DISCOVERY.md](./KAL-EL-DISCOVERY.md)).
-   Depois `pnpm kalel:provision --apply --new-token` contra o site de produção.
-1. **Staging com `noindex`.** `APP_ENV=staging` e um host que não seja o de produção — o
-   `robots.ts` já devolve `Disallow: /` para host de staging. Aberto à redação por uma
-   semana.
+0. **Kal El pronto.** [kal-el#6](https://github.com/maquinanerd/kal-el/pull/6) (filtro
+   `?slug=`) e [kal-el#7](https://github.com/maquinanerd/kal-el/pull/7) (ordem por
+   publicação) estão mergeados e publicados desde 2026-09-14; a migração `0006` rodou no
+   boot da API. `?ready=1` com `"contract":"ok"` é a confirmação. Depois
+   `pnpm kalel:provision --apply --new-token` contra o site de produção.
+1. **Staging com `noindex`.** `APP_ENV=staging`: `robots.txt` devolve `Disallow: /` e toda
+   resposta leva `X-Robots-Tag: noindex, nofollow`. Aberto à redação por uma semana.
 2. **Sitemaps no Search Console antes do DNS.**
 3. **Congelamento de publicação no WordPress.** Delta final:
    `pnpm wp:import --apply --resume --since <ISO>`.

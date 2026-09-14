@@ -78,15 +78,22 @@ X-Kal-El-Signature: sha256=<hex hmac-sha256 do corpo bruto>
 ### Divergência registrada: não existe timestamp assinado
 
 O contrato-alvo (`docs/02-kalel-integration.md`) presume `timestamp ≤ 5 min` no header.
-**O Kal El não envia timestamp.** A proteção contra replay foi construída com o que existe:
+**O Kal El não envia timestamp.** A proteção foi construída com o que existe:
 
-1. `X-Kal-El-Idempotency` como nonce, com claim **atômico** (`MemoryNonceStore.claim`);
-2. o `publishedAt` **assinado** limita quão antiga uma publicação pode ser.
+1. `X-Kal-El-Signature`, o HMAC do corpo bruto: entrega forjada ou alterada é recusada;
+2. `X-Kal-El-Idempotency` como nonce, com claim **atômico** (`MemoryNonceStore.claim`):
+   uma reentrega é confirmada com 200 e descartada.
 
-Isso impede replay de uma entrega capturada. É mais fraco do que um timestamp assinado
-apenas contra um adversário que consiga forjar `publishedAt` — o que a assinatura já
-impede. **Mudança sugerida ao Kal El:** incluir `issuedAt` e `eventId` no payload
-assinado.
+**Não há janela de frescor.** Uma versão anterior recusava `article.published` com
+`publishedAt` mais velho que 5 minutos. Só que `publishedAt` não mede a idade da entrega: o
+worker retenta com backoff, até 5 vezes, e um portal reiniciando na hora da publicação
+recusava todas as tentativas — a matéria ficava velha até vencer o ISR. A janela não
+protegia nada que o nonce já não protegesse; um replay depois do TTL do nonce só purga um
+cache outra vez.
+
+**Mudança sugerida ao Kal El:** incluir `issuedAt` (por tentativa) e `eventId` no payload
+assinado. Com eles o portal volta a ter janela, medida sobre a entrega e não sobre a
+publicação.
 
 > **Operação multi-instância.** O nonce store é em processo. Com mais de uma instância o
 > pior caso é uma revalidação redundante — nunca um efeito colateral duplicado, porque
@@ -189,11 +196,12 @@ parâmetros desconhecidos porque o schema não é `.strict()`), percorre o curso
 `publishedAt` em memória. Os dois caminhos estão cobertos em
 `tests/integration/repository.test.ts`.
 
-**Para ir ao ar com a ordem certa e paginação O(1):** revisar e mergear as duas branches no
-Kal El, rodar a migração `0006` (só cria índice; `CREATE INDEX` sem `CONCURRENTLY` trava
-escrita na tabela `articles` durante a criação — em acervo grande, rodar fora do horário de
-pico ou trocar por `CONCURRENTLY` manualmente) e fazer o deploy da API **antes** da virada
-do portal.
+**Para ir ao ar com a ordem certa e paginação O(1):** feito em 2026-09-14 — kal-el#6 e #7
+mergeados, API publicada no Coolify, migração `0006` aplicada no boot. A migração não pode
+usar `CONCURRENTLY`: o migrador do drizzle aplica as pendentes numa transação só. Ela usa
+`SET LOCAL lock_timeout = '5s'` (falha rápido em vez de enfileirar escritas) e
+`CREATE INDEX IF NOT EXISTS`; numa instância com acervo grande, crie o índice antes, à mão,
+com `CREATE INDEX CONCURRENTLY IF NOT EXISTS …`, e a migração vira no-op.
 
 ## Layout de matéria: tag reservada
 

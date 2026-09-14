@@ -145,9 +145,11 @@ mudá-las é mudar `RESERVED_TAGS` em um arquivo.
 
 ### 3.4 Proteção de replay sem timestamp assinado
 
-O Kal El não envia timestamp. A defesa é o nonce de idempotência com _claim atômico_ mais
-a janela derivada do `publishedAt` assinado. O store é em processo; em múltiplas instâncias
-o pior caso é uma revalidação redundante, nunca um efeito duplicado.
+O Kal El não envia timestamp. A defesa é a assinatura HMAC do corpo mais o nonce de
+idempotência com _claim atômico_. Houve também uma janela derivada do `publishedAt`
+assinado; saiu na revisão do PR (§7.13), porque recusava as retentativas legítimas do
+worker. O store é em processo; em múltiplas instâncias o pior caso é uma revalidação
+redundante, nunca um efeito duplicado.
 
 ### 3.5 Preview: sessão presa a um artigo
 
@@ -574,3 +576,59 @@ aceitos e corrigidos:
 
 Mantido: o token de entrega continua com escopos `taxonomy.*.manage`, porque o Kal El não
 tem escopo de leitura de taxonomia (proposta em KAL-EL-DISCOVERY).
+
+### 7.13 O que a revisão do PR mudou antes do merge
+
+Revisão independente do [MN_Next#1](https://github.com/maquinanerd/MN_Next/pull/1), feita
+antes de subir o staging no Coolify. Achados aceitos e corrigidos:
+
+- **B1 — a imagem só construía com um `.env.production` na máquina.** O `Dockerfile` exigia
+  o _secret_ `portal_env`, e o build pack "Docker Compose" do Coolify não monta _secret_ de
+  BuildKit. Agora o _secret_ é opcional: com ele, `node --env-file`; sem ele, os argumentos
+  de build. Os `ARG` são só declarados no estágio de build — `ENV X=${X}` definiria como
+  vazio o que ninguém passou, e uma variável definida, mesmo vazia, vence a do arquivo — e o
+  estágio que roda não recebe nenhum. `docker-compose.coolify.yml` segue o compose do Kal El:
+  sem `ports`, domínio por `SERVICE_URL_PORTAL_3000`, segredos de assinatura gerados pelo
+  Coolify, `TRUST_PROXY=true`, healthcheck na liveness. `public/fixtures` saiu da imagem.
+  Como esta máquina não tem daemon Docker, um job de CI (`image`) constrói a imagem em modo
+  fixture e sobe o container a cada PR.
+  - `SERVICE_BASE64_64_*`, e não `SERVICE_HEX_64_*`: é o gerador que o `SESSION_SECRET` do
+    Kal El já usa naquele servidor (64 alfanuméricos, dentro dos 16–128 que o Kal El aceita
+    para segredo de webhook). Um nome mágico que o Coolify não reconhecesse viraria variável
+    vazia, e o build pararia na validação de ambiente.
+  - Custo aceito: no Coolify o token de entrega chega ao build como argumento. Não fica na
+    imagem que roda; quem inspeciona builds no host o vê — o mesmo grupo que já o lê no
+    ambiente do container.
+- **B2 — readiness verde com o contrato quebrado.** `?ready=1` consultava o `/health` do
+  Kal El, que responde sem token. Agora faz a leitura autenticada, com `offset=0`, e exige
+  `total`: um Kal El sem a ordem por publicação (kal-el#7) fica `contract: degraded`, 503. O
+  fake do Kal El implementa `offset`/`total` e cursores marcados por ordem, como o #7, e tem
+  um modo legado; o gate `test:kalel` sobe uma segunda cópia do build contra ele.
+- **H1 — redirects de preview absolutos.** Atrás do proxy o servidor standalone monta
+  `request.url` com `0.0.0.0:3000`, e `/api/preview` e `/api/preview/disable` mandavam o
+  editor para lá. O `Location` agora é relativo, escrito à mão (`NextResponse.redirect`
+  recusa URL relativa); os cookies de draft mode e do grant continuam indo, porque o Next os
+  mescla em qualquer `Response`.
+- **H2 — a cota do token era de quem quisesse gastar.** O Kal El dá 600 requisições por
+  minuto por token, para o site inteiro. `/busca` para na página 5 (depois, 404) e conta
+  buscas por cliente com `RATE_LIMIT_MAX`; acima dele mostra um aviso sem consultar o CMS,
+  porque um Server Component não responde 429. O transporte espera um `retry-after` de até
+  2 s, uma vez, e registra `kalel.read.rate-limited` quando desiste.
+- **M1 — `kalel.contract.violation` nunca era escrito.** `KalElTransport.fromEnv()` deixava
+  `onLog` vazio. O logger foi para `@mn/content` e o transporte o usa por padrão.
+- **M2 — a janela de frescor do webhook recusava retentativas legítimas.** Removida, com
+  `REVALIDATE_MAX_SKEW_SECONDS` (§3.4 e KAL-EL-DISCOVERY).
+- **M3 — `robots.txt` congelado no build.** Agora é dinâmico, e fora de produção o
+  middleware põe `X-Robots-Tag: noindex, nofollow` em toda resposta.
+- **Baixo.** `/api/revalidate` recusa pelo `content-length` declarado antes de ler o corpo.
+  `clientKey` confia no primeiro endereço de `X-Forwarded-For` com `TRUST_PROXY=true`: certo
+  atrás do Traefik no padrão, que descarta o cabeçalho vindo do cliente e escreve o endereço
+  real; errado atrás de um proxy que acrescenta ao valor recebido (RUNBOOK §4.5).
+
+**H3 — fora deste PR, obrigatório antes de importar o acervo do WordPress.** O `context()`
+do repositório Kal El carrega categorias, tags, autores e entidades inteiros e **percorre a
+biblioteca de mídia inteira por offset** (`fetchMediaIndex`), uma vez por janela de
+revalidação. Com o site vazio de hoje são poucas chamadas; com o acervo são centenas por
+janela, contra os 600 por minuto do token, e a mídia além de `MAX_MEDIA_PAGES` some das
+páginas sem erro nenhum. Precisa de leitura por ids no Kal El (`…/media?ids=`, e o mesmo
+para tags) e de o repositório pedir só o que a página vai mostrar.
