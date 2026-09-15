@@ -428,7 +428,10 @@ mesmo modelo do compose do Kal El:
 3. **Variáveis**, em Environment Variables: `KAL_EL_BASE_URL` (a origem https da API do
    Kal El) e `KAL_EL_SITE_ID`. `MEDIA_ALLOWED_HOSTS` fica vazio: a mídia do Kal El exige
    token e sai pelo proxy `/media/[id]`. `SERVICE_BASE64_64_WEBHOOK` e
-   `SERVICE_BASE64_64_PREVIEW` o Coolify gera.
+   `SERVICE_BASE64_64_PREVIEW` o Coolify gera. O campo de valor do Coolify é do tipo senha:
+   o preenchimento automático do navegador pode pôr um e-mail salvo em "Comment" e uma senha
+   salva em "Value". Escreva o comentário antes do valor e confira os dois antes de salvar.
+   Uma variável que ficar vazia aparece no build como `… is required in staging`.
 4. **Provisionamento** (seção 1.0), na máquina do operador, com `PORTAL_PUBLIC_URL` = o
    domínio do passo 2 e `KAL_EL_WEBHOOK_SECRET` = o valor de `SERVICE_BASE64_64_WEBHOOK`:
    `pnpm kalel:provision --apply --new-token`. O token de entrega aparece **uma vez**.
@@ -436,6 +439,11 @@ mesmo modelo do compose do Kal El:
 6. **Deploy.** Depois: `GET /api/health` → 200; `GET /api/health?ready=1` → 200 com
    `"contract":"ok"`; `robots.txt` com `Disallow: /` e `X-Robots-Tag: noindex, nofollow`
    enquanto `APP_ENV=staging`.
+
+No Windows, `scripts/coolify-provision.ps1` faz os passos 4 e 5 e dispara o deploy: lê
+`SERVICE_BASE64_64_WEBHOOK` pela API do Coolify, roda o provisionamento e grava o token de
+entrega direto em `KAL_EL_SERVICE_TOKEN`, sem imprimi-lo. Pede, sem eco, um token da API do
+Coolify (leitura de segredos, escrita e deploy) e a senha do owner no Kal El.
 
 O token chega ao build como _build arg_, e o Coolify injeta um `ARG` por variável do recurso
 em todas as etapas do Dockerfile, inclusive a final: o valor fica nos metadados da imagem
