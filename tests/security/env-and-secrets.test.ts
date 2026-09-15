@@ -83,6 +83,30 @@ describe('production environment guards', () => {
     }
   });
 
+  it('reports an empty variable as missing, which is how a platform passes an unset one', () => {
+    // Compose and Coolify hand an unset `${VAR}` to the build as an empty string. Read as a
+    // value it failed as "Invalid url", which sent the operator looking for a typo in a
+    // variable nobody had filled in — what the first Coolify deployment actually printed.
+    const staging = { ...PROD_BASE, APP_ENV: 'staging' } as NodeJS.ProcessEnv;
+    try {
+      validateEnv({ ...staging, KAL_EL_BASE_URL: '', KAL_EL_SITE_ID: '  ' });
+      throw new Error('expected a rejection');
+    } catch (err) {
+      const issues = (err as EnvError).issues;
+      expect(issues).toContain('KAL_EL_BASE_URL is required in staging');
+      expect(issues).toContain('KAL_EL_SITE_ID is required in staging');
+      expect(issues.join(' ')).not.toMatch(/Invalid (url|uuid)/);
+    }
+  });
+
+  it('does not let an empty site URL fall back to the development default where readers are served', () => {
+    expect(() => validateEnv({ ...PROD_BASE, APP_ENV: 'staging', NEXT_PUBLIC_SITE_URL: '' })).toThrow(EnvError);
+    // Where nobody is served, the default still applies.
+    expect(validateEnv({ NODE_ENV: 'development', NEXT_PUBLIC_SITE_URL: '' }).NEXT_PUBLIC_SITE_URL).toBe(
+      'http://localhost:3000',
+    );
+  });
+
   it('refuses every private range as an image host, not just the obvious three', () => {
     // The check used to be a regex that knew about 10., 192.168. and 127. — so
     // 172.16.0.1 and every IPv6 spelling of a private address walked straight through.
