@@ -83,8 +83,24 @@ try {
   Invoke-RestMethod -Method Patch -Uri $appEnvs -Headers $headers -ContentType 'application/json' -Body $body | Out-Null
 
   Write-Host '4/4 Queueing a deployment of the portal'
-  $deploy = Invoke-RestMethod -Method Get -Uri "$api/deploy?uuid=$ApplicationUuid&force=false" -Headers $headers
-  foreach ($d in @($deploy.deployments)) { Write-Host "    $($d.message)" }
+  # The method differs between Coolify releases: 4.3.19 answers GET with 405.
+  $deploy = $null
+  foreach ($method in 'Post', 'Get') {
+    try {
+      $deploy = Invoke-RestMethod -Method $method -Uri "$api/deploy?uuid=$ApplicationUuid&force=false" -Headers $headers
+      break
+    }
+    catch {
+      if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 405) { continue }
+      throw
+    }
+  }
+  if ($deploy) {
+    foreach ($d in @($deploy.deployments)) { Write-Host "    $($d.message)" }
+  }
+  else {
+    Write-Host '    Coolify refused both methods. The token is stored: deploy the portal from the panel.'
+  }
   Write-Host 'Done. If a delivery token had been minted before, revoke the older one in the CMS.'
 }
 finally {
