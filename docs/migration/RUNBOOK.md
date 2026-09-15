@@ -437,10 +437,11 @@ mesmo modelo do compose do Kal El:
    `"contract":"ok"`; `robots.txt` com `Disallow: /` e `X-Robots-Tag: noindex, nofollow`
    enquanto `APP_ENV=staging`.
 
-O token chega ao build como _build arg_. Não fica na imagem que roda, mas quem inspeciona
-builds naquele host o vê — o mesmo grupo que já o lê no ambiente do container em execução.
-Lembre que é um token com escopos `*.manage` de taxonomia e SEO (seção 1.1): se o host mudar
-de mãos, revogue e emita outro.
+O token chega ao build como _build arg_, e o Coolify injeta um `ARG` por variável do recurso
+em todas as etapas do Dockerfile, inclusive a final: o valor fica nos metadados da imagem
+naquele servidor (`docker history`). Quem o vê é quem tem acesso ao Docker do host — o mesmo
+grupo que já o lê no ambiente do container em execução. Lembre que é um token com escopos
+`*.manage` de taxonomia e SEO (seção 1.1): se o host mudar de mãos, revogue e emita outro.
 
 ## 5. Virada
 

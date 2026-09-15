@@ -84,8 +84,20 @@ export class EnvError extends Error {
   }
 }
 
+/**
+ * An empty variable is an absent one. Compose passes an unset `${VAR}` as an empty string,
+ * and so does a platform that forwards every declared variable to the build (Coolify): read
+ * as a value, an unfilled KAL_EL_BASE_URL failed as "Invalid url" — a malformed value —
+ * instead of being reported as the missing variable it is.
+ */
+function withoutEmpty(raw: NodeJS.ProcessEnv): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(raw).filter((entry): entry is [string, string] => entry[1] !== undefined && entry[1].trim() !== ''),
+  );
+}
+
 function build(raw: NodeJS.ProcessEnv): ServerEnv {
-  const parsed = baseSchema.safeParse(raw);
+  const parsed = baseSchema.safeParse(withoutEmpty(raw));
   if (!parsed.success) {
     throw new EnvError(parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`));
   }
@@ -99,6 +111,10 @@ function build(raw: NodeJS.ProcessEnv): ServerEnv {
   const where = appEnv;
 
   if (servesReaders) {
+    // The schema's default host is for development. Now that an empty value counts as
+    // absent, a deployment that serves readers must name its own, or it would quietly get
+    // localhost in its canonicals.
+    if (!raw.NEXT_PUBLIC_SITE_URL?.trim()) issues.push(`NEXT_PUBLIC_SITE_URL is required in ${where}`);
     if (env.CONTENT_SOURCE !== 'kalel') {
       issues.push(`CONTENT_SOURCE must be "kalel" in ${where} - the fixture provider must never serve readers`);
     }
