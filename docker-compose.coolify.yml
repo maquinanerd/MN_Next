@@ -18,7 +18,10 @@
 #
 # `next build` prerenders from Kal El and validates the environment, and this build pack
 # cannot mount a BuildKit secret, so what the build reads is passed as build arguments too.
-# The Dockerfile declares them in the build stage only; the image that runs has none.
+# Coolify also injects an ARG for every variable of the resource into every stage of the
+# Dockerfile, the runner included, so these values reach the image's build metadata on this
+# server: readable with `docker history` by whoever can run Docker there — the same people
+# who can already read them in the running container's environment.
 
 services:
   portal:

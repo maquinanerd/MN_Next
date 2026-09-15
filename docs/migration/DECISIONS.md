@@ -596,9 +596,13 @@ antes de subir o staging no Coolify. Achados aceitos e corrigidos:
     Kal El já usa naquele servidor (64 alfanuméricos, dentro dos 16–128 que o Kal El aceita
     para segredo de webhook). Um nome mágico que o Coolify não reconhecesse viraria variável
     vazia, e o build pararia na validação de ambiente.
-  - Custo aceito: no Coolify o token de entrega chega ao build como argumento. Não fica na
-    imagem que roda; quem inspeciona builds no host o vê — o mesmo grupo que já o lê no
-    ambiente do container.
+  - Custo aceito: no Coolify o token de entrega chega ao build como argumento, e o Coolify
+    injeta um `ARG` para cada variável do recurso em **todas** as etapas do Dockerfile,
+    inclusive a final (no log do primeiro deploy: "Added 44 ARG declarations … added to 4
+    stages"). O valor fica nos metadados da imagem naquele servidor (`docker history`),
+    legível por quem tem acesso ao Docker do host — o mesmo grupo que já lê o token no
+    ambiente do container em execução. A imagem não sai do servidor. Eliminar isso exige que
+    o build deixe de ler o CMS com o token, ou que o Coolify monte _secret_ de build.
 - **B2 — readiness verde com o contrato quebrado.** `?ready=1` consultava o `/health` do
   Kal El, que responde sem token. Agora faz a leitura autenticada, com `offset=0`, e exige
   `total`: um Kal El sem a ordem por publicação (kal-el#7) fica `contract: degraded`, 503. O

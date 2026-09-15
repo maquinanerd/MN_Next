@@ -15,7 +15,9 @@
 #     -t maquinanerd-portal .
 #
 #   # build arguments (docker-compose.coolify.yml), where the platform cannot mount a
-#   # secret: declared in the build stage only, so the image that runs carries none of them
+#   # secret. This file declares them in the build stage only, but Coolify injects an ARG
+#   # for every resource variable into every stage, so there they do reach the image's
+#   # build metadata (`docker history` on that server)
 #   docker build --build-arg APP_ENV=staging --build-arg CONTENT_SOURCE=kalel ... .
 #
 # The runtime reads the same variables from the container's environment.
