@@ -457,7 +457,7 @@ grupo que já o lê no ambiente do container em execução. Lembre que é um tok
 
 ## 5. Virada
 
-> Feita em 2026-09-16, fora desta ordem: o WordPress já estava fora do ar, e o dono decidiu
+> Feita em 2026-09-16, fora desta ordem: o WordPress já estava fora do ar, e o owner decidiu
 > virar antes da importação do acervo. Registro em
 > [FINAL-VERIFICATION §4.3](./FINAL-VERIFICATION.md), decisões em
 > [DECISIONS §7.14](./DECISIONS.md). A lista abaixo fica como procedimento de referência.

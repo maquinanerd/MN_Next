@@ -646,7 +646,7 @@ Registro da execução em [FINAL-VERIFICATION §4.3](./FINAL-VERIFICATION.md).
   Na hora da virada o WordPress já estava fora do ar: o DNS apontava para este servidor, onde
   nada atendia esses nomes, e só a home saía, de um cache antigo do Cloudflare. Esperar a
   importação deixava o site fora do ar; virar troca isso por 404 nas URLs antigas até a
-  importação. O dono escolheu virar. Com isso, não existe mais rollback para o WordPress.
+  importação. O owner escolheu virar. Com isso, não existe mais rollback para o WordPress.
 - **Raiz para `www` no Cloudflare, não no Coolify.** O redirecionamento do Coolify vale para o
   recurso inteiro e mandaria também o `sslip.io` para o `www`. A regra do Cloudflare pega só
   `https://maquinanerd.com.br/*`: 301, mesma rota, mesma query string.

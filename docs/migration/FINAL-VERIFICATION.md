@@ -211,7 +211,7 @@ onde nada atendia esses nomes: qualquer URL caía no "no available server" do Tr
 WordPress não estava mais no ar, e só a home saía, de um cache antigo do Cloudflare. Uma
 matéria publicada pelo CMS já aparecia no staging.
 
-**Decisão do dono:** virar já para o portal novo, antes da importação do acervo, aceitando 404
+**Decisão do owner:** virar já para o portal novo, antes da importação do acervo, aceitando 404
 nas URLs antigas até lá, e pôr no proxy também os registros `vps`
 ([DECISIONS §7.14](./DECISIONS.md)).
 
@@ -301,7 +301,7 @@ Passo a passo no [RUNBOOK §5](./RUNBOOK.md). Em resumo:
 2. **Provisionar:** ✅ feito em 2026-09-15, pelo operador, com `scripts/coolify-provision.ps1`.
 3. **Staging:** ✅ no ar no Coolify em 2026-09-15, com readiness `"contract":"ok"` (seção
    4.2), e com a primeira matéria publicada pelo CMS.
-4. **Virada:** ✅ feita em 2026-09-16, antes da importação, por decisão do dono: o WordPress já
+4. **Virada:** ✅ feita em 2026-09-16, antes da importação, por decisão do owner: o WordPress já
    estava fora do ar (seção 4.3).
 5. **Importação e URLs:** pendente, agora depois da virada. Antes, o H3 (seção 7); depois,
    `pnpm urls:verify` com a amostra de tráfego. Até lá, URL antiga do WordPress responde 404.
@@ -326,7 +326,7 @@ Nenhuma é contornável por código neste repositório.
 | 9   | Revisão jurídica                                                 | termos, privacidade, cookies e afiliados  | os textos são rascunhos neutros, sem promessa que o site não cumpra                                   |
 | 10  | Revisor Codex                                                    | revisão independente pelo Codex           | atualizar a CLI numa máquina com acesso; rodar `codex review --uncommitted`                           |
 | 11  | Merge do PR #3 e redeploy do portal                              | rate limit por leitor atrás do Cloudflare | mesclar e disparar o deploy do recurso no Coolify (seção 4.3)                                         |
-| 12  | App antigo `kal-el:main-xgcxdbykmr…` no Coolify                  | nada — mas refaz o build a cada push      | decisão do dono do servidor: parar o auto-deploy ou remover; nunca subiu (Railpack)                   |
+| 12  | App antigo `kal-el:main-xgcxdbykmr…` no Coolify                  | nada — mas refaz o build a cada push      | decisão do owner do servidor: parar o auto-deploy ou remover; nunca subiu (Railpack)                  |
 | 13  | Matérias no Kal El                                               | as editorias saem com pouco conteúdo      | publicar pelo CMS, ou importar o acervo depois do H3; cada publicação revalida pelo webhook           |
 | 14  | Search Console                                                   | indexação do site novo                    | enviar `sitemap.xml` e `news-sitemap.xml` do `www`; acompanhar os 404 das URLs antigas                |
 | 15  | SSL "Completo (estrito)" no Cloudflare                           | nada — é endurecimento                    | a origem já tem certificados válidos; antes, garantir a renovação ([DECISIONS §7.14](./DECISIONS.md)) |
