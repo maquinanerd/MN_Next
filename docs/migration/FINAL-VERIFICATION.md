@@ -159,12 +159,47 @@ PRs #5 a #10 do Kal El, publicado e conferido.
 | TLS             | certificado Let's Encrypt válido nos dois domínios; http → https com 302                                  |
 | Bootstrap       | `POST /v1/bootstrap/init` → 403 "bootstrap is not available": owner criado e token vazio (kal-el#10)      |
 
-**Portal no Coolify** (projeto "Máquina Nerd", ambiente `production`): recurso criado do
-repositório público, branch `chore/maquina-nerd-kalel-migration`, build pack Docker Compose com
+**Portal no Coolify** (projeto "Máquina Nerd", ambiente `production`): recurso do repositório
+público, branch `chore/maquina-nerd-kalel-migration`, build pack Docker Compose com
 `docker-compose.coolify.yml`, domínio gerado passado a https
-(`https://portal-xys58xzntjzf3xd5ar5snoq5.62.171.164.224.sslip.io`). **O deploy ainda não
-rodou:** espera o provisionamento no Kal El e o token de entrega, que só o operador faz
-(seção 5).
+(`https://portal-xys58xzntjzf3xd5ar5snoq5.62.171.164.224.sslip.io`). Três deploys até o verde,
+cada falha com a causa escrita no log do build:
+
+| Deploy | Commit    | Resultado     | Causa e correção                                                                                                                                                                                                                                        |
+| ------ | --------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1      | `eb58b4c` | falhou        | `KAL_EL_BASE_URL: Invalid url` e `KAL_EL_SITE_ID: Invalid uuid`: as duas variáveis vazias, que o Coolify repassa como texto vazio. Preenchidas; a validação passou a tratar vazio como ausente ([PR #2](https://github.com/maquinanerd/MN_Next/pull/2)) |
+| 2      | `7806247` | falhou        | `KAL_EL_SERVICE_TOKEN is required in staging`, já com a mensagem nova. O operador rodou `scripts/coolify-provision.ps1`, que provisionou o Kal El e gravou o token direto no Coolify                                                                    |
+| 3      | `7806247` | ✅ 3 min 33 s | —                                                                                                                                                                                                                                                       |
+
+Verificado de fora, com o portal no ar:
+
+| Verificação               | Resultado                                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------------------- |
+| TLS                       | certificado válido; http → https com 302                                                                |
+| `/api/health`             | `{"status":"ok"}`                                                                                       |
+| `/api/health?ready=1`     | 200, `{"env":"ok","kalel":"ok","contract":"ok"}`: token aceito e `total` presente (kal-el#7)            |
+| Home e as 7 editorias     | 200; as categorias vieram do provisionamento                                                            |
+| Indexação                 | `robots.txt` com `Disallow: /` e `X-Robots-Tag: noindex, nofollow` em toda resposta (`APP_ENV=staging`) |
+| Busca                     | 200; `?page=6` → 404                                                                                    |
+| `sitemap.xml`, `feed.xml` | 200                                                                                                     |
+| Webhook sem assinatura    | 401                                                                                                     |
+| Preview sem token         | 400                                                                                                     |
+
+O provisionamento criou no site do Kal El as 7 editorias, as tags `capa-em-tela-cheia` e
+`oferta`, o webhook para `/api/revalidate` e o token de entrega. A última chamada do script, a
+que dispara o deploy, recebeu 405: o Coolify 4.3.19 não aceita GET em `/api/v1/deploy`. O deploy
+foi disparado pelo painel, e o script passou a tentar POST antes de GET.
+
+**Login no CMS.** O primeiro login real terminava de volta em `/login`. A API grava a sessão no
+host `api-…`; o middleware do CMS a procurava no host `cms-…`, e o cliente lia o token CSRF de
+`document.cookie`, que também não o enxerga. Em desenvolvimento os dois rodam em `localhost`,
+e cookie não distingue porta, por isso nunca tinha aparecido. Corrigido no Kal El
+([kal-el#11](https://github.com/maquinanerd/kal-el/pull/11), `8f7cf60`, API 190/190): o token
+CSRF volta no corpo do login e em `/v1/auth/me` (neste, só quando o cookie confere com a
+sessão), o CMS o guarda, e o middleware saiu. Publicado e conferido de fora: `/articles`
+responde 200 sem o redirecionamento do middleware, o preflight de CORS libera a origem do CMS
+com credenciais e `x-kal-el-csrf`, e login com credencial errada continua 401. O login do owner
+é dele para confirmar.
 
 ## 5. Variáveis que o operador precisa fornecer
 
@@ -182,18 +217,19 @@ rodou:** espera o provisionamento no Kal El e o token de entrega, que só o oper
 | `NEWSLETTER_PROVIDER_URL`                                        | portal                             | inscrição real; sem ela o formulário responde erro honesto (501)                  |
 | `KALEL_ADMIN_EMAIL`, `KALEL_ADMIN_PASSWORD`, `PORTAL_PUBLIC_URL` | só no provisionamento              | login de owner para `pnpm kalel:provision`; nunca vão para o portal               |
 
+No Coolify, `scripts/coolify-provision.ps1` cobre o provisionamento e o
+`KAL_EL_SERVICE_TOKEN` de uma vez ([RUNBOOK §4.5.1](./RUNBOOK.md)).
+
 ## 6. Plano seguro de staging e virada
 
 Passo a passo no [RUNBOOK §5](./RUNBOOK.md). Em resumo:
 
 1. **Kal El:** ✅ feito — kal-el#6 e #7 mesclados, migração `0006` aplicada, API e CMS no
-   Coolify (seção 4.2).
-2. **Provisionar:** `pnpm kalel:provision` (ensaio) → `--apply --new-token`, com a URL do
-   portal no Coolify.
-3. **Staging:** no Coolify ([RUNBOOK §4.5.1](./RUNBOOK.md)), com `APP_ENV=staging`
-   (`robots.txt` com `Disallow: /` e `X-Robots-Tag: noindex` em toda resposta);
-   `/api/health?ready=1` com `"contract":"ok"`; `pnpm visual:compare` contra o staging;
-   redação usa por uma semana.
+   Coolify, login do CMS corrigido (kal-el#11) — seção 4.2.
+2. **Provisionar:** ✅ feito em 2026-09-15, pelo operador, com `scripts/coolify-provision.ps1`.
+3. **Staging:** ✅ no ar no Coolify, com `APP_ENV=staging` e readiness `"contract":"ok"`
+   (seção 4.2). Falta: publicar matérias, rodar `pnpm visual:compare` contra o staging e a
+   redação usar por uma semana.
 4. **Importação e URLs:** antes, o H3 (seção 7); depois, delta final do WordPress e
    `pnpm urls:verify` com a amostra de tráfego — zero 404 é bloqueante.
 5. **Virada:** TTL do DNS a 300 s com 24 h de antecedência, `APP_ENV=production`, janela de
@@ -205,33 +241,33 @@ Passo a passo no [RUNBOOK §5](./RUNBOOK.md). Em resumo:
 
 Nenhuma é contornável por código neste repositório.
 
-| #   | Pendência                                                        | O que bloqueia                           | Como resolver                                                                         |
-| --- | ---------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------- |
-| 1   | Provisionamento no Kal El e token de entrega                     | deploy do portal                         | o operador roda `pnpm kalel:provision --apply --new-token` e cola o token no Coolify  |
-| 2   | Leitura por ids de mídia e tags no Kal El (H3)                   | importar o acervo do WordPress           | mudança no Kal El e no adaptador ([DECISIONS §7.13](./DECISIONS.md))                  |
-| 3   | Amostra de URLs de maior tráfego                                 | critério **zero 404**                    | exportar do Search Console para `data/import/top-urls.txt` e rodar `pnpm urls:verify` |
-| 4   | Editoria dos 298 posts sem uma                                   | esses artigos não têm URL pública        | preencher o `--category-map` ([RUNBOOK §4.0.1](./RUNBOOK.md))                         |
-| 5   | Licença das imagens de terceiros e `wp-content/uploads` extraído | mídia do acervo                          | decisão editorial ([DECISIONS 4.10](./DECISIONS.md)); extrair o `tar.gz`              |
-| 6   | Modelo de produto e de layout no Kal El                          | caixa de produto com dado real           | aceitar a proposta em [KAL-EL-DISCOVERY.md](./KAL-EL-DISCOVERY.md)                    |
-| 7   | Network code do GAM                                              | anúncios reais                           | a reserva de espaço já está pronta                                                    |
-| 8   | Provedor de newsletter                                           | inscrição real                           | `NEWSLETTER_PROVIDER_URL`                                                             |
-| 9   | Revisão jurídica                                                 | termos, privacidade, cookies e afiliados | os textos são rascunhos neutros, sem promessa que o site não cumpra                   |
-| 10  | Revisor Codex                                                    | revisão independente pelo Codex          | atualizar a CLI numa máquina com acesso; rodar `codex review --uncommitted`           |
-| 11  | Domínio real e DNS                                               | virada                                   | apontar `maquinanerd.com.br` só com confirmação explícita; o `sslip.io` é só staging  |
-| 12  | App antigo `kal-el:main-xgcxdbykmr…` no Coolify                  | nada — mas refaz o build a cada push     | decisão do dono do servidor: parar o auto-deploy ou remover; nunca subiu (Railpack)   |
+| #   | Pendência                                                        | O que bloqueia                           | Como resolver                                                                               |
+| --- | ---------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------- |
+| 1   | Rotação das credenciais usadas na publicação                     | nada técnico — é higiene                 | trocar a senha do owner no CMS e revogar o token da API do Coolify usado pelo script        |
+| 2   | Leitura por ids de mídia e tags no Kal El (H3)                   | importar o acervo do WordPress           | mudança no Kal El e no adaptador ([DECISIONS §7.13](./DECISIONS.md))                        |
+| 3   | Amostra de URLs de maior tráfego                                 | critério **zero 404**                    | exportar do Search Console para `data/import/top-urls.txt` e rodar `pnpm urls:verify`       |
+| 4   | Editoria dos 298 posts sem uma                                   | esses artigos não têm URL pública        | preencher o `--category-map` ([RUNBOOK §4.0.1](./RUNBOOK.md))                               |
+| 5   | Licença das imagens de terceiros e `wp-content/uploads` extraído | mídia do acervo                          | decisão editorial ([DECISIONS 4.10](./DECISIONS.md)); extrair o `tar.gz`                    |
+| 6   | Modelo de produto e de layout no Kal El                          | caixa de produto com dado real           | aceitar a proposta em [KAL-EL-DISCOVERY.md](./KAL-EL-DISCOVERY.md)                          |
+| 7   | Network code do GAM                                              | anúncios reais                           | a reserva de espaço já está pronta                                                          |
+| 8   | Provedor de newsletter                                           | inscrição real                           | `NEWSLETTER_PROVIDER_URL`                                                                   |
+| 9   | Revisão jurídica                                                 | termos, privacidade, cookies e afiliados | os textos são rascunhos neutros, sem promessa que o site não cumpra                         |
+| 10  | Revisor Codex                                                    | revisão independente pelo Codex          | atualizar a CLI numa máquina com acesso; rodar `codex review --uncommitted`                 |
+| 11  | Domínio real e DNS                                               | virada                                   | apontar `maquinanerd.com.br` só com confirmação explícita; o `sslip.io` é só staging        |
+| 12  | App antigo `kal-el:main-xgcxdbykmr…` no Coolify                  | nada — mas refaz o build a cada push     | decisão do dono do servidor: parar o auto-deploy ou remover; nunca subiu (Railpack)         |
+| 13  | Matérias no Kal El                                               | as páginas do staging saem vazias        | publicar pelo CMS, ou importar o acervo depois do H3; cada publicação revalida pelo webhook |
 
 ## 8. Limitações declaradas
 
-- **Portal ainda sem execução contra o Kal El real.** Até o primeiro deploy, a aplicação
-  inteira roda em `CONTENT_SOURCE=kalel` só contra um CMS que valida as próprias respostas com
-  os schemas da app, e a mudança do Kal El foi testada contra Postgres real. Não substitui
-  latência, volume e comportamento sob carga do CMS de produção.
+- **O portal roda contra o Kal El real, mas vazio.** Desde 2026-09-15 a readiness passa contra o
+  Kal El publicado; sem matérias, latência, volume e comportamento sob carga só aparecem com o
+  acervo.
 - **Build Docker não roda nesta máquina** (Docker Desktop sem distribuição WSL; instalar é
-  mudança de sistema, fora do escopo). Desde esta rodada a CI constrói a imagem e sobe o
-  container a cada PR (job `Container image`), e o Coolify constrói a mesma imagem no deploy.
+  mudança de sistema, fora do escopo). A CI constrói a imagem e sobe o container a cada PR (job
+  `Container image`), e o Coolify a construiu no deploy.
 - **`sslip.io` com https.** O Coolify avisa que o Let's Encrypt limita emissões para esse
-  domínio público. Funcionou para o Kal El, mas o staging definitivo deve usar um subdomínio
-  próprio.
+  domínio público. Funcionou para o Kal El e para o portal, mas o staging definitivo deve usar
+  um subdomínio próprio.
 - **Tema escuro saiu.** O kit só desenha o claro; um escuro seria visual inventado
   ([DECISIONS §7.1](./DECISIONS.md)). Os tokens permitem acrescentá-lo sem mexer em
   componente.
@@ -246,7 +282,8 @@ Ignorados deliberadamente: os ZIPs de entrada (intactos, hashes em
 [INPUT-INVENTORY.md](./INPUT-INVENTORY.md)), `maquina-nerd-kit/`, `.migration-reference/`,
 `artifacts/` (capturas, relatórios de revisão), `.next/`, `node_modules/` e todo `.env*`
 exceto `.env.example`. Versionadas de propósito: as 48 baselines visuais. O portal está
-mesclado ([PR #1](https://github.com/maquinanerd/MN_Next/pull/1), `eb58b4c`); as mudanças do
-CMS ([kal-el#6](https://github.com/maquinanerd/kal-el/pull/6),
-[kal-el#7](https://github.com/maquinanerd/kal-el/pull/7) e as de deploy #8, #9 e #10) estão
-mescladas e publicadas no Coolify. O portal ainda não foi implantado (seção 4.2).
+mesclado e publicado em staging ([PR #1](https://github.com/maquinanerd/MN_Next/pull/1) e
+[PR #2](https://github.com/maquinanerd/MN_Next/pull/2)); as mudanças do CMS
+([kal-el#6](https://github.com/maquinanerd/kal-el/pull/6),
+[kal-el#7](https://github.com/maquinanerd/kal-el/pull/7), as de deploy #8, #9 e #10 e o login
+[#11](https://github.com/maquinanerd/kal-el/pull/11)) estão mescladas e publicadas no Coolify.
