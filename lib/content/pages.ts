@@ -178,10 +178,12 @@ export interface EditoriaView {
  * page 2 never repeats what page 1 led with.
  */
 export async function editoriaView(slug: string, page: number): Promise<EditoriaView> {
+  // Only the tags the subject filters can link to: the editoria's own subjects, by slug.
+  const subjectSlugs = isEditoriaSlug(slug) ? EDITORIAS[slug].assuntos.slice(1).map((label) => slugify(label)) : [];
   const [top, list, tags] = await Promise.all([
     page === 1 ? repo().listCategory(slug, 1, { perPage: OPENING }) : Promise.resolve(null),
     repo().listCategory(slug, page, { skip: OPENING, perPage: EDITORIA_PER_PAGE }),
-    optional(repo().listTags(), 'editoria-tags'),
+    subjectSlugs.length > 0 ? optional(repo().findTags(subjectSlugs), 'editoria-tags') : Promise.resolve(null),
   ]);
   const editoria = editoriaFor(list.category);
   return {
@@ -223,11 +225,15 @@ export interface MateriaView {
  */
 export async function materiaView(article: Article): Promise<MateriaView | null> {
   const categorySlug = article.category?.slug ?? null;
+  const subjectSlugs =
+    categorySlug && isEditoriaSlug(categorySlug)
+      ? EDITORIAS[categorySlug].assuntos.slice(1).map((label) => slugify(label))
+      : [];
   const [categoryItems, latest, offers, tags] = await Promise.all([
     categorySlug ? optional(repo().listCategory(categorySlug, 1, { perPage: 14 }), 'related') : Promise.resolve(null),
     optional(repo().listLatest(1, { perPage: 10 }), 'next-story'),
     article.layout === 'offer' ? optional(repo().listOffers(1, { perPage: 6 }), 'offers') : Promise.resolve(null),
-    optional(repo().listTags(), 'article-tags'),
+    subjectSlugs.length > 0 ? optional(repo().findTags(subjectSlugs), 'article-tags') : Promise.resolve(null),
   ]);
 
   const others = toChamadas((categoryItems?.items ?? []).filter((a) => a.id !== article.id));
@@ -239,7 +245,8 @@ export async function materiaView(article: Article): Promise<MateriaView | null>
   const proxima = toChamadas(latest?.items ?? []).find((c) => !shown.has(c.id));
 
   const otherOffers = toChamadas((offers?.items ?? []).filter((a) => a.id !== article.id));
-  const assuntoTag = assunto ? (tags ?? []).find((t) => t.name === assunto) : undefined;
+  // The subject is the name of one of the article's own tags, so the tag is already here.
+  const assuntoTag = assunto ? article.tags.find((t) => t.name === assunto) : undefined;
   const editoria = article.category ? editoriaFor(article.category) : null;
 
   const materia = toMateria(article, {

@@ -37,7 +37,11 @@ export interface ContentRepository {
   listCategory(slug: string, page: number, window?: ListWindow): Promise<Page<ArticleSummary> & { category: Category }>;
   listCategories(): Promise<Category[]>;
   listOffers(page: number, window?: ListWindow): Promise<Page<ArticleSummary>>;
-  listTags(): Promise<Tag[]>;
+  /**
+   * The tags with these exact slugs, the ones that exist. Never the whole vocabulary: an
+   * imported archive has tens of thousands of tags, and no page shows more than a handful.
+   */
+  findTags(slugs: readonly string[]): Promise<Tag[]>;
 
   search(query: string, page: number): Promise<Page<SearchResult>>;
 

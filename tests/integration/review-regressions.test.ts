@@ -47,18 +47,22 @@ function taxonomy(url: URL, mediaPages?: (offset: number) => { items: unknown[];
 }
 
 describe('media index pages by offset, not by cursor', () => {
-  it('walks every page until it reaches the reported total', async () => {
+  it('walks every page until it reaches the reported total, on an instance without the ids filter', async () => {
     // Kal El answers `{ items, total }` with limit/offset and no cursor. Treating it as
-    // cursor-paginated stopped after page one and dropped every older asset.
+    // cursor-paginated stopped after page one and dropped every older asset. Since H3 the
+    // walk is only the fallback: this instance ignores `ids` and answers with the first
+    // page of the library, which holds rows nobody asked for.
     const assets = Array.from({ length: 450 }, (_, i) => ({
       ...MEDIA,
       id: `${MEDIA.id.slice(0, 24)}${String(i).padStart(12, '0')}`,
     }));
-    const seenOffsets: number[] = [];
+    const walked: number[] = [];
+    let idsCalls = 0;
 
     const { repo } = repository((url) => {
       const t = taxonomy(url, (offset) => {
-        seenOffsets.push(offset);
+        if (url.searchParams.has('ids')) idsCalls += 1;
+        else walked.push(offset);
         return { items: assets.slice(offset, offset + 200), total: assets.length };
       });
       if (t) return t;
@@ -68,7 +72,8 @@ describe('media index pages by offset, not by cursor', () => {
     });
 
     await repo.listLatest(1);
-    expect(seenOffsets).toEqual([0, 200, 400]);
+    expect(idsCalls).toBe(1);
+    expect(walked).toEqual([0, 200, 400]);
   });
 
   it('stops on an empty page rather than looping', async () => {

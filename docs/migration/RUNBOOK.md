@@ -350,6 +350,36 @@ automaticamente contra stand-ins, e é o mesmo comportamento que se espera contr
 real. Se ele reportar `created` diferente de zero, **pare** — algo em `externalKey` ou no
 state file não está funcionando, e continuar duplica o acervo.
 
+### 4.2.2 Em produção: a sessão de importação
+
+Os passos 3 e 4 acima, contra o Kal El de produção, rodam como uma sessão
+([DECISIONS §7.15](./DECISIONS.md)):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\acervo-import.ps1 `
+  -KalElBaseUrl https://<api do kal el> -SiteId <uuid do site> -AdminEmail <owner> `
+  -Dump C:\caminho\127_0_0_1.sql -Uploads C:\mn-import\uploads
+```
+
+A senha do owner é pedida sem eco. A sessão:
+
+1. pausa os webhooks do site;
+2. cria um token de importação de 48 horas, que nunca aparece;
+3. roda o importador com `--external-images --auto-desk`;
+4. roda de novo e exige `created: 0`;
+5. retoma os webhooks e revoga o token, com sucesso ou falha.
+
+O relatório fica em `artifacts/migration/producao/`.
+
+- **Antes:** o Kal El com a leitura por ids e `GET /media/storage`
+  ([kal-el#12](https://github.com/maquinanerd/kal-el/pull/12)) no ar, o portal com o H3 no
+  ar, e `RATE_LIMIT_MAX` do Kal El elevado para a janela da importação — o limite é por token
+  por minuto, e o padrão de 600 transforma horas de importação em um dia.
+- **Janela fechada no meio:** rode o mesmo comando com `-Recover` antes de qualquer outra
+  coisa. Ele retoma os webhooks e revoga o token da sessão interrompida; a importação em si é
+  retomável com `--resume`.
+- **Depois:** `RATE_LIMIT_MAX` de volta ao padrão.
+
 ### 4.3 Redirects
 
 ```bash

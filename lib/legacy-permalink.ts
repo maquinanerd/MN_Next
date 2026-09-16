@@ -49,8 +49,9 @@ export const legacyPath = cache(async (slug: string): Promise<string | null> => 
     // and 8.613 of those categories are tags here — `/netflix` was 2.362 posts.
     // A reserved tag (`oferta`, `ao-vivo`…) has no archive: redirecting to it would end in 404.
     if (isReservedTag(slug)) return null;
-    const tag = await repo().getTag(slug, 1);
-    if (tag) return validated(`/tag/${tag.tag.slug}`);
+    // The tag itself, not its first page of articles: a redirect needs only the slug.
+    const [tag] = await repo().findTags([slug]);
+    if (tag) return validated(`/tag/${tag.slug}`);
 
     return null;
   } catch (err) {
