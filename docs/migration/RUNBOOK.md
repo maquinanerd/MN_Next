@@ -482,7 +482,7 @@ grupo que já o lê no ambiente do container em execução. Lembre que é um tok
 
 | Onde                       | Estado                                                                                                                                                         |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| DNS                        | raiz, `www` e `vps` pelo proxy                                                                                                                                 |
+| DNS                        | raiz, `www` e `vps` pelo proxy. O proxy só leva HTTP: SSH pelo nome `vps.maquinanerd.com.br` não conecta mais, e vai pelo IP do servidor                       |
 | SSL/TLS                    | modo "Completo"; "Sempre usar HTTPS" **desligado**: http → https sai do Traefik (302), e a renovação do Let's Encrypt na origem depende de o http chegar lá    |
 | Regras de redirecionamento | `https://maquinanerd.com.br/*` → `https://www.maquinanerd.com.br/${1}`, 301, com a query string                                                                |
 | Cache Rules                | "[DO NOT EDIT] WP Super Page Cache Plugin rules", que sobrou do WordPress: o HTML do `www` fica na borda pelo `s-maxage` da página (60 s na home e na matéria) |
