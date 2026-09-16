@@ -685,3 +685,52 @@ Registro da execução em [FINAL-VERIFICATION §4.3](./FINAL-VERIFICATION.md).
   - IPv6 conta por /64, porque uma linha recebe o prefixo inteiro;
   - quando nenhum endereço se lê, o balde é o compartilhado `anonymous`, como sem
     `TRUST_PROXY`: limita demais em vez de limitar de menos.
+
+### 7.15 H3 e a sessão de importação (2026-09-16)
+
+O H3 (§7.13) deixou de ser pendência. Resolvido nos dois lados, com o acervo em mente:
+41.318 artigos, ~70 mil mídias e ~45 mil tags (8.613 categorias rebaixadas mais 36.438 tags).
+
+- **No Kal El** ([kal-el#12](https://github.com/maquinanerd/kal-el/pull/12)):
+  `GET /media?ids=` (1 a 200) devolve exatamente essas mídias do site; `GET /tags` aceita
+  `ids`, `slug` exato e `limit`/`offset` em ordem de nome, e continua um array;
+  `GET /media/storage` informa o espaço livre de onde ficam os bytes de mídia.
+- **No portal**, o contexto do mapper passa a ser da página, não do site:
+  - categorias, autores e entidades — poucos — continuam inteiros;
+  - tags e mídias são pedidas pelos ids que os artigos da página apontam: capa, imagens e
+    galerias do corpo, imagem de compartilhamento, retrato dos autores creditados. Os ids vão
+    ordenados e em chamadas de 200, para que duas páginas com as mesmas matérias dividam a
+    mesma resposta em cache;
+  - uma instância sem o filtro continua funcionando: para tags, a resposta com tudo é um
+    superconjunto e o resultado sai certo; para mídia, a resposta traz linhas que ninguém
+    pediu, e só então a biblioteca é percorrida como antes, com `kalel.contract.degraded` no
+    log;
+  - `listTags()` saiu do contrato do repositório, trocado por `findTags(slugs)`: os filtros de
+    assunto de uma editoria procuram só os slugs dos assuntos dela, e o assunto de uma matéria
+    já está entre as tags da própria matéria. O redirecionamento de URL antiga de categoria
+    procura a tag pelo slug, sem ler a primeira página dela;
+  - sitemaps: cada arquivo de artigos é lido por `offset` (50 chamadas de 100, cinco por vez)
+    em vez de percorrer o acervo inteiro por cursor a cada arquivo; a contagem de arquivos sai
+    do `total` de uma chamada; o sitemap de tags pagina o vocabulário de mil em mil; e o
+    caminho de cada artigo usa só as tags reservadas de layout, lidas pelo slug, porque são
+    as únicas que mudam uma URL.
+
+**A importação em produção roda como uma sessão** (`scripts/acervo-import.ps1` →
+`pnpm wp:import-session`), porque o que cerca a importação não pode depender de memória:
+
+- **os webhooks do site são pausados.** Cada artigo importado emite um evento de publicação;
+  41 mil revalidações gastariam o token de entrega do portal (600 por minuto) com a
+  importação em vez de com os leitores. Um assinante pausado não recebe nada, e o cache do
+  portal se renova sozinho pelas janelas de ISR;
+- **um token de importação é criado com validade de 48 horas** e só chega ao processo do
+  importador, pelo ambiente — nunca por argumento, arquivo ou log;
+- **o importador roda duas vezes**, e a segunda precisa reportar `created: 0` (RUNBOOK §4.2.1);
+- **sempre, com sucesso ou falha, os webhooks voltam e o token é revogado.** O que foi pausado
+  e criado fica num arquivo de sessão antes da importação começar, e `-Recover` desfaz tudo
+  se a janela for fechada no meio. A única credencial que o operador digita é a senha do
+  owner, sem eco.
+
+**Decisões do owner para a importação:** as imagens de terceiros dentro dos textos são
+baixadas e hospedadas (revoga §4.10, com o risco de direito autoral aceito), e os posts sem
+editoria são classificados automaticamente; o que não tiver classificação segura fica de fora,
+numa lista.
