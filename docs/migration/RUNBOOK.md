@@ -404,11 +404,15 @@ curl -fsS 'http://127.0.0.1:3002/api/health?ready=1'
   compartilhada com o serviço `portal` e dispensa a porta. Nunca publique em `0.0.0.0`:
   com `TRUST_PROXY=true` (o compose já define) quem chegasse direto forjaria
   `X-Forwarded-For`.
-- **`TRUST_PROXY=true` pressupõe um proxy que reescreve `X-Forwarded-For`**, como o Traefik
-  faz no padrão (sem `forwardedHeaders.insecure` nem `trustedIPs`): o limite da busca usa o
-  primeiro endereço do cabeçalho. Um CDN na frente que _acrescenta_ ao cabeçalho devolve
-  esse primeiro endereço ao chamador, que passa a forjá-lo — antes de pôr um, troque a chave
-  de `lib/rate-limit.ts` pelo cabeçalho do CDN.
+- **`TRUST_PROXY=true` pressupõe um proxy que escreve em `X-Forwarded-For` o endereço de
+  quem se conectou a ele**, como o Traefik faz no padrão (sem `forwardedHeaders.insecure` nem
+  `trustedIPs`). Os limites usam a **última** entrada do cabeçalho, a única que o chamador
+  não escreve. Quando ela é do Cloudflare, usam o `CF-Connecting-IP`; de qualquer outro
+  endereço esse cabeçalho é ignorado, porque a origem é alcançável por fora do Cloudflare
+  (`lib/client-address.ts`). IPv6 conta por /64. As faixas do Cloudflare são as de
+  <https://www.cloudflare.com/ips/>, conferidas em 2026-09-16: uma faixa nova só junta os
+  leitores dela no balde do servidor de borda até a lista ser atualizada. Outro CDN na
+  frente precisa do mesmo tratamento para o cabeçalho dele.
 - **Uma instância.** Cache ISR e nonce do webhook vivem no processo (seção 3). Escalar
   horizontalmente exige cache handler e `NonceStore` compartilhados antes.
 - **Rollback de deploy:** marque cada imagem com o commit (`-t maquinanerd-portal:<sha>`) e
@@ -428,7 +432,10 @@ mesmo modelo do compose do Kal El:
 3. **Variáveis**, em Environment Variables: `KAL_EL_BASE_URL` (a origem https da API do
    Kal El) e `KAL_EL_SITE_ID`. `MEDIA_ALLOWED_HOSTS` fica vazio: a mídia do Kal El exige
    token e sai pelo proxy `/media/[id]`. `SERVICE_BASE64_64_WEBHOOK` e
-   `SERVICE_BASE64_64_PREVIEW` o Coolify gera.
+   `SERVICE_BASE64_64_PREVIEW` o Coolify gera. O campo de valor do Coolify é do tipo senha:
+   o preenchimento automático do navegador pode pôr um e-mail salvo em "Comment" e uma senha
+   salva em "Value". Escreva o comentário antes do valor e confira os dois antes de salvar.
+   Uma variável que ficar vazia aparece no build como `… is required in staging`.
 4. **Provisionamento** (seção 1.0), na máquina do operador, com `PORTAL_PUBLIC_URL` = o
    domínio do passo 2 e `KAL_EL_WEBHOOK_SECRET` = o valor de `SERVICE_BASE64_64_WEBHOOK`:
    `pnpm kalel:provision --apply --new-token`. O token de entrega aparece **uma vez**.
@@ -437,6 +444,11 @@ mesmo modelo do compose do Kal El:
    `"contract":"ok"`; `robots.txt` com `Disallow: /` e `X-Robots-Tag: noindex, nofollow`
    enquanto `APP_ENV=staging`.
 
+No Windows, `scripts/coolify-provision.ps1` faz os passos 4 e 5 e dispara o deploy: lê
+`SERVICE_BASE64_64_WEBHOOK` pela API do Coolify, roda o provisionamento e grava o token de
+entrega direto em `KAL_EL_SERVICE_TOKEN`, sem imprimi-lo. Pede, sem eco, um token da API do
+Coolify (leitura de segredos, escrita e deploy) e a senha do owner no Kal El.
+
 O token chega ao build como _build arg_, e o Coolify injeta um `ARG` por variável do recurso
 em todas as etapas do Dockerfile, inclusive a final: o valor fica nos metadados da imagem
 naquele servidor (`docker history`). Quem o vê é quem tem acesso ao Docker do host — o mesmo
@@ -444,6 +456,11 @@ grupo que já o lê no ambiente do container em execução. Lembre que é um tok
 `*.manage` de taxonomia e SEO (seção 1.1): se o host mudar de mãos, revogue e emita outro.
 
 ## 5. Virada
+
+> Feita em 2026-09-16, fora desta ordem: o WordPress já estava fora do ar, e o owner decidiu
+> virar antes da importação do acervo. Registro em
+> [FINAL-VERIFICATION §4.3](./FINAL-VERIFICATION.md), decisões em
+> [DECISIONS §7.14](./DECISIONS.md). A lista abaixo fica como procedimento de referência.
 
 0. **Kal El pronto.** [kal-el#6](https://github.com/maquinanerd/kal-el/pull/6) (filtro
    `?slug=`) e [kal-el#7](https://github.com/maquinanerd/kal-el/pull/7) (ordem por
@@ -461,12 +478,25 @@ grupo que já o lê no ambiente do container em execução. Lembre que é um tok
 7. **Primeiros 30 minutos:** readiness, taxa de 5xx, `kalel.contract.violation`, e uma
    amostra manual de URLs de tráfego.
 
+### Cloudflare, como ficou
+
+| Onde                       | Estado                                                                                                                                                         |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DNS                        | raiz, `www` e `vps` pelo proxy. O proxy só leva HTTP: SSH pelo nome `vps.maquinanerd.com.br` não conecta mais, e vai pelo IP do servidor                       |
+| SSL/TLS                    | modo "Completo"; "Sempre usar HTTPS" **desligado**: http → https sai do Traefik (302), e a renovação do Let's Encrypt na origem depende de o http chegar lá    |
+| Regras de redirecionamento | `https://maquinanerd.com.br/*` → `https://www.maquinanerd.com.br/${1}`, 301, com a query string                                                                |
+| Cache Rules                | "[DO NOT EDIT] WP Super Page Cache Plugin rules", que sobrou do WordPress: o HTML do `www` fica na borda pelo `s-maxage` da página (60 s na home e na matéria) |
+| Webhook do Kal El          | pelo `sslip.io` do recurso, direto na origem, sem o Cloudflare no caminho                                                                                      |
+
+Uma publicação chega ao `www` em até cerca de um minuto: o webhook revalida a origem na hora,
+e a borda busca de novo quando o `s-maxage` vence. Para não esperar: Caching → Configuração →
+limpar o cache da URL.
+
 ### Rollback
 
-O WordPress fica de pé por 30 dias. Reverter é **apontar o DNS de volta** — nada foi
-apagado na origem, porque nada é escrito nela em momento algum.
-
-Se o problema for do portal e não do DNS:
+Na virada não havia WordPress no ar para onde voltar o DNS. Um problema na borda se desfaz
+no painel do Cloudflare: desligar a regra de redirecionamento, ou pôr o registro em "somente
+DNS". Se o problema for do portal:
 
 - CMS fora do ar → páginas em ISR continuam servindo; a readiness já estará vermelha.
 - Regressão de conteúdo → `revalidateTag` na tag afetada, ou redeploy do commit anterior.

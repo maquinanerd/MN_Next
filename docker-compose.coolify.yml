@@ -54,7 +54,8 @@ services:
       # server; Kal El accepts a webhook secret of 16 to 128.
       - KAL_EL_WEBHOOK_SECRET=${SERVICE_BASE64_64_WEBHOOK}
       - KAL_EL_PREVIEW_SECRET=${SERVICE_BASE64_64_PREVIEW}
-      # Exactly one proxy in front (Traefik), which writes X-Forwarded-For itself.
+      # Exactly one proxy in front (Traefik), which writes X-Forwarded-For itself. Cloudflare
+      # ahead of it is recognised by address, not configured (lib/client-address.ts).
       - TRUST_PROXY=true
       - MEDIA_ALLOWED_HOSTS=${MEDIA_ALLOWED_HOSTS:-}
       - KAL_EL_TIMEOUT_MS=${KAL_EL_TIMEOUT_MS:-5000}

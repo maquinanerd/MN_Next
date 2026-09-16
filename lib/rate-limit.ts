@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { readerKey } from './client-address';
+
 /**
  * Fixed-window rate limiter for public route handlers.
  *
@@ -38,20 +40,15 @@ export function rateLimit(key: string, max: number, now = Date.now()): RateLimit
 /**
  * Client address for bucketing.
  *
- * `x-forwarded-for` is client-writable, so it is only trusted when the deployment says a
- * proxy is in front (`TRUST_PROXY`). Otherwise every request shares one bucket, which is
- * the safe failure: it throttles too much rather than letting a spoofed header mint a
- * private quota per request.
+ * `x-forwarded-for` is client-writable, so it is only read when the deployment says a proxy
+ * is in front (`TRUST_PROXY`), and then only the entry that proxy wrote, or the reader
+ * Cloudflare names when that entry is Cloudflare's (`readerKey`). Otherwise, or when no
+ * address parses, every request shares one bucket, which is the safe failure: it throttles
+ * too much rather than letting a spoofed header mint a private quota per request.
  */
 export function clientKey(headers: Headers, fallback = 'anonymous'): string {
-  if (process.env.TRUST_PROXY === 'true') {
-    const forwarded = headers.get('x-forwarded-for');
-    const first = forwarded?.split(',')[0]?.trim();
-    if (first) return first;
-    const real = headers.get('x-real-ip');
-    if (real) return real.trim();
-  }
-  return fallback;
+  if (process.env.TRUST_PROXY !== 'true') return fallback;
+  return readerKey(headers) ?? fallback;
 }
 
 /** Test seam. */
