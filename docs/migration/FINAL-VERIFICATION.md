@@ -198,8 +198,10 @@ e cookie não distingue porta, por isso nunca tinha aparecido. Corrigido no Kal 
 CSRF volta no corpo do login e em `/v1/auth/me` (neste, só quando o cookie confere com a
 sessão), o CMS o guarda, e o middleware saiu. Publicado e conferido de fora: `/articles`
 responde 200 sem o redirecionamento do middleware, o preflight de CORS libera a origem do CMS
-com credenciais e `x-kal-el-csrf`, e login com credencial errada continua 401. O login do owner
-é dele para confirmar.
+com credenciais e `x-kal-el-csrf`, e login com credencial errada continua 401. Confirmado pelo
+owner em 2026-09-16: o login entra no CMS, e a lista de artigos mostra um rascunho criado depois
+da correção. Criar artigo exige `x-kal-el-csrf`, então as escritas também passam com CMS e API
+em hosts diferentes.
 
 ## 5. Variáveis que o operador precisa fornecer
 
