@@ -31,7 +31,8 @@ describe('search result pages', () => {
 });
 
 describe('search rate', () => {
-  const from = (address?: string): Headers => new Headers(address ? { 'x-forwarded-for': `${address}, 10.0.0.1` } : {});
+  // What Traefik sends: the header rewritten to the one address that connected to it.
+  const from = (address?: string): Headers => new Headers(address ? { 'x-forwarded-for': address } : {});
 
   it('lets a client run its allowance, then refuses it for the rest of the minute', () => {
     process.env.TRUST_PROXY = 'false';
@@ -39,7 +40,7 @@ describe('search rate', () => {
     expect(searchAllowed(from(), 3)).toBe(false);
   });
 
-  it('keys on the first forwarded address behind a trusted proxy, so readers do not share one allowance', () => {
+  it('keys on the address the proxy wrote, so readers do not share one allowance', () => {
     process.env.TRUST_PROXY = 'true';
     expect(searchAllowed(from('203.0.113.7'), 1)).toBe(true);
     expect(searchAllowed(from('203.0.113.7'), 1)).toBe(false);
