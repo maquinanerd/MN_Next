@@ -368,7 +368,8 @@ aspect-ratio e reserva de anúncio, e não há equivalente por hash para estilo 
 O rate limit agrupa por endereço do cliente. Sem configuração explícita, as duas respostas
 são ruins: confiar em `x-forwarded-for` deixa qualquer chamador forjar um balde privado por
 request; ignorá-lo junta todos os visitantes em um balde só. Nenhuma das duas deve ser
-alcançada por omissão, então a validação de ambiente exige a escolha.
+alcançada por omissão, então a validação de ambiente exige a escolha. Qual entrada do
+cabeçalho vale, e o Cloudflare na frente, em §7.14.
 
 ### 5.3 Proxy de mídia sem SSRF
 
@@ -636,3 +637,51 @@ revalidação. Com o site vazio de hoje são poucas chamadas; com o acervo são 
 janela, contra os 600 por minuto do token, e a mídia além de `MAX_MEDIA_PAGES` some das
 páginas sem erro nenhum. Precisa de leitura por ids no Kal El (`…/media?ids=`, e o mesmo
 para tags) e de o repositório pedir só o que a página vai mostrar.
+
+### 7.14 A virada antes do acervo, com o Cloudflare na frente (2026-09-16)
+
+Registro da execução em [FINAL-VERIFICATION §4.3](./FINAL-VERIFICATION.md).
+
+- **Virar antes de importar.** O RUNBOOK §5 punha a importação e o "zero 404" antes do DNS.
+  Na hora da virada o WordPress já estava fora do ar: o DNS apontava para este servidor, onde
+  nada atendia esses nomes, e só a home saía, de um cache antigo do Cloudflare. Esperar a
+  importação deixava o site fora do ar; virar troca isso por 404 nas URLs antigas até a
+  importação. O dono escolheu virar. Com isso, não existe mais rollback para o WordPress.
+- **Raiz para `www` no Cloudflare, não no Coolify.** O redirecionamento do Coolify vale para o
+  recurso inteiro e mandaria também o `sslip.io` para o `www`. A regra do Cloudflare pega só
+  `https://maquinanerd.com.br/*`: 301, mesma rota, mesma query string.
+- **O `sslip.io` continua no recurso.** O webhook do Kal El chega por ele, direto na origem,
+  sem cache de borda nem proteção de bots do Cloudflare no caminho de uma chamada entre
+  servidores. As páginas dele levam `canonical` para o `www`.
+- **"Sempre usar HTTPS" desligado.** http → https sai do Traefik, com 302. Ligar faria o
+  Cloudflare responder 301 antes da origem, mas o Let's Encrypt renova os certificados da
+  origem pelo desafio HTTP-01, e o Traefik do Coolify só o atende na entrada http. Com o
+  modo SSL "Completo", uma renovação que falhe não derruba o site; com "Completo (estrito)",
+  derrubaria. O estrito já funciona hoje, mas pede antes essa garantia.
+- **A Cache Rule do plugin do WordPress ficou.** "[DO NOT EDIT] WP Super Page Cache Plugin
+  rules" torna `www.maquinanerd.com.br*` elegível para cache de borda, exceto `.xml`, `.xsl`,
+  `robots.txt` e caminhos e cookies do WordPress. Com o Next, isso vira cache de borda pelo
+  `s-maxage` de cada página (60 s na home e na matéria), e o `stale-while-revalidate` de um
+  ano que o Next também manda não faz o Cloudflare servir página velha: vencido o prazo, a
+  requisição seguinte vai à origem (`EXPIRED`, medido). O que o portal marca `private` ou
+  `no-store` (busca, APIs, preview) sai `BYPASS`. Custo: uma publicação leva até cerca de um
+  minuto para chegar ao `www`. Uma regra própria faria o mesmo com outro nome; apagar esta
+  tiraria o cache de borda. Se o preview do portal passar a ser usado pelo `www`, a regra
+  precisa excluir o cookie `__prerender_bypass` — a chave do cache ignora cookies, e a borda
+  serviria ao editor a versão pública.
+- **A chave do rate limit atrás do Cloudflare.** `clientKey` usava a primeira entrada de
+  `X-Forwarded-For`. Atrás só do Traefik, a primeira é a única, escrita por ele. Com o
+  Cloudflare na frente, passou a ser o servidor de borda: medido, seis requisições seguidas da
+  mesma máquina nunca bateram no limite de cinco, porque chegaram por servidores diferentes.
+  Um abusador se espalhava por vários baldes, e com isso caía a proteção da cota do token do
+  Kal El (H2, §7.13), enquanto leitores diferentes na mesma borda dividiam um balde. Agora:
+  - vale a **última** entrada, a que o proxy escreveu. É a mesma coisa atrás do Traefik, e
+    continua certa atrás de um proxy que acrescenta ao que recebeu;
+  - quando essa entrada é do Cloudflare, vale o `CF-Connecting-IP`. O Cloudflare é
+    reconhecido pelas faixas publicadas, não por variável de ambiente: o mesmo build serve com
+    o registro no proxy ou em "somente DNS", e de qualquer outro endereço o cabeçalho é
+    ignorado, porque a origem é alcançável por fora do Cloudflare. Uma faixa nova do
+    Cloudflare só junta os leitores dela no balde da borda até a lista ser atualizada;
+  - IPv6 conta por /64, porque uma linha recebe o prefixo inteiro;
+  - quando nenhum endereço se lê, o balde é o compartilhado `anonymous`, como sem
+    `TRUST_PROXY`: limita demais em vez de limitar de menos.
