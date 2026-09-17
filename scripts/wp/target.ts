@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 import { z } from 'zod';
 
@@ -56,6 +56,42 @@ export type KalElMediaStorage = z.infer<typeof kalelMediaStorageSchema>;
 export function mediaIdempotencyKey(externalKey: string, data: Buffer): string {
   const digest = createHash('sha256').update(data).digest('hex').slice(0, 16);
   return idempotencyKey('media', `${externalKey}.${digest}`);
+}
+
+/**
+ * One file as a `multipart/form-data` body, built as a Buffer.
+ *
+ * Not `FormData` + `Blob`. That is the same request on the wire and a very different one
+ * in memory: Node copies a Blob's bytes into native storage V8 does not account for, so a
+ * finished upload creates no collection pressure at all and its copy is held until some
+ * unrelated allocation happens to trigger a major GC. The first production run of the
+ * archive was carrying 6,6 GB of private memory after 26.960 images — one copy of every
+ * file it had already sent, on a machine with 32 GB and 32.000 third-party images still
+ * ahead of it. Measured at 2.000 uploads of 200 KB: 61 MB to 524 MB with a Blob, 61 MB to
+ * 120 MB with this.
+ *
+ * The bytes are what `FormData` would have serialised, boundary aside, and
+ * `tests/unit/wp-kalel-target.test.ts` pins that against undici's own encoder — what a
+ * multipart parser accepts is not a thing to guess at.
+ */
+export function multipartFile(
+  field: string,
+  filename: string,
+  mimeType: string,
+  data: Buffer,
+  boundary = `----mn-import-${randomBytes(16).toString('hex')}`,
+): { body: Buffer; contentType: string } {
+  // The escaping of the HTML form-data serialiser, which is what was sent until now.
+  const escape = (value: string): string => value.replace(/\n/g, '%0A').replace(/\r/g, '%0D').replace(/"/g, '%22');
+  const head = Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="${escape(field)}"; filename="${escape(filename)}"\r\n` +
+      `Content-Type: ${mimeType || 'application/octet-stream'}\r\n\r\n`,
+    'utf8',
+  );
+  return {
+    body: Buffer.concat([head, data, Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8')]),
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  };
 }
 
 export class KalElTarget {
@@ -276,16 +312,19 @@ export class KalElTarget {
   ): Promise<{ status: number; id: string | null; error: string | null }> {
     const url = `${this.site('/media')}?externalKey=${encodeURIComponent(externalKey)}`;
     const key = mediaIdempotencyKey(externalKey, data);
-    const res = await this.send(url, () => {
-      const form = new FormData();
-      form.append('file', new Blob([new Uint8Array(data)], { type: mimeType }), filename);
-      return {
-        method: 'POST',
-        headers: { authorization: `Bearer ${this.token}`, 'idempotency-key': key },
-        body: form,
-        signal: AbortSignal.timeout(120_000),
-      };
-    });
+    // Built once: a Buffer body is re-readable, so a 429 retry sends these bytes again
+    // rather than making a second copy of the file.
+    const { body, contentType } = multipartFile('file', filename, mimeType, data);
+    const res = await this.send(url, () => ({
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${this.token}`,
+        'idempotency-key': key,
+        'content-type': contentType,
+      },
+      body,
+      signal: AbortSignal.timeout(120_000),
+    }));
     const text = await res.text();
     let parsed: { data?: { id: string }; error?: { code?: string } } | undefined;
     try {

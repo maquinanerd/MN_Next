@@ -399,6 +399,10 @@ O que a primeira passada faz sem falhar, por decisão (DECISIONS §7.16):
 - **Janela fechada no meio:** rode o mesmo comando com `-Recover` antes de qualquer outra
   coisa. Ele retoma os webhooks e revoga o token da sessão interrompida; a importação em si é
   retomável com `--resume`.
+- **A máquina que roda a importação:** a memória do processo fica na casa de 1 GB do começo ao
+  fim. Memória que cresce junto com o que já subiu é o corpo do upload segurando cada arquivo
+  ([DECISIONS §7.17](./DECISIONS.md)) — interrompa, atualize o código e retome; o que já está
+  no Kal El é reconhecido pelo `externalKey`.
 - **Depois:** `WP_ARCHIVE_DUMP=… pnpm redirects:build --source archive --auto-desk --apply`
   (as exceções que a regra de runtime não cobre: slugs cortados em 120 caracteres,
   percent-escapes e o endereço antigo das cópias; sem `KAL_EL_*` no ambiente ele lê só o

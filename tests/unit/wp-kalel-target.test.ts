@@ -9,7 +9,7 @@ import {
   tallyUploads,
   type StorageAnswer,
 } from '../../scripts/wp/storage';
-import { KalElTarget, mediaIdempotencyKey } from '../../scripts/wp/target';
+import { KalElTarget, mediaIdempotencyKey, multipartFile } from '../../scripts/wp/target';
 
 /**
  * The importer's side of the Kal El contract.
@@ -27,6 +27,7 @@ interface Call {
   method: string;
   url: string;
   headers: Record<string, string>;
+  body: unknown;
 }
 
 function target(respond: (call: Call, n: number) => Response, sleeps: number[] = [], calls: Call[] = []) {
@@ -43,6 +44,7 @@ function target(respond: (call: Call, n: number) => Response, sleeps: number[] =
         method: init?.method ?? 'GET',
         url: String(input),
         headers: (init?.headers ?? {}) as Record<string, string>,
+        body: init?.body,
       };
       calls.push(call);
       return respond(call, calls.length);
@@ -74,6 +76,59 @@ describe('uploads speak the CMS’s dialect', () => {
     expect(mediaIdempotencyKey('wp:media:12', Buffer.concat([JPEG, Buffer.from([1])]))).not.toBe(
       mediaIdempotencyKey('wp:media:12', JPEG),
     );
+  });
+});
+
+/**
+ * The upload body.
+ *
+ * `FormData` + `Blob` sends the same request and keeps a copy of every file in memory that
+ * V8 never counts, so nothing collects it: the production run of the archive was holding
+ * 6,6 GB after 26.960 images. The body is a Buffer now, and the point of these tests is
+ * that the *bytes* did not change with it — Kal El's multipart parser is what accepts or
+ * rejects this, and it does not get a rehearsal.
+ */
+describe('the file travels as bytes, not as a Blob', () => {
+  it('serialises exactly what FormData would have, boundary aside', async () => {
+    // Quotes, a line break and an accent: the three things a form-data name escapes.
+    const filename = 'capa "nova"\r\nmaçã.jpg';
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(JPEG)], { type: 'image/jpeg' }), filename);
+    const reference = new Request('https://cms.example.com/media', { method: 'POST', body: form });
+    const referenceType = reference.headers.get('content-type') ?? '';
+    const boundary = /boundary=(.+)$/.exec(referenceType)?.[1] ?? '';
+    expect(boundary).not.toBe('');
+
+    const { body, contentType } = multipartFile('file', filename, 'image/jpeg', JPEG, boundary);
+    expect(contentType).toBe(referenceType);
+    expect(body.equals(Buffer.from(await reference.arrayBuffer()))).toBe(true);
+  });
+
+  it('uploads one multipart body carrying the file bytes', async () => {
+    const calls: Call[] = [];
+    const t = target(() => ok({ id: 'm1' }, 201), [], calls);
+    await t.uploadMedia('capa.jpg', JPEG, 'image/jpeg', 'wp:media:12');
+
+    const call = calls[0];
+    expect(call?.headers['content-type']).toMatch(/^multipart\/form-data; boundary=----mn-import-[0-9a-f]{32}$/);
+    // A Buffer is an ArrayBuffer V8 accounts for; that is the whole fix.
+    expect(Buffer.isBuffer(call?.body)).toBe(true);
+    const body = call?.body as Buffer;
+    expect(body.includes(JPEG)).toBe(true);
+    expect(body.toString('utf8', 0, 200)).toContain('filename="capa.jpg"');
+  });
+
+  it('sends the same bytes again on a 429 instead of copying the file', async () => {
+    const calls: Call[] = [];
+    const t = target(
+      (_call, n) =>
+        n === 1 ? new Response(null, { status: 429, headers: { 'retry-after': '1' } }) : ok({ id: 'm1' }, 201),
+      [],
+      calls,
+    );
+    await t.uploadMedia('capa.jpg', JPEG, 'image/jpeg', 'wp:media:12');
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.body).toBe(calls[0]?.body);
   });
 });
 
