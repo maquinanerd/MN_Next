@@ -15,7 +15,8 @@ import {
   runAsScript,
   type RunSummary,
 } from './cli';
-import { forEachConcurrent } from './concurrency';
+import { autoDeskReport, classifyDesk, type DeskDecision, type DeskSignals } from './auto-desk';
+import { forEachConcurrent, singleFlight } from './concurrency';
 import {
   EXTERNAL_KEY_PREFIX,
   ExternalImageCollector,
@@ -132,6 +133,12 @@ const FLAGS = [
     type: 'boolean' as const,
     default: false,
   },
+  {
+    name: 'auto-desk',
+    description: 'file posts with no desk by keyword evidence in their categories, tags and title',
+    type: 'boolean' as const,
+    default: false,
+  },
 ];
 
 /** Media and posts are handed to the lanes in slices of this size, with a checkpoint after each. */
@@ -194,6 +201,12 @@ export class MissingDeskError extends CliError {
   constructor(
     message: string,
     readonly categories: number[],
+    /**
+     * Left out by `--auto-desk`: WordPress filed it under no desk, and its own evidence
+     * names none clearly. The owner's decision for these is that they stay out of the
+     * import, on a list — auto-desk.json — rather than fail the run.
+     */
+    readonly leftOut = false,
   ) {
     super(message);
   }
@@ -219,6 +232,13 @@ function lanes(value: string | number | boolean | undefined, flag: string): numb
   return n;
 }
 
+interface Term {
+  slug: string;
+  name: string;
+}
+
+const isTerm = (term: Term | undefined): term is Term => term !== undefined;
+
 async function main(): Promise<void> {
   const { values } = parseArgs(process.argv.slice(2), FLAGS);
   if (values.help) {
@@ -232,6 +252,7 @@ async function main(): Promise<void> {
   const statePath = String(values.state);
   const maxAssetBytes = Number(values['max-asset-mb']) * 1024 * 1024;
   const externalImages = values['external-images'] === true;
+  const autoDesk = values['auto-desk'] === true;
   const concurrency = lanes(values.concurrency, 'concurrency');
   const externalDownloads = lanes(values['external-downloads'], 'external-downloads');
   const externalPerHost = lanes(values['external-per-host'], 'external-per-host');
@@ -257,6 +278,7 @@ async function main(): Promise<void> {
       ...(externalImages
         ? ['externalImagesFound', 'externalImagesTransferred', 'externalImagesReused', 'externalImagesFailed']
         : []),
+      ...(autoDesk ? ['autoDeskAssigned', 'autoDeskUnresolved'] : []),
     ]),
     failures: [],
     artefacts: [],
@@ -414,6 +436,9 @@ async function main(): Promise<void> {
    */
   /** WordPress category id -> its slug, so an unfiled post can be reported by name. */
   const categorySlugByWpId = new Map<number, string>();
+  /** Slug and name of every term, kept only for `--auto-desk`, which reads them as evidence. */
+  const categoryTermByWpId = new Map<number, Term>();
+  const tagTermByWpId = new Map<number, Term>();
   /** WordPress categories that left posts with nowhere to go, and how many each. */
   const orphanCategories = new Map<string, number>();
 
@@ -436,8 +461,12 @@ async function main(): Promise<void> {
   for (const term of categoryTerms) {
     const slug = slugify(term.slug || term.name);
     categorySlugByWpId.set(term.id, slug);
+    if (autoDesk) categoryTermByWpId.set(term.id, { slug, name: term.name });
     const desk = deskOf(slug, categoryOverrides);
     if (desk !== null) indexes.deskSlugByWpId.set(term.id, desk);
+  }
+  if (autoDesk) {
+    for (const term of tagTerms) tagTermByWpId.set(term.id, { slug: slugify(term.slug || term.name), name: term.name });
   }
 
   async function writeTaxonomy(): Promise<void> {
@@ -525,8 +554,73 @@ async function main(): Promise<void> {
   const checkpoint = new CheckpointWriter(statePath, state);
   const since = values.since ? String(values.since) : undefined;
 
+  // ------------------------------------------------------------------- desks
+  //
+  // Decided once per post and remembered. The image pre-pass and the post phase must agree
+  // on whether a post is imported at all, and a decision taken twice can come out twice.
+  const deskDecisions = new Map<number, DeskDecision>();
+  const decideDesk = (post: WpPost): DeskDecision => {
+    let decision = deskDecisions.get(post.id);
+    if (!decision) {
+      const signals: DeskSignals = {
+        postId: post.id,
+        slug: post.slug,
+        title: toPlainText(post.title),
+        categories: post.categories.map((id) => categoryTermByWpId.get(id)).filter(isTerm),
+        tags: post.tags.map((id) => tagTermByWpId.get(id)).filter(isTerm),
+      };
+      decision = classifyDesk(signals);
+      deskDecisions.set(post.id, decision);
+    }
+    return decision;
+  };
+
+  /**
+   * The Kal El category of a desk no WordPress category of this archive stood for.
+   *
+   * `--auto-desk` can file a post under a desk the taxonomy phase never created — the
+   * archive has no Animes category at all. One create at a time per desk, so lanes that need
+   * the same desk at the same moment wait for it instead of racing to make two.
+   */
+  const deskCategory = singleFlight(async (desk: string): Promise<string | null> => {
+    const known = indexes.categoryBySlug.get(desk) ?? existingBySlug.categories.get(desk);
+    if (known) return known;
+    if (!target) {
+      const placeholder = `dry:category:${desk}`;
+      indexes.categoryBySlug.set(desk, placeholder);
+      return placeholder;
+    }
+    const res = await target.createCategory(
+      { name: isEditoriaSlug(desk) ? EDITORIA_NAMES[desk] : desk, slug: desk, description: null },
+      idempotencyKey('category', `desk-${desk}`),
+    );
+    if (res.data?.id) {
+      indexes.categoryBySlug.set(desk, res.data.id);
+      return res.data.id;
+    }
+    summary.counts.inc('failed');
+    summary.failures.push({ id: `category:${desk}`, reason: res.error ?? 'unknown' });
+    return null;
+  });
+
+  const autoDeskFor = autoDesk
+    ? async (post: WpPost): Promise<string | null> => {
+        const { desk } = decideDesk(post);
+        if (desk === null) return null;
+        const categoryId = await deskCategory(desk);
+        // Not "no evidence": the rule named a desk, and Kal El would not take its category.
+        if (categoryId === null) {
+          throw new CliError(
+            `post ${post.id} belongs under ${desk} by --auto-desk, but that desk's category could not be created`,
+          );
+        }
+        return categoryId;
+      }
+    : undefined;
+
   /** Whether a post will be filed under a desk — answered from the plan, before anything exists. */
-  const willBeFiled = (post: WpPost): boolean => post.categories.some((id) => indexes.deskSlugByWpId.has(id));
+  const willBeFiled = (post: WpPost): boolean =>
+    post.categories.some((id) => indexes.deskSlugByWpId.has(id)) || (autoDesk && decideDesk(post).desk !== null);
 
   // ------------------------------------------------------------------- media
   const skipMedia = values['skip-media'] === true;
@@ -715,6 +809,7 @@ async function main(): Promise<void> {
     state,
     summary,
     ...siteHost,
+    ...(autoDeskFor ? { autoDesk: autoDeskFor } : {}),
   };
 
   const importOne = async (post: WpPost): Promise<void> => {
@@ -727,6 +822,9 @@ async function main(): Promise<void> {
           const slug = categorySlugByWpId.get(id);
           if (slug) orphanCategories.set(slug, (orphanCategories.get(slug) ?? 0) + 1);
         }
+        // Counted in `noDesk` and listed in auto-desk.json. Failing the run over a decision
+        // would also stop the import session before its idempotency pass.
+        if (err.leftOut) return;
       }
       summary.counts.inc('failed');
       summary.failures.push({ id: `wp:post:${post.id}`, reason: err instanceof Error ? err.message : String(err) });
@@ -752,6 +850,12 @@ async function main(): Promise<void> {
   }
 
   // ----------------------------------------------------------------- reports
+  const desks = autoDesk ? autoDeskReport([...deskDecisions.values()]) : null;
+  if (desks) {
+    summary.counts.inc('autoDeskAssigned', desks.counts.assigned);
+    summary.counts.inc('autoDeskUnresolved', desks.counts.unresolved);
+  }
+
   await mkdir(outDir, { recursive: true });
   const unknownPath = path.join(outDir, 'unknown-blocks.ndjson');
   await writeFile(
@@ -784,6 +888,7 @@ async function main(): Promise<void> {
               },
             }
           : {}),
+        ...(desks ? { autoDesk: desks.counts } : {}),
         failures: summary.failures.slice(0, 200),
       },
       null,
@@ -844,6 +949,12 @@ async function main(): Promise<void> {
       'utf8',
     );
     artefacts.push(externalPath, auditPath);
+  }
+
+  if (desks) {
+    const desksPath = path.join(outDir, 'auto-desk.json');
+    await writeFile(desksPath, JSON.stringify(desks, null, 2), 'utf8');
+    artefacts.push(desksPath);
   }
 
   await checkpoint.save();
@@ -1091,6 +1202,12 @@ interface ImportContext {
   summary: RunSummary;
   /** The legacy site's hostname, so an unresolved image can name the publisher it came from. */
   siteHost?: string;
+  /**
+   * With `--auto-desk`: the Kal El category of the desk the post's own evidence points
+   * to, or `null` when it points nowhere clearly. Consulted only when no WordPress
+   * category of the post is a desk.
+   */
+  autoDesk?: (post: WpPost) => Promise<string | null>;
 }
 
 /**
@@ -1140,6 +1257,13 @@ async function importPost(post: WpPost, ctx: ImportContext): Promise<'created' |
   const externalKey = `wp:post:${post.id}`;
   const slug = slugify(wpSlug(post.slug));
   const taxonomy = resolveTaxonomy(post, indexes);
+  // Only for a post WordPress filed under no desk at all. A post whose desk category
+  // failed to be created has a desk, and keywords must not move it to another one.
+  const unfiled = taxonomy.categories.length === 0 && !post.categories.some((id) => indexes.deskSlugByWpId.has(id));
+  if (unfiled && ctx.autoDesk) {
+    const categoryId = await ctx.autoDesk(post);
+    if (categoryId) taxonomy.categories = [categoryId];
+  }
   if (taxonomy.categories.length === 0) {
     // Not a warning. The portal drops an article with no desk from every listing and
     // from the sitemap, so importing it anyway produces something that exists in the CMS
@@ -1147,10 +1271,13 @@ async function importPost(post: WpPost, ctx: ImportContext): Promise<'created' |
     // success. 298 posts in this archive land here; `--category-map` is how they are
     // given a home.
     ctx.summary.counts.inc('noDesk');
-    throw new MissingDeskError(
-      `post ${post.id} (${post.slug}) has no desk: its categories are not among the six, and no --category-map entry covers them`,
-      post.categories,
-    );
+    const leftOut = unfiled && ctx.autoDesk !== undefined;
+    const why = !unfiled
+      ? 'its desk category could not be created in Kal El'
+      : leftOut
+        ? '--auto-desk found no clear evidence of one: left out, listed in auto-desk.json'
+        : 'its categories are not among the desks, and no --category-map entry covers them';
+    throw new MissingDeskError(`post ${post.id} (${post.slug}) has no desk: ${why}`, post.categories, leftOut);
   }
 
   const blocks: ContentBlock[] = htmlToBlocks(post.content, {
