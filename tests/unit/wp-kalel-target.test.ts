@@ -101,7 +101,7 @@ describe('the file travels as bytes, not as a Blob', () => {
 
     const { body, contentType } = multipartFile('file', filename, 'image/jpeg', JPEG, boundary);
     expect(contentType).toBe(referenceType);
-    expect(body.equals(Buffer.from(await reference.arrayBuffer()))).toBe(true);
+    expect(Buffer.from(body).equals(Buffer.from(await reference.arrayBuffer()))).toBe(true);
   });
 
   it('uploads one multipart body carrying the file bytes', async () => {
@@ -111,9 +111,9 @@ describe('the file travels as bytes, not as a Blob', () => {
 
     const call = calls[0];
     expect(call?.headers['content-type']).toMatch(/^multipart\/form-data; boundary=----mn-import-[0-9a-f]{32}$/);
-    // A Buffer is an ArrayBuffer V8 accounts for; that is the whole fix.
-    expect(Buffer.isBuffer(call?.body)).toBe(true);
-    const body = call?.body as Buffer;
+    // Bytes V8 accounts for, not a Blob it does not; that is the whole fix.
+    expect(call?.body).toBeInstanceOf(Uint8Array);
+    const body = Buffer.from(call?.body as Uint8Array);
     expect(body.includes(JPEG)).toBe(true);
     expect(body.toString('utf8', 0, 200)).toContain('filename="capa.jpg"');
   });

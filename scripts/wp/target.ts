@@ -80,7 +80,7 @@ export function multipartFile(
   mimeType: string,
   data: Buffer,
   boundary = `----mn-import-${randomBytes(16).toString('hex')}`,
-): { body: Buffer; contentType: string } {
+): { body: Uint8Array<ArrayBuffer>; contentType: string } {
   // The escaping of the HTML form-data serialiser, which is what was sent until now.
   const escape = (value: string): string => value.replace(/\n/g, '%0A').replace(/\r/g, '%0D').replace(/"/g, '%22');
   const head = Buffer.from(
@@ -88,10 +88,14 @@ export function multipartFile(
       `Content-Type: ${mimeType || 'application/octet-stream'}\r\n\r\n`,
     'utf8',
   );
-  return {
-    body: Buffer.concat([head, data, Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8')]),
-    contentType: `multipart/form-data; boundary=${boundary}`,
-  };
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
+  // One own buffer rather than `Buffer.concat`: a `Buffer` may sit in a shared pool, which
+  // `BodyInit` does not take, and the copy is the same one either way.
+  const body = new Uint8Array(head.byteLength + data.byteLength + tail.byteLength);
+  body.set(head, 0);
+  body.set(data, head.byteLength);
+  body.set(tail, head.byteLength + data.byteLength);
+  return { body, contentType: `multipart/form-data; boundary=${boundary}` };
 }
 
 export class KalElTarget {
