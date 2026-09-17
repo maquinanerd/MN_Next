@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { isLoopbackHost, isPrivateHost } from '@mn/content/security/address';
 
 import { CliError, rateLimiter } from './cli';
+import { ADDRESS_REFUSED, pinnedFetch, publicOnly, publicOrLoopbackName, type AssetFetch } from './pinned-fetch';
 
 /**
  * WordPress as a read-only source.
@@ -207,10 +208,11 @@ export async function defaultLookup(host: string): Promise<string[]> {
  * internal admin service, and the fetch would be made from inside the network with
  * whatever the operator's machine can reach.
  *
- * Resolving here and rejecting on any private answer closes that. It does not pin the
- * address the socket finally connects to, so a name that changes its answer between
- * this lookup and the connection is still theoretically possible; closing that last
- * gap needs a connection-level dispatcher, and is recorded as such in the runbook.
+ * Resolving here and rejecting on any private answer closes that, before a request is
+ * even attempted. It is not what the socket connects to: a name can change its answer
+ * between this lookup and the connection. `pinnedFetch` closes that gap by checking the
+ * resolution the socket actually uses; this early check stays, so a refusal is reported
+ * as one rather than as a failed connection.
  */
 export async function resolvesPublicly(
   host: string,
@@ -246,7 +248,8 @@ export interface GuardedFetchOptions {
   allowedHosts: ReadonlySet<string>;
   maxBytes: number;
   maxHops?: number;
-  fetchImpl: typeof fetch;
+  /** In production a `pinnedFetch`, so the socket reaches only an address that was checked. */
+  fetchImpl: AssetFetch;
   lookupImpl: (host: string) => Promise<string[]>;
   /**
    * Skip the address and port checks for every allowlisted host: the REST source's local
@@ -274,6 +277,11 @@ function refusalCategory(reason: string): string {
 }
 
 function transportFailure(err: unknown): { reason: string; detail: string } {
+  if ((err as NodeJS.ErrnoException | null)?.code === ADDRESS_REFUSED) {
+    // The name changed its answer between the check and the connection, or the check
+    // never saw it: the connection-time refusal of `pinnedFetch`.
+    return { reason: 'not allowed: private address', detail: (err as Error).message };
+  }
   const timeout = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
   return { reason: timeout ? 'timeout' : 'network error', detail: err instanceof Error ? err.message : String(err) };
 }
@@ -363,6 +371,8 @@ export class WordPressSource implements WpReadSource {
   private readonly auth: string | undefined;
   private readonly pace: () => Promise<void>;
   private readonly fetchImpl: typeof fetch;
+  /** Asset downloads: the injected fetch in tests, a pinned one otherwise. */
+  private readonly assetFetch: AssetFetch;
   /** Hosts an asset may legitimately come from: the source origin, plus any CDN. */
   private readonly assetHosts: Set<string>;
   private readonly lookupImpl: (host: string) => Promise<string[]>;
@@ -373,6 +383,8 @@ export class WordPressSource implements WpReadSource {
     this.auth = opts.auth;
     this.pace = rateLimiter(opts.requestsPerSecond ?? 4);
     this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.assetFetch =
+      opts.fetchImpl ?? pinnedFetch(opts.allowPrivateHosts === true ? publicOrLoopbackName : publicOnly);
     this.assetHosts = new Set([new URL(this.baseUrl).hostname, ...(opts.assetHosts ?? [])].map((h) => h.toLowerCase()));
     this.lookupImpl = opts.lookupImpl ?? defaultLookup;
     this.allowPrivateHosts = opts.allowPrivateHosts === true;
@@ -487,7 +499,7 @@ export class WordPressSource implements WpReadSource {
       maxBytes,
       maxHops,
       allowPrivateHosts: this.allowPrivateHosts,
-      fetchImpl: this.fetchImpl,
+      fetchImpl: this.assetFetch,
       lookupImpl: this.lookupImpl,
       pace: this.pace,
     });

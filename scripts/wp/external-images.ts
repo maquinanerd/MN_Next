@@ -5,6 +5,7 @@ import type { Image } from '@mn/content';
 
 import { retryAfterMs, sleep as realSleep, type RunSummary } from './cli';
 import { Semaphore, forEachByHost, forEachConcurrent } from './concurrency';
+import { pinnedFetch, publicOnly, publicOrLoopbackName, type AssetFetch } from './pinned-fetch';
 import { defaultLookup, detectImageType, fetchGuarded, type GuardedFetchResult } from './source';
 import { mappingKey, type RunState } from './state';
 import type { KalElTarget } from './target';
@@ -250,7 +251,7 @@ export interface DownloaderOptions {
   maxBytes: number;
   /** Only for `--allow-private-assets`, whose startup check proves the run is local. */
   allowLoopbackHosts?: boolean;
-  fetchImpl?: typeof fetch;
+  fetchImpl?: AssetFetch;
   lookupImpl?: (host: string) => Promise<string[]>;
 }
 
@@ -264,7 +265,9 @@ export function externalImageDownloader(
       maxBytes: opts.maxBytes,
       maxHops: 3,
       allowLoopbackHosts: opts.allowLoopbackHosts === true,
-      fetchImpl: opts.fetchImpl ?? fetch,
+      // Pinned: these hosts come out of post bodies, and any of their names may have
+      // changed hands since. The socket reaches only an address judged at connection time.
+      fetchImpl: opts.fetchImpl ?? pinnedFetch(opts.allowLoopbackHosts === true ? publicOrLoopbackName : publicOnly),
       lookupImpl: opts.lookupImpl ?? defaultLookup,
       headers: {
         'user-agent': IMPORTER_USER_AGENT,
