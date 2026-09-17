@@ -15,13 +15,37 @@ import {
   runAsScript,
   type RunSummary,
 } from './cli';
-import { idempotencyKey, loadState, mappingKey, saveState, type RunState } from './state';
+import { autoDeskReport, classifyDesk, deskSignalsOf, type DeskDecision, type TermName } from './auto-desk';
+import { forEachConcurrent, singleFlight } from './concurrency';
+import type { DuplicatePair } from './duplicates';
+import {
+  EXTERNAL_KEY_PREFIX,
+  externalImageDownloader,
+  externalImagesSummary,
+  importExternalImages,
+  type ExternalImage,
+  type ExternalImageOutcome,
+  type HostTally,
+} from './external-images';
+import { canonicalAssetUrl, planRun } from './plan';
+import { CheckpointWriter, idempotencyKey, loadState, mappingKey, type RunState } from './state';
+import {
+  describeNeed,
+  describeUploads,
+  estimateNeed,
+  storageVerdict,
+  tallyUploads,
+  type StorageNeed,
+  type UploadsOnDisk,
+} from './storage';
 import {
   ALLOWED_ASSET_TYPES,
   WordPressSource,
   detectImageType,
+  type WpAuthor,
   type WpMedia,
   type WpPost,
+  type WpTerm,
   wpSlug,
   type WpReadSource,
 } from './source';
@@ -80,7 +104,46 @@ const FLAGS = [
     type: 'string' as const,
     default: 'data/import/category-map.json',
   },
+  {
+    name: 'concurrency',
+    description: 'records handled at once: library assets, third-party images, posts',
+    type: 'number' as const,
+    default: 4,
+  },
+  {
+    name: 'external-images',
+    description: 'download third-party body images and host them in Kal El',
+    type: 'boolean' as const,
+    default: false,
+  },
+  {
+    name: 'external-downloads',
+    description: 'third-party downloads in flight at once, across every host',
+    type: 'number' as const,
+    default: 8,
+  },
+  {
+    name: 'external-per-host',
+    description: 'third-party downloads in flight at once from a single host',
+    type: 'number' as const,
+    default: 2,
+  },
+  {
+    name: 'skip-storage-check',
+    description: 'upload without first confirming Kal El has room for it',
+    type: 'boolean' as const,
+    default: false,
+  },
+  {
+    name: 'auto-desk',
+    description: 'file posts with no desk by keyword evidence in their categories, tags and title',
+    type: 'boolean' as const,
+    default: false,
+  },
 ];
+
+/** Media and posts are handed to the lanes in slices of this size, with a checkpoint after each. */
+const BATCH = 200;
 
 /**
  * Everything a post refers to, keyed the way the post refers to it.
@@ -139,14 +202,30 @@ export class MissingDeskError extends CliError {
   constructor(
     message: string,
     readonly categories: number[],
+    /**
+     * Left out by `--auto-desk`: WordPress filed it under no desk, and its own evidence
+     * names none clearly. The owner's decision for these is that they stay out of the
+     * import, on a list — auto-desk.json — rather than fail the run.
+     */
+    readonly leftOut = false,
   ) {
     super(message);
   }
 }
 
-/** WordPress serves several sizes of the same asset; they all map to one original. */
-function canonicalAssetUrl(url: string): string {
-  return url.replace(/-\d+x\d+(\.[a-z]{3,4})$/i, '$1');
+/** Whether an earlier run hosted third-party images, as far as the checkpoint or Kal El can tell. */
+function holdsHostedImages(state: RunState, alreadyImported: ReadonlyMap<string, string>): boolean {
+  const prefix = mappingKey('external', '');
+  for (const key of Object.keys(state.mappings)) if (key.startsWith(prefix)) return true;
+  for (const key of alreadyImported.keys()) if (key.startsWith(EXTERNAL_KEY_PREFIX)) return true;
+  return false;
+}
+
+/** A lane count from the command line: a whole number, and not one that turns politeness into a flood. */
+function lanes(value: string | number | boolean | undefined, flag: string): number {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > 32) throw new CliError(`--${flag} must be a whole number from 1 to 32`);
+  return n;
 }
 
 async function main(): Promise<void> {
@@ -161,6 +240,11 @@ async function main(): Promise<void> {
   const outDir = String(values.out);
   const statePath = String(values.state);
   const maxAssetBytes = Number(values['max-asset-mb']) * 1024 * 1024;
+  const externalImages = values['external-images'] === true;
+  const autoDesk = values['auto-desk'] === true;
+  const concurrency = lanes(values.concurrency, 'concurrency');
+  const externalDownloads = lanes(values['external-downloads'], 'external-downloads');
+  const externalPerHost = lanes(values['external-per-host'], 'external-per-host');
 
   const now = new Date().toISOString();
   const state: RunState = await loadState(statePath, now, values.resume === true);
@@ -180,6 +264,12 @@ async function main(): Promise<void> {
       'categoriesAsTags',
       'noDesk',
       'slugCollision',
+      'duplicatesSkipped',
+      'mediaMissingUnused',
+      ...(externalImages
+        ? ['externalImagesFound', 'externalImagesTransferred', 'externalImagesReused', 'externalImagesFailed']
+        : []),
+      ...(autoDesk ? ['autoDeskAssigned', 'autoDeskUnresolved'] : []),
     ]),
     failures: [],
     artefacts: [],
@@ -337,13 +427,42 @@ async function main(): Promise<void> {
    */
   /** WordPress category id -> its slug, so an unfiled post can be reported by name. */
   const categorySlugByWpId = new Map<number, string>();
+  /** Slug and name of every term, kept only for `--auto-desk`, which reads them as evidence. */
+  const categoryTermByWpId = new Map<number, TermName>();
+  const tagTermByWpId = new Map<number, TermName>();
   /** WordPress categories that left posts with nowhere to go, and how many each. */
   const orphanCategories = new Map<string, number>();
 
-  for await (const batch of source.categories()) {
-    for (const term of batch) {
+  /*
+   * Read now, written later.
+   *
+   * Which categories are desks is decided from the terms alone, and everything that comes
+   * before the storage check — which posts will be imported, which of their images to
+   * fetch — needs only that decision. The writes wait until the check has passed: the
+   * archive has 36.438 tags, and at Kal El's rate limit creating them is the better part
+   * of an hour, which is not something to do first and then refuse the import over.
+   */
+  const categoryTerms: WpTerm[] = [];
+  for await (const batch of source.categories()) categoryTerms.push(...batch);
+  const tagTerms: WpTerm[] = [];
+  for await (const batch of source.tags()) tagTerms.push(...batch);
+  const authorTerms: WpAuthor[] = [];
+  for await (const batch of source.authors()) authorTerms.push(...batch);
+
+  for (const term of categoryTerms) {
+    const slug = slugify(term.slug || term.name);
+    categorySlugByWpId.set(term.id, slug);
+    if (autoDesk) categoryTermByWpId.set(term.id, { slug, name: term.name });
+    const desk = deskOf(slug, categoryOverrides);
+    if (desk !== null) indexes.deskSlugByWpId.set(term.id, desk);
+  }
+  if (autoDesk) {
+    for (const term of tagTerms) tagTermByWpId.set(term.id, { slug: slugify(term.slug || term.name), name: term.name });
+  }
+
+  async function writeTaxonomy(): Promise<void> {
+    for (const term of categoryTerms) {
       const slug = slugify(term.slug || term.name);
-      categorySlugByWpId.set(term.id, slug);
       if (classifyCategory(slug, categoryOverrides) === 'tag') {
         summary.counts.inc('categoriesAsTags');
         await ensureTerm(
@@ -359,8 +478,6 @@ async function main(): Promise<void> {
       }
 
       const desk = deskOf(slug, categoryOverrides) as string;
-      indexes.deskSlugByWpId.set(term.id, desk);
-      categorySlugByWpId.set(term.id, slug);
       await ensureTerm(
         'category',
         term.id,
@@ -393,10 +510,8 @@ async function main(): Promise<void> {
         );
       }
     }
-  }
 
-  for await (const batch of source.tags()) {
-    for (const term of batch) {
+    for (const term of tagTerms) {
       const slug = slugify(term.slug || term.name);
       await ensureTerm(
         'tag',
@@ -408,10 +523,8 @@ async function main(): Promise<void> {
         existingBySlug.tags,
       );
     }
-  }
 
-  for await (const batch of source.authors()) {
-    for (const author of batch) {
+    for (const author of authorTerms) {
       const slug = slugify(author.slug || author.name);
       await ensureTerm(
         'author',
@@ -429,19 +542,254 @@ async function main(): Promise<void> {
     }
   }
 
-  // ------------------------------------------------------------------- media
-  if (values['skip-media'] !== true) {
-    const alreadyImported = target ? await target.mediaIndexByExternalKey() : new Map<string, string>();
-    const deps: AssetImportDeps = { source, target, indexes, state, summary, report, alreadyImported, maxAssetBytes };
+  const checkpoint = new CheckpointWriter(statePath, state);
+  const since = values.since ? String(values.since) : undefined;
 
-    for await (const batch of source.media()) {
-      for (const asset of batch) await importAsset(asset, deps);
-      await saveState(statePath, state);
+  // ------------------------------------------------------------------- desks
+  //
+  // Decided once per post and remembered. The image pre-pass and the post phase must agree
+  // on whether a post is imported at all, and a decision taken twice can come out twice.
+  const deskDecisions = new Map<number, DeskDecision>();
+  const decideDesk = (post: WpPost): DeskDecision => {
+    let decision = deskDecisions.get(post.id);
+    if (!decision) {
+      decision = classifyDesk(deskSignalsOf(post, categoryTermByWpId, tagTermByWpId));
+      deskDecisions.set(post.id, decision);
     }
+    return decision;
+  };
+
+  /**
+   * The Kal El category of a desk no WordPress category of this archive stood for.
+   *
+   * `--auto-desk` can file a post under a desk the taxonomy phase never created — the
+   * archive has no Animes category at all. One create at a time per desk, so lanes that need
+   * the same desk at the same moment wait for it instead of racing to make two.
+   */
+  const deskCategory = singleFlight(async (desk: string): Promise<string | null> => {
+    const known = indexes.categoryBySlug.get(desk) ?? existingBySlug.categories.get(desk);
+    if (known) return known;
+    if (!target) {
+      const placeholder = `dry:category:${desk}`;
+      indexes.categoryBySlug.set(desk, placeholder);
+      return placeholder;
+    }
+    const res = await target.createCategory(
+      { name: isEditoriaSlug(desk) ? EDITORIA_NAMES[desk] : desk, slug: desk, description: null },
+      idempotencyKey('category', `desk-${desk}`),
+    );
+    if (res.data?.id) {
+      indexes.categoryBySlug.set(desk, res.data.id);
+      return res.data.id;
+    }
+    summary.counts.inc('failed');
+    summary.failures.push({ id: `category:${desk}`, reason: res.error ?? 'unknown' });
+    return null;
+  });
+
+  const autoDeskFor = autoDesk
+    ? async (post: WpPost): Promise<string | null> => {
+        const { desk } = decideDesk(post);
+        if (desk === null) return null;
+        const categoryId = await deskCategory(desk);
+        // Not "no evidence": the rule named a desk, and Kal El would not take its category.
+        if (categoryId === null) {
+          throw new CliError(
+            `post ${post.id} belongs under ${desk} by --auto-desk, but that desk's category could not be created`,
+          );
+        }
+        return categoryId;
+      }
+    : undefined;
+
+  /** Whether a post will be filed under a desk — answered from the plan, before anything exists. */
+  const willBeFiled = (post: WpPost): boolean =>
+    post.categories.some((id) => indexes.deskSlugByWpId.has(id)) || (autoDesk && decideDesk(post).desk !== null);
+
+  // ------------------------------------------------------------------- media
+  const skipMedia = values['skip-media'] === true;
+  // One read of what Kal El already holds, before anything is uploaded, shared by both
+  // kinds of media.
+  const alreadyImported =
+    target && (!skipMedia || externalImages) ? await target.mediaIndexByExternalKey() : new Map<string, string>();
+
+  /*
+   * An import that has hosted third-party images must go on resolving them.
+   *
+   * Without the flag they are not collected, so every body converts with those images
+   * unresolved — and updating an article sends its whole document. Each article the run
+   * touched would lose its hosted images, and the run would exit 0. The runbook's second
+   * run and the cutover delta are exactly such runs, so this refuses before any write.
+   */
+  if (target && !externalImages && holdsHostedImages(state, alreadyImported)) {
+    throw new CliError(
+      'this import has already hosted third-party images: pass --external-images, or every article this run ' +
+        'updates would be sent without them',
+    );
   }
 
+  /*
+   * The library is listed in full before any of it is sent: the storage check needs to
+   * know what is still to upload, and the plan needs to know which body images the
+   * library will answer for.
+   */
+  const library: WpMedia[] = [];
+  if (!skipMedia) for await (const batch of source.media()) library.push(...batch);
+  const transferable = library.filter((asset) => ALLOWED_ASSET_TYPES.has(asset.mime_type));
+
+  // ----------------------------------------------------------------- uploads
+  //
+  // What --uploads holds of the library still to send. Measured before the plan, which
+  // asks who uses the files that are missing.
+  const libraryPending = transferable.filter(
+    (asset) =>
+      (alreadyImported.get(`wp:media:${asset.id}`) ?? state.mappings[mappingKey('media', asset.id)]) === undefined,
+  );
+  const measured = libraryPending.map((asset) => ({
+    id: asset.id,
+    url: asset.source_url,
+    size: null as number | null,
+  }));
+  const measure = source.assetSize?.bind(source);
+  if (measure && measured.length > 0) {
+    await forEachConcurrent(measured, 16, async (entry) => {
+      entry.size = await measure(entry.url).catch(() => null);
+    });
+  }
+  const onDisk = tallyUploads(measured, maxAssetBytes);
+  if (libraryPending.length > 0) {
+    console.log(`[wp:import] uploads: ${describeUploads(onDisk.uploads, libraryPending.length)}`);
+  }
+
+  // -------------------------------------------------------------------- plan
+  //
+  // Only a run over the whole archive can say that no imported post uses a file: with
+  // --since or --limit, a missing file fails the way it always did.
+  const wholeArchive = since === undefined && limit === 0;
+  const runPlan = await planRun({
+    posts: source.posts(since),
+    limit,
+    willBeFiled,
+    library: transferable,
+    collectExternal: externalImages,
+    missingOnDisk: wholeArchive && onDisk.uploads !== null ? new Set(onDisk.missing.map((file) => file.id)) : null,
+    ...siteHost,
+  });
+
+  let externals: ExternalImage[] = runPlan.externalImages;
+  if (externalImages) {
+    summary.counts.inc('externalImagesFound', externals.length);
+    console.log(
+      `[wp:import] third-party images: ${externals.length} unique URLs on ${new Set(externals.map((i) => i.host)).size} hosts`,
+    );
+  }
+
+  const duplicateOf = new Map(runPlan.duplicates.map((pair) => [pair.skippedId, pair]));
+  if (duplicateOf.size > 0) {
+    console.log(`[wp:import] duplicates: ${duplicateOf.size} posts are copies of an earlier post and will be skipped`);
+  }
+
+  // A missing file no imported post uses has nothing to lose; one an imported post uses
+  // is a hole in that post, and fails as it always did.
+  const missingFiles = {
+    unused: wholeArchive ? onDisk.missing.filter((file) => !runPlan.missingUsedBy.has(file.id)) : [],
+    used: onDisk.missing
+      .filter((file) => runPlan.missingUsedBy.has(file.id))
+      .map((file) => ({ ...file, usedBy: runPlan.missingUsedBy.get(file.id) ?? [] })),
+  };
+
+  // ----------------------------------------------------------------- storage
+  let storage: { need: StorageNeed; uploads: UploadsOnDisk | null; verdict: string | null } | null = null;
+  const externalPending = externals.filter(
+    (image) =>
+      (alreadyImported.get(image.externalKey) ?? state.mappings[mappingKey('external', image.hash)]) === undefined,
+  ).length;
+  if (libraryPending.length > 0 || externalPending > 0) {
+    storage = { need: estimateNeed(onDisk.sizes, externalPending), uploads: onDisk.uploads, verdict: null };
+    console.log(`[wp:import] storage: ${describeNeed(storage.need)}`);
+
+    if (target) {
+      if (values['skip-storage-check'] === true) {
+        console.log('[wp:import] storage: check skipped (--skip-storage-check)');
+      } else {
+        const verdict = storageVerdict(storage.need, await target.mediaStorage());
+        console.log(`[wp:import] storage: ${verdict.message}`);
+        // Refused before the first upload, which is the only moment refusing is free.
+        if (!verdict.ok) throw new CliError(`refusing to upload: ${verdict.message}`);
+        storage.verdict = verdict.message;
+      }
+    }
+  }
+  libraryPending.length = 0;
+
+  // ------------------------------------------------------------ taxonomy write
+  await writeTaxonomy();
+  // Written: the lists are dead weight for the rest of a run that reads 41.318 posts.
+  categoryTerms.length = 0;
+  tagTerms.length = 0;
+  authorTerms.length = 0;
+
+  // ------------------------------------------------------------ library upload
+  if (!skipMedia) {
+    const deps: AssetImportDeps = {
+      source,
+      target,
+      indexes,
+      state,
+      summary,
+      report,
+      alreadyImported,
+      maxAssetBytes,
+      missingFiles: {
+        unused: new Set(missingFiles.unused.map((file) => file.id)),
+        usedBy: runPlan.missingUsedBy,
+      },
+    };
+    for (let start = 0; start < library.length; start += BATCH) {
+      try {
+        await forEachConcurrent(library.slice(start, start + BATCH), concurrency, (asset) => importAsset(asset, deps));
+      } finally {
+        // Also on the way out of a failure: every asset that finished did so in Kal El,
+        // and a mapping left unsaved is an upload the next run repeats.
+        await checkpoint.save();
+      }
+    }
+    library.length = 0;
+  }
+
+  // ------------------------------------------------- third-party image upload
+  let externalTallies = new Map<string, HostTally>();
+  const externalOutcomes: ExternalImageOutcome[] = [];
+  if (externalImages) {
+    try {
+      externalTallies = await importExternalImages(externals, {
+        target,
+        imageByUrl: indexes.imageByUrl,
+        state,
+        summary,
+        alreadyImported,
+        download: externalImageDownloader({
+          allowedHosts: new Set(externals.map((image) => image.host)),
+          maxBytes: maxAssetBytes,
+          // The rehearsal flag reaches body URLs only when they are this very machine.
+          allowLoopbackHosts: allowPrivateHosts,
+        }),
+        concurrency,
+        downloads: externalDownloads,
+        perHost: externalPerHost,
+        checkpoint: () => checkpoint.save(),
+        record: (outcome) => externalOutcomes.push(outcome),
+      });
+    } finally {
+      await checkpoint.save();
+    }
+  }
+  const external = externalImages
+    ? externalImagesSummary(externals, externalTallies, runPlan.unparseableExternal)
+    : null;
+  externals = [];
+
   // ------------------------------------------------------------------- posts
-  const since = values.since ? String(values.since) : undefined;
   let processed = 0;
 
   /*
@@ -454,44 +802,92 @@ async function main(): Promise<void> {
    * rehearsal counts them, and the report names them, before anything is written.
    */
   const slugsSeen = new Map<string, number>();
+  const context: ImportContext = {
+    target,
+    indexes,
+    report,
+    state,
+    summary,
+    ...siteHost,
+    ...(autoDeskFor ? { autoDesk: autoDeskFor } : {}),
+  };
 
-  outer: for await (const batch of source.posts(since)) {
-    for (const post of batch) {
-      if (limit > 0 && processed >= limit) break outer;
-      processed += 1;
-      summary.counts.inc('read');
+  /** Whether each post a copy was taken from was imported in this run — decided once it has settled. */
+  const keptIds = new Set(runPlan.duplicates.map((pair) => pair.keptId));
+  const keptImported = new Map<number, boolean>();
+  const copiesRead: DuplicatePair[] = [];
 
-      const finalSlug = slugify(wpSlug(post.slug));
-      const owner = slugsSeen.get(finalSlug);
-      if (owner !== undefined) {
-        summary.counts.inc('slugCollision');
-        summary.failures.push({
-          id: `wp:post:${post.id}`,
-          reason: `slug "${finalSlug}" is already taken by wp:post:${owner}`,
-        });
-      } else {
-        slugsSeen.set(finalSlug, post.id);
-      }
-
-      try {
-        const result = await importPost(post, { target, indexes, report, state, summary, ...siteHost });
-        summary.counts.inc(result);
-      } catch (err) {
-        if (err instanceof MissingDeskError) {
-          for (const id of err.categories) {
-            const slug = categorySlugByWpId.get(id);
-            if (slug) orphanCategories.set(slug, (orphanCategories.get(slug) ?? 0) + 1);
-          }
+  const importOne = async (post: WpPost): Promise<void> => {
+    try {
+      const result = await importPost(post, context);
+      summary.counts.inc(result);
+      if (keptIds.has(post.id)) keptImported.set(post.id, true);
+    } catch (err) {
+      if (keptIds.has(post.id)) keptImported.set(post.id, false);
+      if (err instanceof MissingDeskError) {
+        for (const id of err.categories) {
+          const slug = categorySlugByWpId.get(id);
+          if (slug) orphanCategories.set(slug, (orphanCategories.get(slug) ?? 0) + 1);
         }
-        summary.counts.inc('failed');
-        summary.failures.push({ id: `wp:post:${post.id}`, reason: err instanceof Error ? err.message : String(err) });
+        // Counted in `noDesk` and listed in auto-desk.json. Failing the run over a decision
+        // would also stop the import session before its idempotency pass.
+        if (err.leftOut) return;
       }
+      summary.counts.inc('failed');
+      summary.failures.push({ id: `wp:post:${post.id}`, reason: err instanceof Error ? err.message : String(err) });
     }
+  };
+
+  for await (const batch of source.posts(since)) {
+    const plan = planPostBatch(batch, slugsSeen, limit > 0 ? limit - processed : Number.POSITIVE_INFINITY, (postId) =>
+      duplicateOf.has(postId),
+    );
+    processed += plan.taken;
+    summary.counts.inc('read', plan.taken);
+    for (const { post, slug, owner } of plan.collisions) {
+      summary.counts.inc('slugCollision');
+      summary.failures.push({
+        id: `wp:post:${post.id}`,
+        reason: `slug "${slug}" is already taken by wp:post:${owner}`,
+      });
+    }
+    for (const copy of plan.duplicates) copiesRead.push(duplicateOf.get(copy.id) as DuplicatePair);
+    for (const wave of plan.waves) await forEachConcurrent(wave, concurrency, importOne);
+    // The whole batch has settled, so every post before the cursor is done.
     state.cursor = processed;
-    await saveState(statePath, state);
+    await checkpoint.save();
+    if (limit > 0 && processed >= limit) break;
+  }
+
+  /*
+   * A copy is skipped only once the post it copies is in: settled here, after every batch,
+   * because the lowest id of a group need not arrive first. If that post was not imported,
+   * skipping its copy would lose the story silently — so the copy fails with it instead.
+   */
+  const skippedCopies: DuplicatePair[] = [];
+  for (const pair of copiesRead) {
+    if (keptImported.get(pair.keptId) === true) {
+      summary.counts.inc('duplicatesSkipped');
+      skippedCopies.push(pair);
+      continue;
+    }
+    summary.counts.inc('failed');
+    summary.failures.push({
+      id: `wp:post:${pair.skippedId}`,
+      reason: `a copy of wp:post:${pair.keptId}, which was not imported in this run: not imported either`,
+    });
   }
 
   // ----------------------------------------------------------------- reports
+  // A skipped copy is not imported, so its desk decision is not one the report should count.
+  const desks = autoDesk
+    ? autoDeskReport([...deskDecisions.values()].filter((decision) => !duplicateOf.has(decision.postId)))
+    : null;
+  if (desks) {
+    summary.counts.inc('autoDeskAssigned', desks.counts.assigned);
+    summary.counts.inc('autoDeskUnresolved', desks.counts.unresolved);
+  }
+
   await mkdir(outDir, { recursive: true });
   const unknownPath = path.join(outDir, 'unknown-blocks.ndjson');
   await writeFile(
@@ -513,6 +909,23 @@ async function main(): Promise<void> {
         droppedTags: report.droppedTags,
         droppedAttributes: report.droppedAttributes,
         imagesMissingAlt: report.imagesMissingAlt,
+        concurrency,
+        ...(storage ? { storage } : {}),
+        ...(external
+          ? {
+              externalImages: {
+                ...external,
+                // The whole table is in external-images.json; here, the hosts that matter.
+                byHost: external.byHost.slice(0, 15).map(({ samples: _samples, ...tally }) => tally),
+              },
+            }
+          : {}),
+        ...(desks ? { autoDesk: desks.counts } : {}),
+        // Every one, not a sample: an operator deciding whether a gap matters needs the list.
+        mediaMissing: {
+          unused: missingFiles.unused,
+          used: missingFiles.used,
+        },
         failures: summary.failures.slice(0, 200),
       },
       null,
@@ -545,21 +958,130 @@ async function main(): Promise<void> {
     ),
     'utf8',
   );
-  await saveState(statePath, state);
+  const artefacts = [reportPath, unknownPath, unmappedPath];
 
-  summary.artefacts = [reportPath, unknownPath, unmappedPath, statePath];
+  if (external) {
+    const externalPath = path.join(outDir, 'external-images.json');
+    await writeFile(
+      externalPath,
+      JSON.stringify(
+        {
+          note:
+            'Imagens de terceiros no corpo dos posts importados, por host. `failed` são falhas do host ' +
+            '(não mudam o código de saída); `failedOnKalEl` são nossas e contam em `failed` da execução.',
+          applied: apply,
+          ...external,
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+    // One line per image: what was hosted, from where, under which media id.
+    const auditPath = path.join(outDir, 'external-images.ndjson');
+    const lines = [...externalOutcomes].sort((a, b) => a.host.localeCompare(b.host) || a.url.localeCompare(b.url));
+    await writeFile(
+      auditPath,
+      lines.map((line) => JSON.stringify(line)).join('\n') + (lines.length ? '\n' : ''),
+      'utf8',
+    );
+    artefacts.push(externalPath, auditPath);
+  }
+
+  if (desks) {
+    const desksPath = path.join(outDir, 'auto-desk.json');
+    await writeFile(desksPath, JSON.stringify(desks, null, 2), 'utf8');
+    artefacts.push(desksPath);
+  }
+
+  // Written on every run, empty or not: `redirects:build` derives the same pairs from the
+  // archive, and this is what the operator checks its redirects against.
+  const duplicatesPath = path.join(outDir, 'duplicates.json');
+  await writeFile(
+    duplicatesPath,
+    JSON.stringify(
+      {
+        note:
+          'Posts publicados duas vezes — título normalizado e corpo idênticos a um post anterior importado. ' +
+          'A cópia de id maior não é importada; seu endereço antigo é redirecionado por `pnpm redirects:build`.',
+        duplicates: skippedCopies
+          .sort((a, b) => a.skippedId - b.skippedId)
+          .map(({ skippedId, keptId, legacyPath, keptLegacyPath }) => ({
+            skippedId,
+            keptId,
+            legacyPath,
+            keptLegacyPath,
+          })),
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  );
+  artefacts.push(duplicatesPath);
+
+  await checkpoint.save();
+
+  summary.artefacts = [...artefacts, statePath];
   printSummary(summary);
 
-  if (exitCodeFor(apply, summary) === 1) process.exit(1);
+  // See `runAsScript`: set, not exited with, so a run that wrote exits cleanly on Windows.
+  process.exitCode = exitCodeFor(apply, summary);
+}
+
+export interface PostBatchPlan {
+  /** Every post of a wave runs after the whole previous wave has settled. */
+  waves: WpPost[][];
+  /** Posts whose slug an earlier post already claimed; they are still imported, after it. */
+  collisions: { post: WpPost; slug: string; owner: number }[];
+  /** Copies of an earlier post: read, but neither imported nor given a slug to claim. */
+  duplicates: WpPost[];
+  /** How many posts of the batch fit under `--limit`. */
+  taken: number;
 }
 
 /**
- * Turns whatever a body says about an image into the image Kal El now holds.
+ * Which posts of a source batch run at once, and which must wait.
  *
- * Exported so it can be exercised end-to-end with the indexes `importAsset` actually
- * builds: this resolver and that indexing step are one contract, and a test that
- * reimplements either half proves nothing about the pair.
+ * Two posts that slugify alike cannot both have the URL, and Kal El refuses the second
+ * create. Run sequentially, the earlier post always won. Run in lanes, the two would race
+ * and the URL would go to whichever request landed first — while the report named the
+ * earlier post as the owner. So a post whose slug is already claimed goes in a second
+ * wave, after the post that claimed it has settled, and ownership stays in source order.
  */
+export function planPostBatch(
+  batch: readonly WpPost[],
+  slugsSeen: Map<string, number>,
+  capacity: number,
+  isDuplicate: (postId: number) => boolean = () => false,
+): PostBatchPlan {
+  const first: WpPost[] = [];
+  const later: WpPost[] = [];
+  const collisions: PostBatchPlan['collisions'] = [];
+  const duplicates: WpPost[] = [];
+  let taken = 0;
+  for (const post of batch) {
+    if (taken >= capacity) break;
+    taken += 1;
+    // A copy's slug is its original's: letting it claim one would report a collision for
+    // a post that is never written.
+    if (isDuplicate(post.id)) {
+      duplicates.push(post);
+      continue;
+    }
+    const slug = slugify(wpSlug(post.slug));
+    const owner = slugsSeen.get(slug);
+    if (owner === undefined) {
+      slugsSeen.set(slug, post.id);
+      first.push(post);
+    } else {
+      collisions.push({ post, slug, owner });
+      later.push(post);
+    }
+  }
+  return { waves: [first, later].filter((wave) => wave.length > 0), collisions, duplicates, taken };
+}
+
 /**
  * The run's exit code.
  *
@@ -571,8 +1093,21 @@ export function exitCodeFor(apply: boolean, summary: RunSummary): 0 | 1 {
   return apply && summary.counts.get('failed') > 0 ? 1 : 0;
 }
 
+/**
+ * Turns whatever a body says about an image into the image Kal El now holds.
+ *
+ * Exported so it can be exercised end-to-end with the indexes `importAsset` actually
+ * builds: this resolver and that indexing step are one contract, and a test that
+ * reimplements either half proves nothing about the pair.
+ *
+ * The exact spelling first, then the canonical one. A library asset is registered under
+ * its original URL, and every resized variant (`-800x450.jpg`) has to fall back to it. A
+ * third-party image is registered under each exact `src` a body used, because there the
+ * `-800x450` is not a variant of anything the import holds — it names a different file
+ * on somebody else's server — and folding it would show one rendition in place of another.
+ */
 export function imageResolver(indexes: Indexes): (src: string) => Image | null {
-  return (src) => indexes.imageByUrl.get(canonicalAssetUrl(src)) ?? null;
+  return (src) => indexes.imageByUrl.get(src) ?? indexes.imageByUrl.get(canonicalAssetUrl(src)) ?? null;
 }
 
 export interface AssetImportDeps {
@@ -585,6 +1120,11 @@ export interface AssetImportDeps {
   /** Media already in Kal El under this run's external keys, from an earlier run. */
   alreadyImported: Map<string, string>;
   maxAssetBytes: number;
+  /**
+   * Library files missing from `--uploads`, as the plan found them: those no imported post
+   * uses are skipped, those one does fail — without a pointless attempt to read them.
+   */
+  missingFiles?: { unused: ReadonlySet<number>; usedBy: ReadonlyMap<number, readonly number[]> };
 }
 
 /**
@@ -634,6 +1174,21 @@ export async function importAsset(asset: WpMedia, deps: AssetImportDeps): Promis
     report.unknown[`media:${asset.mime_type}`] = (report.unknown[`media:${asset.mime_type}`] ?? 0) + 1;
     return;
   }
+  // Absent from --uploads and shown by no post this run imports: nothing to transfer, and
+  // nothing lost by not transferring it — the theme's demo images, in this archive.
+  if (deps.missingFiles?.unused.has(asset.id)) {
+    summary.counts.inc('mediaMissingUnused');
+    return;
+  }
+  const usedBy = deps.missingFiles?.usedBy.get(asset.id);
+  if (usedBy) {
+    summary.counts.inc('failed');
+    summary.failures.push({
+      id: externalKey,
+      reason: `file missing from --uploads, and used by ${usedBy.map((id) => `wp:post:${id}`).join(', ')}`,
+    });
+    return;
+  }
   if (image.alt.trim() === '') report.imagesMissingAlt += 1;
 
   if (!target) {
@@ -641,7 +1196,10 @@ export async function importAsset(asset: WpMedia, deps: AssetImportDeps): Promis
     return;
   }
 
-  const fetched = await source.fetchAsset(asset.source_url, maxAssetBytes);
+  // A rejected read is the same outcome as a refused one. Under concurrency an escaping
+  // error would also abandon every other asset in flight, whose uploads have landed and
+  // whose mappings would never reach the checkpoint.
+  const fetched = await source.fetchAsset(asset.source_url, maxAssetBytes).catch(() => null);
   if (!fetched) {
     // Counted, not just listed: the exit code reads the counter, and an import that
     // lost every cover to a network fault must not report success.
@@ -658,7 +1216,9 @@ export async function importAsset(asset: WpMedia, deps: AssetImportDeps): Promis
   }
 
   const filename = path.basename(new URL(url).pathname) || `${asset.slug}.jpg`;
-  const uploaded = await target.uploadMedia(filename, fetched.data, detected, externalKey);
+  const uploaded = await target
+    .uploadMedia(filename, fetched.data, detected, externalKey)
+    .catch((err: unknown) => ({ status: 0, id: null, error: err instanceof Error ? err.message : String(err) }));
   if (!uploaded.id) {
     summary.counts.inc('failed');
     summary.failures.push({ id: externalKey, reason: uploaded.error ?? 'upload failed' });
@@ -735,6 +1295,12 @@ interface ImportContext {
   summary: RunSummary;
   /** The legacy site's hostname, so an unresolved image can name the publisher it came from. */
   siteHost?: string;
+  /**
+   * With `--auto-desk`: the Kal El category of the desk the post's own evidence points
+   * to, or `null` when it points nowhere clearly. Consulted only when no WordPress
+   * category of the post is a desk.
+   */
+  autoDesk?: (post: WpPost) => Promise<string | null>;
 }
 
 /**
@@ -784,6 +1350,13 @@ async function importPost(post: WpPost, ctx: ImportContext): Promise<'created' |
   const externalKey = `wp:post:${post.id}`;
   const slug = slugify(wpSlug(post.slug));
   const taxonomy = resolveTaxonomy(post, indexes);
+  // Only for a post WordPress filed under no desk at all. A post whose desk category
+  // failed to be created has a desk, and keywords must not move it to another one.
+  const unfiled = taxonomy.categories.length === 0 && !post.categories.some((id) => indexes.deskSlugByWpId.has(id));
+  if (unfiled && ctx.autoDesk) {
+    const categoryId = await ctx.autoDesk(post);
+    if (categoryId) taxonomy.categories = [categoryId];
+  }
   if (taxonomy.categories.length === 0) {
     // Not a warning. The portal drops an article with no desk from every listing and
     // from the sitemap, so importing it anyway produces something that exists in the CMS
@@ -791,10 +1364,13 @@ async function importPost(post: WpPost, ctx: ImportContext): Promise<'created' |
     // success. 298 posts in this archive land here; `--category-map` is how they are
     // given a home.
     ctx.summary.counts.inc('noDesk');
-    throw new MissingDeskError(
-      `post ${post.id} (${post.slug}) has no desk: its categories are not among the six, and no --category-map entry covers them`,
-      post.categories,
-    );
+    const leftOut = unfiled && ctx.autoDesk !== undefined;
+    const why = !unfiled
+      ? 'its desk category could not be created in Kal El'
+      : leftOut
+        ? '--auto-desk found no clear evidence of one: left out, listed in auto-desk.json'
+        : 'its categories are not among the desks, and no --category-map entry covers them';
+    throw new MissingDeskError(`post ${post.id} (${post.slug}) has no desk: ${why}`, post.categories, leftOut);
   }
 
   const blocks: ContentBlock[] = htmlToBlocks(post.content, {

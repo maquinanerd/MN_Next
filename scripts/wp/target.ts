@@ -1,4 +1,9 @@
-import { CliError } from './cli';
+import { createHash } from 'node:crypto';
+
+import { z } from 'zod';
+
+import { CliError, retryAfterMs, sleep as realSleep } from './cli';
+import { idempotencyKey } from './state';
 
 /**
  * Kal El as the import target.
@@ -17,6 +22,40 @@ export interface TargetOptions {
   token: string;
   siteId: string;
   fetchImpl?: typeof fetch;
+  /** Waiting, injectable so a test does not sit through a real `Retry-After`. */
+  sleep?: (ms: number) => Promise<void>;
+  /** How many 429 answers one request may receive before it is reported as failed. */
+  maxRateLimitRetries?: number;
+}
+
+/**
+ * `GET /media/storage`: where the media bytes live and how much room is left.
+ *
+ * Sizes are `null` when the provider cannot tell — object storage has no meaningful free
+ * space to report.
+ */
+export const kalelMediaStorageSchema = z.object({
+  provider: z.string().min(1),
+  totalBytes: z.number().int().nonnegative().nullable(),
+  freeBytes: z.number().int().nonnegative().nullable(),
+});
+
+export type KalElMediaStorage = z.infer<typeof kalelMediaStorageSchema>;
+
+/**
+ * The `Idempotency-Key` of one upload.
+ *
+ * Two constraints, both learned from the CMS rather than chosen. Kal El accepts only
+ * `[A-Za-z0-9._-]` in the header and answers 400 to anything else — and the key used to be
+ * the raw `externalKey`, whose colons made every single upload a 400. And it hashes the
+ * request with the file's digest, so the same key sent with different bytes is refused
+ * as a replay: a third-party CDN is free to re-encode an image between two downloads,
+ * and that must read as a new request, not as a conflict that blocks the image for the
+ * key's whole lifetime. So the key carries the digest of the bytes it is sent with.
+ */
+export function mediaIdempotencyKey(externalKey: string, data: Buffer): string {
+  const digest = createHash('sha256').update(data).digest('hex').slice(0, 16);
+  return idempotencyKey('media', `${externalKey}.${digest}`);
 }
 
 export class KalElTarget {
@@ -24,12 +63,23 @@ export class KalElTarget {
   private readonly token: string;
   private readonly siteId: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly maxRateLimitRetries: number;
+  /**
+   * When the CMS last said "not before". Shared by every request this instance makes:
+   * with several lanes running, the one that hears the 429 is not the only one about to
+   * send, and letting the others find out one by one spends the next window's budget on
+   * refusals.
+   */
+  private pausedUntil = 0;
 
   constructor(opts: TargetOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
     this.token = opts.token;
     this.siteId = opts.siteId;
     this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.sleep = opts.sleep ?? realSleep;
+    this.maxRateLimitRetries = opts.maxRateLimitRetries ?? 12;
   }
 
   static fromEnv(overrides: Partial<TargetOptions> = {}): KalElTarget {
@@ -46,13 +96,39 @@ export class KalElTarget {
     return `${this.baseUrl}/v1/sites/${this.siteId}${path}`;
   }
 
+  /**
+   * One request, retried while the CMS answers 429.
+   *
+   * Kal El limits a service token to `RATE_LIMIT_MAX` requests a minute (600 by default)
+   * and says how long to wait in `Retry-After`. A 429 is refused before any handler runs,
+   * so repeating the request is safe for every method, a PATCH included. Nothing else is
+   * retried here: a 5xx on a PATCH may have landed, and sending it again would turn the
+   * importer's own write into a version conflict it then reports as an editor's.
+   *
+   * `init` is a factory because a request is not reusable across attempts — the timeout
+   * signal would already be running down during the wait.
+   */
+  private async send(url: string, init: () => RequestInit): Promise<Response> {
+    for (let attempt = 0; ; attempt += 1) {
+      const wait = this.pausedUntil - Date.now();
+      if (wait > 0) await this.sleep(wait);
+
+      const res = await this.fetchImpl(url, init());
+      if (res.status !== 429 || attempt >= this.maxRateLimitRetries) return res;
+
+      await res.body?.cancel().catch(() => undefined);
+      const delay = retryAfterMs(res.headers.get('retry-after'));
+      this.pausedUntil = Math.max(this.pausedUntil, Date.now() + delay);
+    }
+  }
+
   private async json<T>(
     method: string,
     path: string,
     body?: unknown,
     idempotencyKey?: string,
   ): Promise<{ status: number; data: T | null; error: string | null }> {
-    const res = await this.fetchImpl(this.site(path), {
+    const res = await this.send(this.site(path), () => ({
       method,
       headers: {
         authorization: `Bearer ${this.token}`,
@@ -62,7 +138,7 @@ export class KalElTarget {
       },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(30_000),
-    });
+    }));
 
     const text = await res.text();
     let parsed: { data?: T; error?: { code?: string; message?: string } } | undefined;
@@ -113,21 +189,48 @@ export class KalElTarget {
     return hit ? { id: hit.id } : null;
   }
 
-  /** Full media index, keyed by `externalKey`, for deduplication across a whole run. */
+  /**
+   * Full media index, keyed by `externalKey`, for deduplication across a whole run.
+   *
+   * Read to the end, and refused when it cannot be. The walk used to stop at 200 pages —
+   * 40.000 rows, against an archive of 73.173 attachments plus the hotlinked images — and
+   * to treat a failed page as the last one. Either way the index came back short without
+   * saying so, and every asset past the cut was downloaded and sent again on a re-run.
+   */
   async mediaIndexByExternalKey(): Promise<Map<string, string>> {
     const index = new Map<string, string>();
     let offset = 0;
-    for (let page = 0; page < 200; page += 1) {
+    for (;;) {
       const res = await this.json<{ items: { id: string; externalKey: string | null }[]; total: number }>(
         'GET',
         `/media?limit=200&offset=${offset}`,
       );
-      const items = res.data?.items ?? [];
+      if (res.error !== null || res.data === null) {
+        throw new CliError(`could not read the media library at offset ${offset}: ${res.error ?? 'no data'}`);
+      }
+      const items = res.data.items ?? [];
       for (const item of items) if (item.externalKey) index.set(item.externalKey, item.id);
       offset += items.length;
-      if (items.length === 0 || offset >= (res.data?.total ?? 0)) break;
+      // A short page before `total` means rows went away mid-walk. Stopping is right: what
+      // was not read is at worst sent again, and Kal El answers a known externalKey with
+      // the row it already has.
+      if (items.length === 0 || offset >= (res.data.total ?? 0)) break;
     }
     return index;
+  }
+
+  /**
+   * How much room the media storage has left.
+   *
+   * 404 on an instance that predates the endpoint, 403 without `media.manage` — the
+   * caller decides what either means; this only reports it.
+   */
+  async mediaStorage(): Promise<{ status: number; data: KalElMediaStorage | null; error: string | null }> {
+    const res = await this.json<unknown>('GET', '/media/storage');
+    if (res.error !== null) return { status: res.status, data: null, error: res.error };
+    const parsed = kalelMediaStorageSchema.safeParse(res.data);
+    if (!parsed.success) return { status: res.status, data: null, error: 'unexpected storage response' };
+    return { status: res.status, data: parsed.data, error: null };
   }
 
   async createCategory(
@@ -157,25 +260,31 @@ export class KalElTarget {
     return this.json<{ id: string; slug: string }[]>('GET', '/authors');
   }
 
-  /** Multipart upload. `externalKey` is what makes a repeated upload return the first row. */
+  /**
+   * Multipart upload. `externalKey` is what makes a repeated upload return the first row.
+   *
+   * It travels in the **query string**, which is where Kal El reads it. It used to be a
+   * form field, which the CMS never looks at: every row was stored with no external key,
+   * so neither the CMS's own deduplication nor `mediaIndexByExternalKey` could recognise
+   * an asset a previous run had already sent.
+   */
   async uploadMedia(
     filename: string,
     data: Buffer,
     mimeType: string,
     externalKey: string,
   ): Promise<{ status: number; id: string | null; error: string | null }> {
-    const form = new FormData();
-    form.append('file', new Blob([new Uint8Array(data)], { type: mimeType }), filename);
-    form.append('externalKey', externalKey);
-
-    const res = await this.fetchImpl(this.site('/media'), {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${this.token}`,
-        'idempotency-key': `wp.media.${externalKey}`.slice(0, 128),
-      },
-      body: form,
-      signal: AbortSignal.timeout(120_000),
+    const url = `${this.site('/media')}?externalKey=${encodeURIComponent(externalKey)}`;
+    const key = mediaIdempotencyKey(externalKey, data);
+    const res = await this.send(url, () => {
+      const form = new FormData();
+      form.append('file', new Blob([new Uint8Array(data)], { type: mimeType }), filename);
+      return {
+        method: 'POST',
+        headers: { authorization: `Bearer ${this.token}`, 'idempotency-key': key },
+        body: form,
+        signal: AbortSignal.timeout(120_000),
+      };
     });
     const text = await res.text();
     let parsed: { data?: { id: string }; error?: { code?: string } } | undefined;
@@ -209,7 +318,7 @@ export class KalElTarget {
    * loses to a 409 rather than being silently overwritten by the importer.
    */
   async updateArticle(articleId: string, body: Record<string, unknown>, version: number) {
-    const res = await this.fetchImpl(this.site(`/articles/${articleId}`), {
+    const res = await this.send(this.site(`/articles/${articleId}`), () => ({
       method: 'PATCH',
       headers: {
         authorization: `Bearer ${this.token}`,
@@ -218,7 +327,7 @@ export class KalElTarget {
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(30_000),
-    });
+    }));
     const text = await res.text();
     let parsed: { data?: { id: string; version: number }; error?: { code?: string } } | undefined;
     try {

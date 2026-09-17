@@ -13,6 +13,7 @@ import {
   kalelRedirectSchema,
   kalelTagSchema,
 } from '../../packages/content/src/kalel/dto';
+import { kalelMediaStorageSchema, type KalElMediaStorage } from '../../scripts/wp/target';
 import { SERVICE_TOKEN, SITE_ID, all, type Row } from './corpus';
 import { handleWrite } from './writes';
 
@@ -58,6 +59,14 @@ export interface FakeKalElOptions {
    * ignored — every tag, and the first page of the whole media library.
    */
   legacyReadsById?: boolean;
+  /**
+   * What `GET /media/storage` reports. `'absent'` answers 404, as an instance from before
+   * the endpoint does. By default: plenty of room on a local disk.
+   *
+   * Validated against the importer's own schema rather than the portal's, because the
+   * importer is the only reader of it.
+   */
+  storage?: KalElMediaStorage | 'absent';
 }
 
 export interface FakeKalEl {
@@ -318,6 +327,12 @@ export async function startFakeKalEl(port = 0, options: FakeKalElOptions = {}): 
         return json(res, 200, { data: store.redirects.map((r) => kalelRedirectSchema.parse(r)) });
 
       // ---------------------------------------------------------------- media
+      if (rest === '/media/storage') {
+        const storage = options.storage ?? { provider: 'local', totalBytes: 2 ** 40, freeBytes: 2 ** 39 };
+        if (storage === 'absent') return fail(res, 404, 'not_found', `no route for ${rest}`);
+        return json(res, 200, { data: kalelMediaStorageSchema.parse(storage) });
+      }
+
       if (rest === '/media') {
         // Offset, not cursor. Conflating the two truncates the index at the first page,
         // and every cover older than that silently disappears from the site.

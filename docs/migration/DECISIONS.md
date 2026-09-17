@@ -734,3 +734,68 @@ O H3 (§7.13) deixou de ser pendência. Resolvido nos dois lados, com o acervo e
 baixadas e hospedadas (revoga §4.10, com o risco de direito autoral aceito), e os posts sem
 editoria são classificados automaticamente; o que não tiver classificação segura fica de fora,
 numa lista.
+
+### 7.16 O importador diante do acervo real (2026-09-17)
+
+O que mudou no importador para a importação de produção
+([RUNBOOK §4.2.2](./RUNBOOK.md)), e por quê.
+
+**Três defeitos que teriam quebrado a importação**, corrigidos:
+
+- o `externalKey` das mídias ia num campo do formulário, e o Kal El o lê da query string —
+  nenhum upload seria reconhecido numa segunda passada;
+- o `Idempotency-Key` levava dois-pontos, que o Kal El recusa com 400 — todo upload falharia;
+- o índice de mídias parava em 200 páginas (40 mil linhas, contra 73 mil anexos) e tratava
+  uma página com erro como a última.
+
+Um 429 agora pausa todas as faixas até o `Retry-After`, em vez de virar falha.
+
+**Imagens de terceiros** (`--external-images`, decisão do owner em §7.15):
+
+- um pré-passe roda a transformação real sobre as matérias que serão importadas e junta as
+  imagens que ela não resolve fora do domínio do site. No acervo são 32.145 URLs únicas, em
+  61 hosts;
+- o download conecta só ao endereço verificado (fecha o DNS rebinding), revalida cada
+  redirect, corta no limite de bytes e exige imagem raster; no máximo 8 downloads ao mesmo
+  tempo, 2 por host;
+- a chave é `wp:external:<32 hex do sha256 da URL>`, com a query string preservada;
+- o crédito mostrado ao leitor é o do veículo, não o do CDN: `Imagem: Screen Rant` para
+  `static0.srcdn.com`;
+- falha do terceiro (404, página HTML, host de exemplo) conta por host e não muda o código
+  de saída; falha de gravação no Kal El conta como `failed`;
+- depois que as imagens estão hospedadas, um `--apply` sem a flag é recusado antes de
+  escrever, porque as matérias atualizadas perderiam as imagens.
+
+**Posts sem editoria** (`--auto-desk`): cada categoria, tag e o título contam uma vez por
+editoria, 2 pontos por palavra forte e 1 por média. Um post só é arquivado com 2 pontos ou
+mais e pelo menos o dobro do segundo colocado. Medido sobre os posts que a redação arquivou,
+com a editoria escondida, a regra concorda com ela em 95,7% dos de cinema, 97,6% dos de games
+e 82,2% dos de séries. No acervo: 296 considerados, 124 arquivados (cinema 41, séries e TV 52,
+games 28, quadrinhos 2, animes 1) e 172 de fora, listados em `auto-desk.json` — 107 sem
+evidência, 40 de demonstração do tema, 11 de teste, 9 empates, 5 fracos.
+
+**Posts publicados duas vezes.** 236 posts têm título normalizado e corpo byte a byte iguais
+aos de um post anterior. São 234 matérias republicadas por automação, com `-2` ou `-3` no
+slug e ids quase sempre vizinhos (mediana de distância 1), além de duas cópias de um post de
+teste. Entra só o de menor id; a cópia é contada em `duplicatesSkipped`, listada em
+`duplicates.json`, e o endereço antigo dela vai para o endereço novo do original pela tabela
+de `redirects:build`. Cópia cujo original não foi importado falha junto com ele, e duas
+matérias diferentes com slugs em colisão continuam falhando.
+
+**Arquivos ausentes de `--uploads`.** 73.128 dos 73.158 originais estão no backup extraído
+(12,9 GB). Dos 30 ausentes, 26 são as `demo-image` de 2018 do tema e 4 são arquivos soltos, e
+nenhuma matéria importada usa qualquer um deles. Um arquivo ausente que nenhuma matéria
+importada usa é pulado (`mediaMissingUnused`); um que alguma usa continua sendo falha.
+
+**Espaço e ritmo.** Antes do primeiro upload o importador lê `GET /media/storage` e recusa
+começar se o espaço livre for menor que a estimativa × 1,25. No acervo são 31,3 GB: 12,9 GB
+medidos e 18,4 GB estimados a 600 KB por imagem de terceiro. As faixas (`--concurrency`,
+padrão 4) mantêm a ordem que importa: posts que disputam um slug rodam em sequência, e o
+checkpoint é gravado inteiro.
+
+**Ensaio completo, sem rede, com as flags de produção:** 41.318 lidos, 40.910 a importar,
+172 de fora, 236 cópias, 30 arquivos ausentes e sem uso, 32.145 imagens de terceiros,
+`failed: 0`, em 346 s.
+
+**Pendência editorial:** o post "Teste com Categorias" (wp 95007) tem editoria válida e entra
+como matéria; a redação pode despublicá-lo no CMS.

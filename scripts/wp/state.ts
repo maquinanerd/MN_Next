@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -30,6 +30,14 @@ export interface RunState {
    */
   pendingMediaMeta: number[];
   /**
+   * The same debt for third-party images, keyed by the hash in their `externalKey`.
+   *
+   * Kept apart from `pendingMediaMeta` because the two are different identities: a
+   * WordPress media id is a number the archive assigned, a hotlinked image has no id
+   * anywhere but the URL it was served from.
+   */
+  pendingExternalMeta: string[];
+  /**
    * The article version this importer last wrote, per source item.
    *
    * `If-Match` alone only protects the moment between reading a version and writing it,
@@ -52,6 +60,7 @@ export function emptyState(now: string, runId = randomUUID()): RunState {
     counts: { read: 0, created: 0, updated: 0, skipped: 0, failed: 0 },
     mappings: {},
     pendingMediaMeta: [],
+    pendingExternalMeta: [],
     articleVersions: {},
     failures: [],
   };
@@ -80,6 +89,7 @@ export async function loadState(file: string, now: string, resume: boolean): Pro
   const carried = {
     // A checkpoint written before these fields existed is still a valid checkpoint.
     pendingMediaMeta: parsed.pendingMediaMeta ?? [],
+    pendingExternalMeta: parsed.pendingExternalMeta ?? [],
     articleVersions: parsed.articleVersions ?? {},
     mappings: parsed.mappings ?? {},
   };
@@ -87,13 +97,86 @@ export async function loadState(file: string, now: string, resume: boolean): Pro
   return { ...emptyState(now), runId: parsed.runId, ...carried };
 }
 
+/**
+ * Writes the checkpoint, atomically.
+ *
+ * A temporary file and a rename, never a truncate-and-write of the real one. The state of
+ * a whole-archive import is megabytes of JSON, and a process killed halfway through
+ * writing it used to leave a truncated file — which `loadState` reads as "no checkpoint"
+ * and so forgets `articleVersions`, the record that keeps a re-import from overwriting
+ * an article an editor has since changed.
+ */
 export async function saveState(file: string, state: RunState): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, JSON.stringify({ ...state, updatedAt: new Date().toISOString() }, null, 2), 'utf8');
+  // Serialised before the first await: the file is a snapshot of one instant, not of
+  // whatever concurrent work changed while the bytes were being written.
+  const body = JSON.stringify({ ...state, updatedAt: new Date().toISOString() }, null, 2);
+  const temporary = `${file}.${process.pid}.tmp`;
+  await writeFile(temporary, body, 'utf8');
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(temporary, file);
+      return;
+    } catch (err) {
+      // Windows refuses to replace a file another process has open for a moment — an
+      // antivirus scan, an editor peeking at progress. That is worth a few retries; it is
+      // not worth losing the checkpoint over, so the last resort is the plain write.
+      const code = (err as NodeJS.ErrnoException).code;
+      if (attempt < 8 && (code === 'EPERM' || code === 'EACCES' || code === 'EBUSY')) {
+        await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+        continue;
+      }
+      await writeFile(file, body, 'utf8');
+      await unlink(temporary).catch(() => undefined);
+      return;
+    }
+  }
+}
+
+/**
+ * Serialises checkpoint writes for work that runs concurrently.
+ *
+ * Two overlapping writes of the same file interleave their bytes; with several lanes
+ * finishing batches at their own pace, that is not a remote possibility. Here at most
+ * one write runs at a time, and a request that arrives during a write is folded into a
+ * single follow-up write — which starts after the request, so the promise a caller gets
+ * back resolves only once its own changes are on disk.
+ */
+export class CheckpointWriter {
+  private inFlight: Promise<void> | null = null;
+  private dirty = false;
+  private readonly file: string;
+  private readonly state: RunState;
+  private readonly write: (file: string, state: RunState) => Promise<void>;
+
+  constructor(file: string, state: RunState, write: (file: string, state: RunState) => Promise<void> = saveState) {
+    this.file = file;
+    this.state = state;
+    this.write = write;
+  }
+
+  save(): Promise<void> {
+    if (this.inFlight) {
+      this.dirty = true;
+      return this.inFlight;
+    }
+    const running = this.drain().finally(() => {
+      this.inFlight = null;
+    });
+    this.inFlight = running;
+    return running;
+  }
+
+  private async drain(): Promise<void> {
+    do {
+      this.dirty = false;
+      await this.write(this.file, this.state);
+    } while (this.dirty);
+  }
 }
 
 export function mappingKey(
-  kind: 'post' | 'media' | 'category' | 'tag' | 'author' | 'redirect',
+  kind: 'post' | 'media' | 'external' | 'category' | 'tag' | 'author' | 'redirect',
   id: string | number,
 ): string {
   return `wp${kind[0]?.toUpperCase()}${kind.slice(1)}:${id}`;

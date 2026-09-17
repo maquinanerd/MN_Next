@@ -301,17 +301,20 @@ em si já esteja no Kal El. Perder alt text em silêncio seria permanente.
 
 #### Rede durante a importação
 
-O importador só busca assets nos hosts declarados (`WP_BASE_URL` mais
-`WP_ASSET_HOSTS`), rejeita qualquer resposta cujo hostname resolva para faixa privada,
-loopback ou link-local, revalida isso a cada redirect e corta a leitura do corpo ao
-ultrapassar `--max-asset-mb`.
+O importador só busca assets nos hosts declarados (`WP_BASE_URL` mais `WP_ASSET_HOSTS`) e,
+com `--external-images`, nos hosts de terceiros que o pré-passe encontrou nos corpos das
+matérias. Em todos os casos:
 
-> **Limitação conhecida:** a validação resolve o nome, mas não fixa o endereço usado pelo
-> socket. Um nome que mude de resposta entre a resolução e a conexão (DNS rebinding)
-> continua teoricamente possível; fechar isso exige um dispatcher com endereço fixado.
-> Enquanto isso, o controle real é o allowlist: **não inclua em `WP_ASSET_HOSTS` nenhum
-> host cujo DNS você não controle**, e rode a importação de uma máquina sem acesso a
-> serviços internos sensíveis.
+- rejeita qualquer nome que resolva para faixa privada, loopback ou link-local;
+- **conecta só ao endereço que a verificação aprovou**: a resolução que o socket usa é a
+  verificada, então um nome que mude de resposta entre a checagem e a conexão (DNS
+  rebinding) é recusado;
+- revalida host e endereço a cada redirect;
+- corta a leitura do corpo ao passar de `--max-asset-mb`;
+- só aceita bytes que sejam de fato imagem raster (SVG é recusado).
+
+A limitação que existia — resolver o nome sem fixar o endereço do socket — está fechada
+(`scripts/wp/pinned-fetch.ts`).
 
 ### 4.2.1 A sequência exata, do inventário à verificação
 
@@ -365,20 +368,48 @@ A senha do owner é pedida sem eco. A sessão:
 
 1. pausa os webhooks do site;
 2. cria um token de importação de 48 horas, que nunca aparece;
-3. roda o importador com `--external-images --auto-desk`;
+3. roda o importador com `--external-images --auto-desk --concurrency 4`;
 4. roda de novo e exige `created: 0`;
 5. retoma os webhooks e revoga o token, com sucesso ou falha.
 
-O relatório fica em `artifacts/migration/producao/`.
+O relatório fica em `artifacts/migration/producao/`: `import-report.json` (contagens, mídia
+ausente do disco, falhas), `external-images.json` (por host), `auto-desk.json` (cada decisão
+com a evidência, e a lista do que ficou de fora) e `duplicates.json`.
+
+O que a primeira passada faz sem falhar, por decisão (DECISIONS §7.16):
+
+- **posts publicados duas vezes** (título e corpo idênticos) entram uma vez só; a cópia é
+  contada em `duplicatesSkipped`;
+- **arquivo ausente de `--uploads` que nenhuma matéria importada usa** é pulado, em
+  `mediaMissingUnused`; um arquivo ausente que alguma matéria usa continua falhando;
+- **imagem de terceiro que não baixa** (404, página HTML, host de exemplo) conta por host em
+  `externalImagesFailed` e sai do corpo, como antes; falha de gravação no Kal El conta como
+  `failed`;
+- **post sem editoria que o `--auto-desk` não classifica** fica de fora, em `noDesk`.
 
 - **Antes:** o Kal El com a leitura por ids e `GET /media/storage`
   ([kal-el#12](https://github.com/maquinanerd/kal-el/pull/12)) no ar, o portal com o H3 no
-  ar, e `RATE_LIMIT_MAX` do Kal El elevado para a janela da importação — o limite é por token
-  por minuto, e o padrão de 600 transforma horas de importação em um dia.
+  ar, e `RATE_LIMIT_MAX` do Kal El elevado para a janela — o limite é por token por minuto, e
+  com o padrão de 600 a primeira passada (~340 mil requisições) leva perto de 10 horas. O
+  compose do Coolify repassa a variável desde
+  [kal-el#13](https://github.com/maquinanerd/kal-el/pull/13); em 2026-09-17 ela foi posta em
+  5000 nas Environment Variables do recurso.
+- **`WP_BASE_URL` não pode estar definido** no ambiente: o leitor do arquivo a usaria como
+  URL do site e mudaria quais imagens contam como do próprio site.
 - **Janela fechada no meio:** rode o mesmo comando com `-Recover` antes de qualquer outra
   coisa. Ele retoma os webhooks e revoga o token da sessão interrompida; a importação em si é
   retomável com `--resume`.
-- **Depois:** `RATE_LIMIT_MAX` de volta ao padrão.
+- **Depois:** `WP_ARCHIVE_DUMP=… pnpm redirects:build --source archive --auto-desk --apply`
+  (as exceções que a regra de runtime não cobre: slugs cortados em 120 caracteres,
+  percent-escapes e o endereço antigo das cópias; sem `KAL_EL_*` no ambiente ele lê só o
+  arquivo), commit de `data/legacy-redirects.json` e redeploy do portal; `pnpm urls:verify`
+  sobre todos os endereços antigos; `RATE_LIMIT_MAX` removido das variáveis do Kal El e
+  redeploy.
+- **Uma vez hospedadas as imagens de terceiros, todo `--apply` precisa de
+  `--external-images`**: sem a flag, os corpos converteriam com essas imagens sem resolver, e
+  cada matéria atualizada perderia as imagens. O importador recusa antes de escrever.
+- **Cuidado com `--skip-media --apply`** num acervo já importado: pelo mesmo motivo, tira as
+  imagens dos corpos.
 
 ### 4.3 Redirects
 

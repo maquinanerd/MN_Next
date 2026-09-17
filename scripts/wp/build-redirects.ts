@@ -5,7 +5,9 @@ import path from 'node:path';
 import { COMMON_FLAGS, Counter, parseArgs, printHelp, printSummary, runAsScript, type RunSummary } from './cli';
 import { safeInternalPath, normalise } from '../../lib/redirects';
 import { WordPressArchive } from './archive';
-import { WordPressSource, wpSlug, type WpReadSource } from './source';
+import { classifyDesk, deskSignalsOf, type TermName } from './auto-desk';
+import { DuplicateFinder, postFingerprint } from './duplicates';
+import { WordPressSource, wpSlug, type WpPost, type WpReadSource } from './source';
 import { KalElTarget } from './target';
 import { deskFor, deskOf, loadCategoryMap } from './taxonomy';
 import { slugify } from '@mn/content';
@@ -54,6 +56,12 @@ const FLAGS = [
     type: 'string' as const,
     default: 'data/import/category-map.json',
   },
+  {
+    name: 'auto-desk',
+    description: 'file posts with no desk category as wp:import --auto-desk does (pass it if the import did)',
+    type: 'boolean' as const,
+    default: false,
+  },
 ];
 
 interface Entry {
@@ -61,6 +69,61 @@ interface Entry {
   to: string;
   status: number;
   source: 'kalel' | 'wordpress' | 'csv';
+}
+
+/**
+ * The archive's redirects that the runtime rule cannot answer.
+ *
+ * `/[categoria]` looks a legacy segment up as an article slug, so a post whose legacy URL
+ * is its slug needs no entry. Two kinds of post do:
+ *
+ *  - one whose legacy URL is not its slug — the percent-escapes `slugify` removes, the
+ *    headlines longer than the 120 characters it keeps;
+ *  - **a copy `wp:import` skips.** Its article does not exist, so its legacy URL — `/…-2/`
+ *    beside the original's `/…/` — would find nothing and answer 404. It goes to the final
+ *    address of the post it copies, in one hop. A copy that shares the original's legacy
+ *    URL needs nothing: the original's own rule answers it.
+ *
+ * Copies are the importer's (`DuplicateFinder`, the same fingerprint), so the two agree on
+ * which posts are skipped — given the same desks, which is why `--auto-desk` is here too.
+ */
+export class ArchiveExceptions {
+  private readonly finder = new DuplicateFinder();
+  private readonly own = new Map<number, { from: string; to: string }>();
+  private readonly covered = new Set<number>();
+
+  /** A post the import files under `desk`. */
+  add(post: WpPost, desk: string): void {
+    const slug = slugify(wpSlug(post.slug));
+    const to = `/${desk}/${slug}`;
+    const legacy = normalise(new URL(post.link).pathname);
+    this.finder.add({ id: post.id, fingerprint: postFingerprint(post), legacyPath: legacy, finalPath: to });
+
+    // Exactly the condition the runtime rule cannot satisfy: the legacy URL is not a single
+    // segment, or that segment is not the slug the article now has.
+    const segments = legacy.split('/').filter(Boolean);
+    if ((segments.length === 1 && segments[0] === slug) || legacy === normalise(to)) {
+      this.covered.add(post.id);
+      return;
+    }
+    this.own.set(post.id, { from: legacy, to });
+  }
+
+  result(): { entries: { from: string; to: string }[]; coveredByRule: number; duplicates: number } {
+    const entries = new Map(this.own);
+    const covered = new Set(this.covered);
+    let duplicates = 0;
+    for (const pair of this.finder.pairs()) {
+      // The copy is not imported, so no rule of its own can answer for it.
+      entries.delete(pair.skippedId);
+      covered.delete(pair.skippedId);
+      const to = pair.keptFinalPath;
+      if (to === undefined || pair.legacyPath === pair.keptLegacyPath || pair.legacyPath === normalise(to)) continue;
+      entries.set(pair.skippedId, { from: pair.legacyPath, to });
+      duplicates += 1;
+    }
+    return { entries: [...entries.values()], coveredByRule: covered.size, duplicates };
+  }
 }
 
 async function readCsv(file: string): Promise<Entry[]> {
@@ -99,7 +162,17 @@ async function main(): Promise<void> {
     tool: 'redirects:build',
     runId: new Date().toISOString(),
     applied: apply,
-    counts: new Counter(['kalel', 'wordpress', 'csv', 'kept', 'rejected', 'conflicts', 'coveredByRule', 'noDesk']),
+    counts: new Counter([
+      'kalel',
+      'wordpress',
+      'duplicates',
+      'csv',
+      'kept',
+      'rejected',
+      'conflicts',
+      'coveredByRule',
+      'noDesk',
+    ]),
     failures: [],
     artefacts: [],
   };
@@ -153,41 +226,45 @@ async function main(): Promise<void> {
           : WordPressSource.fromEnv({ requestsPerSecond: Number(values.rate) });
 
       const overrides = await loadCategoryMap(String(values['category-map']));
+      const autoDesk = values['auto-desk'] === true;
       const deskById = new Map<number, string>();
+      const categoryNames = new Map<number, TermName>();
       for await (const batch of source.categories()) {
         for (const term of batch) {
-          const desk = deskOf(slugify(term.slug || term.name), overrides);
+          const slug = slugify(term.slug || term.name);
+          categoryNames.set(term.id, { slug, name: term.name });
+          const desk = deskOf(slug, overrides);
           if (desk) deskById.set(term.id, desk);
         }
       }
+      const tagNames = new Map<number, TermName>();
+      if (autoDesk) {
+        for await (const batch of source.tags()) {
+          for (const term of batch) tagNames.set(term.id, { slug: slugify(term.slug || term.name), name: term.name });
+        }
+      }
 
+      const exceptions = new ArchiveExceptions();
       for await (const batch of source.posts()) {
         for (const post of batch) {
-          const desk = deskFor(
-            post.categories.map((id) => deskById.get(id)).filter((s): s is string => s !== undefined),
-            overrides,
-          );
+          const desk =
+            deskFor(
+              post.categories.map((id) => deskById.get(id)).filter((s): s is string => s !== undefined),
+              overrides,
+            ) ?? (autoDesk ? classifyDesk(deskSignalsOf(post, categoryNames, tagNames)).desk : null);
           if (!desk) {
             summary.counts.inc('noDesk');
             continue;
           }
-          const slug = slugify(wpSlug(post.slug));
-          const to = `/${desk}/${slug}`;
-          const legacy = normalise(new URL(post.link).pathname);
-
-          // Exactly the condition the runtime rule cannot satisfy: the legacy URL is not
-          // a single segment, or that segment is not the slug the article now has.
-          const segments = legacy.split('/').filter(Boolean);
-          const covered = segments.length === 1 && segments[0] === slug;
-          if (covered || normalise(legacy) === normalise(to)) {
-            summary.counts.inc('coveredByRule');
-            continue;
-          }
-
-          collected.push({ from: legacy, to, status: 301, source: 'wordpress' });
-          summary.counts.inc('wordpress');
+          exceptions.add(post, desk);
         }
       }
+
+      const found = exceptions.result();
+      for (const { from, to } of found.entries) collected.push({ from, to, status: 301, source: 'wordpress' });
+      summary.counts.inc('wordpress', found.entries.length);
+      summary.counts.inc('duplicates', found.duplicates);
+      summary.counts.inc('coveredByRule', found.coveredByRule);
     } catch (err) {
       summary.failures.push({ id: 'wordpress', reason: err instanceof Error ? err.message : String(err) });
     }

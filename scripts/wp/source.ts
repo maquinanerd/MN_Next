@@ -2,9 +2,10 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 
 import { z } from 'zod';
 
-import { isPrivateHost } from '@mn/content/security/address';
+import { isLoopbackHost, isPrivateHost } from '@mn/content/security/address';
 
 import { CliError, rateLimiter } from './cli';
+import { ADDRESS_REFUSED, pinnedFetch, publicOnly, publicOrLoopbackName, type AssetFetch } from './pinned-fetch';
 
 /**
  * WordPress as a read-only source.
@@ -38,6 +39,13 @@ export interface WpReadSource {
   authors(): AsyncGenerator<WpAuthor[]>;
   media(): AsyncGenerator<WpMedia[]>;
   fetchAsset(url: string, maxBytes: number, maxHops?: number): Promise<{ data: Buffer; mimeType: string } | null>;
+  /**
+   * Bytes an asset would occupy once transferred, without transferring it.
+   *
+   * `null` when the reader cannot know without downloading — the REST source; `0` when it
+   * knows the asset cannot be transferred at all. Only the storage estimate reads this.
+   */
+  assetSize?(url: string): Promise<number | null>;
 }
 
 const wpRendered = z.object({ rendered: z.string() }).transform((v) => v.rendered);
@@ -152,7 +160,7 @@ export interface SourceOptions {
  */
 export function assetUrlAllowed(
   raw: string,
-  allowedHosts: Set<string>,
+  allowedHosts: ReadonlySet<string>,
   allowPrivateHosts = false,
 ): { ok: true; url: URL } | { ok: false; reason: string } {
   let url: URL;
@@ -187,9 +195,175 @@ export function assetUrlAllowed(
 export { isPrivateHost as isPrivateAddress } from '@mn/content/security/address';
 
 /** Every address a name resolves to — all of them, since any one would be used. */
-async function defaultLookup(host: string): Promise<string[]> {
+export async function defaultLookup(host: string): Promise<string[]> {
   const records = await dnsLookup(host, { all: true });
   return records.map((r) => r.address);
+}
+
+/**
+ * Whether a hostname resolves only to addresses outside the private ranges.
+ *
+ * The allowlist alone is not enough. A name the operator allowed — a CDN, a legacy
+ * hostname still in someone else's DNS — can be pointed at 169.254.169.254 or at an
+ * internal admin service, and the fetch would be made from inside the network with
+ * whatever the operator's machine can reach.
+ *
+ * Resolving here and rejecting on any private answer closes that, before a request is
+ * even attempted. It is not what the socket connects to: a name can change its answer
+ * between this lookup and the connection. `pinnedFetch` closes that gap by checking the
+ * resolution the socket actually uses; this early check stays, so a refusal is reported
+ * as one rather than as a failed connection.
+ */
+export async function resolvesPublicly(
+  host: string,
+  lookupImpl: (host: string) => Promise<string[]>,
+): Promise<boolean> {
+  if (isPrivateHost(host)) return false;
+  // A literal IP has already been judged; resolving it again proves nothing. The pattern
+  // used to read `[d.]` — the letter d — so no address ever matched it, and a name spelled
+  // only with d's and dots skipped the lookup and was waved through unresolved.
+  if (/^[\d.]+$/.test(host) || host.includes(':')) return true;
+  try {
+    const addresses = await lookupImpl(host);
+    return addresses.length > 0 && addresses.every((a) => !isPrivateHost(a.toLowerCase()));
+  } catch {
+    // A name that will not resolve is not a name worth fetching from.
+    return false;
+  }
+}
+
+/**
+ * How a guarded fetch ended.
+ *
+ * `reason` is a short category — `http 404`, `too large`, `not allowed: host` — so that
+ * failures can be counted per host; `detail` carries the specifics for the line that
+ * names the URL. `status` and `retryAfter` are for a caller that retries.
+ */
+export type GuardedFetchResult =
+  | { ok: true; data: Buffer; mimeType: string }
+  | { ok: false; reason: string; detail: string; status?: number; retryAfter?: string | null };
+
+export interface GuardedFetchOptions {
+  /** Hostnames a fetch — and every redirect it follows — may reach. */
+  allowedHosts: ReadonlySet<string>;
+  maxBytes: number;
+  maxHops?: number;
+  /** In production a `pinnedFetch`, so the socket reaches only an address that was checked. */
+  fetchImpl: AssetFetch;
+  lookupImpl: (host: string) => Promise<string[]>;
+  /**
+   * Skip the address and port checks for every allowlisted host: the REST source's local
+   * rehearsal, which `import.ts` only permits once every endpoint is proven loopback.
+   */
+  allowPrivateHosts?: boolean;
+  /**
+   * Skip them only for a host that *is* loopback. Meant for URLs that come out of post
+   * bodies, whose hosts no startup check has seen: a rehearsal may fetch from this
+   * machine, never from anything else on the network.
+   */
+  allowLoopbackHosts?: boolean;
+  pace?: () => Promise<void>;
+  headers?: Record<string, string>;
+  timeoutMs?: number;
+}
+
+/** `assetUrlAllowed`'s reason, without the host or the value in it. */
+function refusalCategory(reason: string): string {
+  if (reason === 'not a URL') return reason;
+  if (reason.endsWith('private address')) return 'private address';
+  if (reason.startsWith('host ')) return 'host';
+  if (reason.startsWith('credentials')) return 'credentials';
+  return reason.split(' ')[0] ?? reason;
+}
+
+function transportFailure(err: unknown): { reason: string; detail: string } {
+  if ((err as NodeJS.ErrnoException | null)?.code === ADDRESS_REFUSED) {
+    // The name changed its answer between the check and the connection, or the check
+    // never saw it: the connection-time refusal of `pinnedFetch`.
+    return { reason: 'not allowed: private address', detail: (err as Error).message };
+  }
+  const timeout = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
+  return { reason: timeout ? 'timeout' : 'network error', detail: err instanceof Error ? err.message : String(err) };
+}
+
+/**
+ * Downloads one asset, bounded by host, address, size and hop count.
+ *
+ * `redirect: 'manual'` is the point: following redirects automatically would let the
+ * first response — which the remote side controls — send the fetch anywhere, and the
+ * allowlist would only ever have checked the first URL.
+ *
+ * Never throws. A refused URL, a network error and a timeout are all outcomes, because
+ * for a caller importing tens of thousands of assets each of them is a line in a report,
+ * not the end of the run.
+ */
+export async function fetchGuarded(url: string, opts: GuardedFetchOptions): Promise<GuardedFetchResult> {
+  const maxHops = opts.maxHops ?? 3;
+  let current = url;
+
+  for (let hop = 0; hop <= maxHops; hop += 1) {
+    const refused = hop === 0 ? 'not allowed' : 'redirect not allowed';
+    let hostname: string;
+    try {
+      hostname = new URL(current).hostname.toLowerCase();
+    } catch {
+      return { ok: false, reason: `${refused}: not a URL`, detail: current };
+    }
+    const relaxed = opts.allowPrivateHosts === true || (opts.allowLoopbackHosts === true && isLoopbackHost(hostname));
+    const allowed = assetUrlAllowed(current, opts.allowedHosts, relaxed);
+    if (!allowed.ok) {
+      return { ok: false, reason: `${refused}: ${refusalCategory(allowed.reason)}`, detail: allowed.reason };
+    }
+    if (!relaxed && !(await resolvesPublicly(allowed.url.hostname, opts.lookupImpl))) {
+      return { ok: false, reason: `${refused}: private address`, detail: `${hostname} does not resolve publicly` };
+    }
+
+    if (opts.pace) await opts.pace();
+    let res: Response;
+    try {
+      res = await opts.fetchImpl(allowed.url.toString(), {
+        redirect: 'manual',
+        ...(opts.headers ? { headers: opts.headers } : {}),
+        signal: AbortSignal.timeout(opts.timeoutMs ?? 60_000),
+      });
+    } catch (err) {
+      return { ok: false, ...transportFailure(err) };
+    }
+
+    if (res.status >= 300 && res.status < 400) {
+      // Nothing here reads the redirect's body, and an unread body holds the
+      // connection open for the rest of the run.
+      await res.body?.cancel().catch(() => undefined);
+      const location = res.headers.get('location');
+      if (!location) return { ok: false, reason: 'redirect without location', detail: current, status: res.status };
+      try {
+        current = new URL(location, allowed.url).toString();
+      } catch {
+        return { ok: false, reason: 'redirect not allowed: not a URL', detail: location, status: res.status };
+      }
+      continue;
+    }
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => undefined);
+      const retryAfter = res.headers.get('retry-after');
+      return { ok: false, reason: `http ${res.status}`, detail: current, status: res.status, retryAfter };
+    }
+
+    const mimeType = res.headers.get('content-type')?.split(';')[0]?.trim() ?? 'application/octet-stream';
+    const declared = Number(res.headers.get('content-length') ?? '0');
+    if (declared > opts.maxBytes) {
+      await res.body?.cancel().catch(() => undefined);
+      return { ok: false, reason: 'too large', detail: `declares ${declared} bytes` };
+    }
+    try {
+      const data = await readCapped(res, opts.maxBytes);
+      if (data === null) return { ok: false, reason: 'too large', detail: `more than ${opts.maxBytes} bytes` };
+      return { ok: true, data, mimeType };
+    } catch (err) {
+      return { ok: false, ...transportFailure(err) };
+    }
+  }
+  return { ok: false, reason: 'too many redirects', detail: `more than ${maxHops} hops` };
 }
 
 export class WordPressSource implements WpReadSource {
@@ -197,6 +371,8 @@ export class WordPressSource implements WpReadSource {
   private readonly auth: string | undefined;
   private readonly pace: () => Promise<void>;
   private readonly fetchImpl: typeof fetch;
+  /** Asset downloads: the injected fetch in tests, a pinned one otherwise. */
+  private readonly assetFetch: AssetFetch;
   /** Hosts an asset may legitimately come from: the source origin, plus any CDN. */
   private readonly assetHosts: Set<string>;
   private readonly lookupImpl: (host: string) => Promise<string[]>;
@@ -207,6 +383,8 @@ export class WordPressSource implements WpReadSource {
     this.auth = opts.auth;
     this.pace = rateLimiter(opts.requestsPerSecond ?? 4);
     this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.assetFetch =
+      opts.fetchImpl ?? pinnedFetch(opts.allowPrivateHosts === true ? publicOrLoopbackName : publicOnly);
     this.assetHosts = new Set([new URL(this.baseUrl).hostname, ...(opts.assetHosts ?? [])].map((h) => h.toLowerCase()));
     this.lookupImpl = opts.lookupImpl ?? defaultLookup;
     this.allowPrivateHosts = opts.allowPrivateHosts === true;
@@ -308,76 +486,24 @@ export class WordPressSource implements WpReadSource {
   }
 
   /**
-   * Whether a hostname resolves only to addresses outside the private ranges.
+   * Downloads one asset from the source origin or a declared CDN.
    *
-   * The allowlist alone is not enough. A name the operator allowed — a CDN, a legacy
-   * hostname still in someone else's DNS — can be pointed at 169.254.169.254 or at an
-   * internal admin service, and the fetch would be made from inside the network with
-   * whatever the operator's machine can reach.
-   *
-   * Resolving here and rejecting on any private answer closes that. It does not pin the
-   * address the socket finally connects to, so a name that changes its answer between
-   * this lookup and the connection is still theoretically possible; closing that last
-   * gap needs a connection-level dispatcher, and is recorded as such in the runbook.
-   */
-  private async resolvesPublicly(host: string): Promise<boolean> {
-    // The local-rehearsal escape hatch. The host allowlist still applies: this only
-    // stops the address check from refusing a loopback host the operator declared.
-    if (this.allowPrivateHosts) return true;
-    if (isPrivateHost(host)) return false;
-    // A literal IP has already been judged; resolving it again proves nothing.
-    if (/^[d.]+$/.test(host) || host.includes(':')) return true;
-    try {
-      const addresses = await this.lookupImpl(host);
-      return addresses.length > 0 && addresses.every((a) => !isPrivateHost(a.toLowerCase()));
-    } catch {
-      // A name that will not resolve is not a name worth fetching from.
-      return false;
-    }
-  }
-
-  /**
-   * Downloads one asset, bounded by size, host and hop count.
-   *
-   * `redirect: 'manual'` is the point: following redirects automatically would let the
-   * first response — which the source system controls — send the fetch anywhere, and the
-   * allowlist would only ever have checked the first URL.
+   * The guard itself is `fetchGuarded`, shared with the download of third-party body
+   * images so the two can never disagree about what is safe to fetch. With
+   * `allowPrivateHosts` — the local rehearsal — the host allowlist still applies; only the
+   * address and port checks are relaxed.
    */
   async fetchAsset(url: string, maxBytes: number, maxHops = 3): Promise<{ data: Buffer; mimeType: string } | null> {
-    let current = url;
-
-    for (let hop = 0; hop <= maxHops; hop += 1) {
-      const allowed = assetUrlAllowed(current, this.assetHosts, this.allowPrivateHosts);
-      if (!allowed.ok) return null;
-      if (!(await this.resolvesPublicly(allowed.url.hostname))) return null;
-
-      await this.pace();
-      const res = await this.fetchImpl(allowed.url.toString(), {
-        redirect: 'manual',
-        signal: AbortSignal.timeout(60_000),
-      });
-
-      if (res.status >= 300 && res.status < 400) {
-        // Nothing here reads the redirect's body, and an unread body holds the
-        // connection open for the rest of the run.
-        await res.body?.cancel().catch(() => undefined);
-        const location = res.headers.get('location');
-        if (!location) return null;
-        current = new URL(location, allowed.url).toString();
-        continue;
-      }
-      if (!res.ok) {
-        await res.body?.cancel().catch(() => undefined);
-        return null;
-      }
-
-      const mimeType = res.headers.get('content-type')?.split(';')[0]?.trim() ?? 'application/octet-stream';
-      const declared = Number(res.headers.get('content-length') ?? '0');
-      if (declared > maxBytes) return null;
-      const data = await readCapped(res, maxBytes);
-      return data ? { data, mimeType } : null;
-    }
-    return null;
+    const result = await fetchGuarded(url, {
+      allowedHosts: this.assetHosts,
+      maxBytes,
+      maxHops,
+      allowPrivateHosts: this.allowPrivateHosts,
+      fetchImpl: this.assetFetch,
+      lookupImpl: this.lookupImpl,
+      pace: this.pace,
+    });
+    return result.ok ? { data: result.data, mimeType: result.mimeType } : null;
   }
 }
 
