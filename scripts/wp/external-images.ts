@@ -41,6 +41,43 @@ export const IMPORTER_USER_AGENT = 'MaquinaNerdImporter/1.0 (+https://www.maquin
 
 export const EXTERNAL_KEY_PREFIX = 'wp:external:';
 
+/**
+ * The publishers behind the image hosts of this archive, by host.
+ *
+ * The credit is what a reader sees under the picture, and the busiest hosts are CDNs whose
+ * names say nothing to a reader — `static0.srcdn.com` alone is 22 thousand images, all
+ * Screen Rant's. Only hosts that occur in the archive are named; Jetpack's `i0.wp.com`
+ * proxy is left as it is, because the publisher behind it is not knowable from the host.
+ */
+const PUBLISHERS: Readonly<Record<string, string>> = {
+  'static0.srcdn.com': 'Screen Rant',
+  'static1.srcdn.com': 'Screen Rant',
+  'static0.moviewebimages.com': 'MovieWeb',
+  'static0.thegamerimages.com': 'TheGamer',
+  'static0.gamerantimages.com': 'Game Rant',
+  'static0.colliderimages.com': 'Collider',
+  'static0.cbrimages.com': 'CBR',
+  'static0.polygonimages.com': 'Polygon',
+  'variety.com': 'Variety',
+  'www.hollywoodreporter.com': 'The Hollywood Reporter',
+  'comicbook.com': 'ComicBook.com',
+  'comicbookmovie.com': 'ComicBookMovie.com',
+  'www.comicbookmovie.com': 'ComicBookMovie.com',
+  'deadline.com': 'Deadline',
+};
+
+const JETPACK_PROXY = /^i\d\.wp\.com$/;
+
+/** The name a credit gives an image host: its publisher when known, else the host without `www.`/`static0.`. */
+export function publisherOf(host: string): string {
+  const name = host.toLowerCase();
+  const known = PUBLISHERS[name];
+  if (known) return known;
+  if (name.endsWith('.polygon.com')) return 'Polygon';
+  if (JETPACK_PROXY.test(name)) return name;
+  return name.replace(/^(?:www|static\d+)\./, '');
+}
+
 /** Placeholder dimensions, as for a library asset without metadata. Kal El reads the real ones from the bytes. */
 const DEFAULT_WIDTH = 1200;
 const DEFAULT_HEIGHT = 675;
@@ -460,7 +497,7 @@ async function saveExternalMetadata(
   summary: RunSummary,
 ): Promise<boolean> {
   const meta = await target
-    .updateMediaMetadata(mediaId, { altText: image.alt || null, credit: `Imagem: ${image.host}` })
+    .updateMediaMetadata(mediaId, { altText: image.alt || null, credit: `Imagem: ${publisherOf(image.host)}` })
     .catch((err: unknown) => ({ status: 0, data: null, error: err instanceof Error ? err.message : String(err) }));
 
   // Read and written with no await in between, so concurrent lanes cannot lose each

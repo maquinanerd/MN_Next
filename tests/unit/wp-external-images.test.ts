@@ -8,6 +8,7 @@ import {
   externalImageHash,
   externalImageKey,
   externalImageUrl,
+  publisherOf,
 } from '../../scripts/wp/external-images';
 import { emptyIndexes, imageResolver } from '../../scripts/wp/import';
 import { emptyReport, htmlToBlocks, type TransformReport } from '../../scripts/wp/transform';
@@ -143,5 +144,21 @@ describe('collection', () => {
     if (image?.type !== 'image') throw new Error('the collected image was not found again');
     expect(image.image).toMatchObject({ url: '/media/ext', alt: 'Legendada', caption: 'Crédito' });
     expect(report.unknown['image:external:cdn.test']).toBeUndefined();
+  });
+});
+
+describe('publisherOf', () => {
+  it.each([
+    ['static0.srcdn.com', 'Screen Rant'],
+    ['STATIC0.SRCDN.COM', 'Screen Rant'],
+    ['static0.gamerantimages.com', 'Game Rant'],
+    ['www.hollywoodreporter.com', 'The Hollywood Reporter'],
+    ['cdn.polygon.com', 'Polygon'],
+    ['i0.wp.com', 'i0.wp.com'],
+    ['www.ign.com', 'ign.com'],
+    ['static1.somecdn.net', 'somecdn.net'],
+    ['localhost', 'localhost'],
+  ])('credits %s as %s', (host, name) => {
+    expect(publisherOf(host)).toBe(name);
   });
 });
