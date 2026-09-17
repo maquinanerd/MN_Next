@@ -182,6 +182,10 @@ export function runAsScript(moduleUrl: string, main: () => Promise<void>): void 
   if (normalise(entry) !== normalise(fileURLToPath(moduleUrl))) return;
   main().catch((err) => {
     console.error(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
-    process.exit(1);
+    // `exitCode`, not `exit()`: the process ends once its sockets have closed. Exiting
+    // while undici is still closing one makes Node on Windows abort in libuv
+    // (`!(handle->flags & UV_HANDLE_CLOSING)`, status 0xC0000409) — a crash in place of
+    // the 1 that a supervising script reads as "refused" or "failed".
+    process.exitCode = 1;
   });
 }

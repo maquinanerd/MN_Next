@@ -550,7 +550,8 @@ async function main(): Promise<void> {
   summary.artefacts = [reportPath, unknownPath, unmappedPath, statePath];
   printSummary(summary);
 
-  if (exitCodeFor(apply, summary) === 1) process.exit(1);
+  // See `runAsScript`: set, not exited with, so a run that wrote exits cleanly on Windows.
+  process.exitCode = exitCodeFor(apply, summary);
 }
 
 /**
