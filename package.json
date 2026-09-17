@@ -23,6 +23,7 @@
     "test:visual": "playwright test --grep @visual",
     "test:performance": "node scripts/performance-budget.mjs",
     "wp:import": "tsx scripts/wp/import.ts",
+    "wp:import-session": "tsx scripts/wp/import-session.ts",
     "urls:verify": "tsx scripts/wp/verify.ts",
     "redirects:build": "tsx scripts/wp/build-redirects.ts",
     "fixtures:media": "node scripts/generate-fixture-media.mjs",

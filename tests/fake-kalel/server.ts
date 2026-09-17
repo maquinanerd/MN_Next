@@ -55,6 +55,11 @@ export interface FakeKalElOptions {
    */
   legacyArticleList?: boolean;
   /**
+   * Answer tag and media lists as Kal El did before H3: `ids`, `slug`, and tag paging
+   * ignored — every tag, and the first page of the whole media library.
+   */
+  legacyReadsById?: boolean;
+  /**
    * What `GET /media/storage` reports. `'absent'` answers 404, as an instance from before
    * the endpoint does. By default: plenty of room on a local disk.
    *
@@ -84,6 +89,18 @@ const json = (res: ServerResponse, status: number, body: unknown): void => {
 
 const fail = (res: ServerResponse, status: number, code: string, message: string): void =>
   json(res, status, { error: { code, message } });
+
+/** `?ids=a,b` as Kal El reads it: absent, a set of 1 to 200 uuids, or a 400. */
+function idList(raw: string | null): Set<string> | null | 'invalid' {
+  if (raw === null) return null;
+  const ids = raw
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (ids.length === 0 || ids.length > 200 || !ids.every((id) => uuid.test(id))) return 'invalid';
+  return new Set(ids);
+}
 
 /** A one-pixel JPEG, so the media proxy has real bytes with a real magic number. */
 const JPEG_BYTES = Buffer.from(
@@ -286,7 +303,24 @@ export async function startFakeKalEl(port = 0, options: FakeKalElOptions = {}): 
       // ------------------------------------------------------------- taxonomy
       if (rest === '/categories')
         return json(res, 200, { data: store.categories.map((c) => kalelCategorySchema.parse(c)) });
-      if (rest === '/tags') return json(res, 200, { data: store.tags.map((t) => kalelTagSchema.parse(t)) });
+      if (rest === '/tags') {
+        const legacy = options.legacyReadsById === true;
+        const ids = legacy ? null : idList(q.get('ids'));
+        if (ids === 'invalid') return fail(res, 400, 'bad_request', 'ids must list 1 to 200 uuids');
+        const slug = legacy ? null : q.get('slug');
+        let rows = [...store.tags].sort(
+          (a, b) =>
+            String(a['name']).localeCompare(String(b['name'])) || String(a['id']).localeCompare(String(b['id'])),
+        );
+        if (ids) rows = rows.filter((t) => ids.has(String(t['id'])));
+        if (slug !== null) rows = rows.filter((t) => t['slug'] === slug);
+        if (!legacy && (q.has('limit') || q.has('offset'))) {
+          const offset = Math.max(Number(q.get('offset') ?? 0), 0);
+          const limit = q.has('limit') ? Math.min(Math.max(Number(q.get('limit')), 1), 1000) : rows.length;
+          rows = rows.slice(offset, offset + limit);
+        }
+        return json(res, 200, { data: rows.map((t) => kalelTagSchema.parse(t)) });
+      }
       if (rest === '/authors') return json(res, 200, { data: store.authors.map((a) => kalelAuthorSchema.parse(a)) });
       if (rest === '/entities') return json(res, 200, { data: store.entities.map((e) => kalelEntitySchema.parse(e)) });
       if (rest === '/redirects')
@@ -302,6 +336,12 @@ export async function startFakeKalEl(port = 0, options: FakeKalElOptions = {}): 
       if (rest === '/media') {
         // Offset, not cursor. Conflating the two truncates the index at the first page,
         // and every cover older than that silently disappears from the site.
+        const ids = options.legacyReadsById === true ? null : idList(q.get('ids'));
+        if (ids === 'invalid') return fail(res, 400, 'bad_request', 'ids must list 1 to 200 uuids');
+        if (ids) {
+          const found = store.media.filter((m) => ids.has(String(m['id'])));
+          return json(res, 200, { data: kalelMediaListSchema.parse({ items: found, total: found.length }) });
+        }
         const limit = Math.min(Math.max(Number(q.get('limit') ?? 60), 1), 200);
         const offset = Math.max(Number(q.get('offset') ?? 0), 0);
         const page = store.media.slice(offset, offset + limit);

@@ -109,8 +109,9 @@ export class FixtureContentRepository implements ContentRepository {
     return fixtureCategories;
   }
 
-  async listTags(): Promise<Tag[]> {
-    return fixtureTags;
+  async findTags(slugs: readonly string[]): Promise<Tag[]> {
+    const wanted = new Set(slugs);
+    return fixtureTags.filter((t) => wanted.has(t.slug));
   }
 
   async listOffers(page: number, window?: ListWindow): Promise<Page<ArticleSummary>> {
