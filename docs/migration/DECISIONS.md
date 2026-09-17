@@ -799,3 +799,36 @@ checkpoint é gravado inteiro.
 
 **Pendência editorial:** o post "Teste com Categorias" (wp 95007) tem editoria válida e entra
 como matéria; a redação pode despublicá-lo no CMS.
+
+### 7.17 O upload que guardava na memória cada imagem enviada (2026-09-17)
+
+A importação de produção criou as 45 mil categorias e tags e começou a subir as imagens no
+ritmo esperado, mas a memória do processo crescia junto com o que já tinha sido enviado: 6,6
+GB depois de 26.960 imagens e 11 GB depois de 51 mil, numa máquina de 32 GB — com as 32 mil
+imagens de terceiros (18,4 GB estimados) ainda pela frente. Não era estrutura do importador:
+era uma cópia de cada arquivo já enviado.
+
+A causa está no corpo do upload. `FormData` + `Blob` é o caminho natural para multipart no
+Node, e o `Blob` copia os bytes para uma área nativa que o V8 não contabiliza. Como o coletor
+decide quando rodar pelo que contabiliza, um upload terminado não gera pressão nenhuma: o
+invólucro em JS é minúsculo, sobrevive aos ciclos jovens, e a cópia nativa fica presa até que
+outra coisa provoque uma coleta completa — que não acontece num laço que quase só espera rede.
+
+Medido aqui, 2.000 envios de 200 KB (391 MB no total) contra um servidor local:
+
+| Corpo do upload                   | RSS no início | RSS no fim |
+| --------------------------------- | ------------- | ---------- |
+| `FormData` + `Blob` (como estava) | 61 MB         | 524 MB     |
+| Buffer multipart (como ficou)     | 61 MB         | 120 MB     |
+
+`multipartFile()` monta o corpo num Buffer — um ArrayBuffer que o V8 conta — e o arquivo
+passa a ser coletado como qualquer outra alocação. Os bytes na rede são os mesmos: o teste em
+`tests/unit/wp-kalel-target.test.ts` compara byte a byte com o que o `FormData` do undici
+serializa, inclusive o escape de aspas, quebra de linha e acento no nome do arquivo, porque
+quem aceita ou recusa esse corpo é o parser multipart do Kal El, e ele não tem ensaio. O corpo
+é montado uma vez por upload, então uma repetição por 429 reenvia os mesmos bytes em vez de
+copiar o arquivo outra vez.
+
+Uma importação interrompida no meio disso não perde o que subiu: retoma com `-Recover` e o
+mesmo comando ([RUNBOOK §4.2.2](./RUNBOOK.md)), e o Kal El devolve pelo `externalKey` a mídia
+que já tem em vez de duplicá-la.
