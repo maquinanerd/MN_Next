@@ -15,7 +15,8 @@ import {
   runAsScript,
   type RunSummary,
 } from './cli';
-import { idempotencyKey, loadState, mappingKey, saveState, type RunState } from './state';
+import { forEachConcurrent } from './concurrency';
+import { CheckpointWriter, idempotencyKey, loadState, mappingKey, type RunState } from './state';
 import {
   ALLOWED_ASSET_TYPES,
   WordPressSource,
@@ -79,6 +80,12 @@ const FLAGS = [
     description: 'JSON of "wp-category-slug": "desk-slug" overrides',
     type: 'string' as const,
     default: 'data/import/category-map.json',
+  },
+  {
+    name: 'concurrency',
+    description: 'records handled at once: library assets and posts',
+    type: 'number' as const,
+    default: 4,
   },
 ];
 
@@ -149,6 +156,13 @@ function canonicalAssetUrl(url: string): string {
   return url.replace(/-\d+x\d+(\.[a-z]{3,4})$/i, '$1');
 }
 
+/** A lane count from the command line: a whole number, and not one that turns politeness into a flood. */
+function lanes(value: string | number | boolean | undefined, flag: string): number {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > 32) throw new CliError(`--${flag} must be a whole number from 1 to 32`);
+  return n;
+}
+
 async function main(): Promise<void> {
   const { values } = parseArgs(process.argv.slice(2), FLAGS);
   if (values.help) {
@@ -161,6 +175,7 @@ async function main(): Promise<void> {
   const outDir = String(values.out);
   const statePath = String(values.state);
   const maxAssetBytes = Number(values['max-asset-mb']) * 1024 * 1024;
+  const concurrency = lanes(values.concurrency, 'concurrency');
 
   const now = new Date().toISOString();
   const state: RunState = await loadState(statePath, now, values.resume === true);
@@ -429,19 +444,26 @@ async function main(): Promise<void> {
     }
   }
 
+  const checkpoint = new CheckpointWriter(statePath, state);
+  const since = values.since ? String(values.since) : undefined;
+
   // ------------------------------------------------------------------- media
   if (values['skip-media'] !== true) {
     const alreadyImported = target ? await target.mediaIndexByExternalKey() : new Map<string, string>();
     const deps: AssetImportDeps = { source, target, indexes, state, summary, report, alreadyImported, maxAssetBytes };
 
     for await (const batch of source.media()) {
-      for (const asset of batch) await importAsset(asset, deps);
-      await saveState(statePath, state);
+      try {
+        await forEachConcurrent(batch, concurrency, (asset) => importAsset(asset, deps));
+      } finally {
+        // Also on the way out of a failure: every asset that finished did so in Kal El,
+        // and a mapping left unsaved is an upload the next run repeats.
+        await checkpoint.save();
+      }
     }
   }
 
   // ------------------------------------------------------------------- posts
-  const since = values.since ? String(values.since) : undefined;
   let processed = 0;
 
   /*
@@ -454,41 +476,47 @@ async function main(): Promise<void> {
    * rehearsal counts them, and the report names them, before anything is written.
    */
   const slugsSeen = new Map<string, number>();
+  const context: ImportContext = {
+    target,
+    indexes,
+    report,
+    state,
+    summary,
+    ...siteHost,
+  };
 
-  outer: for await (const batch of source.posts(since)) {
-    for (const post of batch) {
-      if (limit > 0 && processed >= limit) break outer;
-      processed += 1;
-      summary.counts.inc('read');
-
-      const finalSlug = slugify(wpSlug(post.slug));
-      const owner = slugsSeen.get(finalSlug);
-      if (owner !== undefined) {
-        summary.counts.inc('slugCollision');
-        summary.failures.push({
-          id: `wp:post:${post.id}`,
-          reason: `slug "${finalSlug}" is already taken by wp:post:${owner}`,
-        });
-      } else {
-        slugsSeen.set(finalSlug, post.id);
-      }
-
-      try {
-        const result = await importPost(post, { target, indexes, report, state, summary, ...siteHost });
-        summary.counts.inc(result);
-      } catch (err) {
-        if (err instanceof MissingDeskError) {
-          for (const id of err.categories) {
-            const slug = categorySlugByWpId.get(id);
-            if (slug) orphanCategories.set(slug, (orphanCategories.get(slug) ?? 0) + 1);
-          }
+  const importOne = async (post: WpPost): Promise<void> => {
+    try {
+      const result = await importPost(post, context);
+      summary.counts.inc(result);
+    } catch (err) {
+      if (err instanceof MissingDeskError) {
+        for (const id of err.categories) {
+          const slug = categorySlugByWpId.get(id);
+          if (slug) orphanCategories.set(slug, (orphanCategories.get(slug) ?? 0) + 1);
         }
-        summary.counts.inc('failed');
-        summary.failures.push({ id: `wp:post:${post.id}`, reason: err instanceof Error ? err.message : String(err) });
       }
+      summary.counts.inc('failed');
+      summary.failures.push({ id: `wp:post:${post.id}`, reason: err instanceof Error ? err.message : String(err) });
     }
+  };
+
+  for await (const batch of source.posts(since)) {
+    const plan = planPostBatch(batch, slugsSeen, limit > 0 ? limit - processed : Number.POSITIVE_INFINITY);
+    processed += plan.taken;
+    summary.counts.inc('read', plan.taken);
+    for (const { post, slug, owner } of plan.collisions) {
+      summary.counts.inc('slugCollision');
+      summary.failures.push({
+        id: `wp:post:${post.id}`,
+        reason: `slug "${slug}" is already taken by wp:post:${owner}`,
+      });
+    }
+    for (const wave of plan.waves) await forEachConcurrent(wave, concurrency, importOne);
+    // The whole batch has settled, so every post before the cursor is done.
     state.cursor = processed;
-    await saveState(statePath, state);
+    await checkpoint.save();
+    if (limit > 0 && processed >= limit) break;
   }
 
   // ----------------------------------------------------------------- reports
@@ -513,6 +541,7 @@ async function main(): Promise<void> {
         droppedTags: report.droppedTags,
         droppedAttributes: report.droppedAttributes,
         imagesMissingAlt: report.imagesMissingAlt,
+        concurrency,
         failures: summary.failures.slice(0, 200),
       },
       null,
@@ -545,13 +574,57 @@ async function main(): Promise<void> {
     ),
     'utf8',
   );
-  await saveState(statePath, state);
+
+  await checkpoint.save();
 
   summary.artefacts = [reportPath, unknownPath, unmappedPath, statePath];
   printSummary(summary);
 
   // See `runAsScript`: set, not exited with, so a run that wrote exits cleanly on Windows.
   process.exitCode = exitCodeFor(apply, summary);
+}
+
+export interface PostBatchPlan {
+  /** Every post of a wave runs after the whole previous wave has settled. */
+  waves: WpPost[][];
+  /** Posts whose slug an earlier post already claimed; they are still imported, after it. */
+  collisions: { post: WpPost; slug: string; owner: number }[];
+  /** How many posts of the batch fit under `--limit`. */
+  taken: number;
+}
+
+/**
+ * Which posts of a source batch run at once, and which must wait.
+ *
+ * Two posts that slugify alike cannot both have the URL, and Kal El refuses the second
+ * create. Run sequentially, the earlier post always won. Run in lanes, the two would race
+ * and the URL would go to whichever request landed first — while the report named the
+ * earlier post as the owner. So a post whose slug is already claimed goes in a second
+ * wave, after the post that claimed it has settled, and ownership stays in source order.
+ */
+export function planPostBatch(
+  batch: readonly WpPost[],
+  slugsSeen: Map<string, number>,
+  capacity: number,
+): PostBatchPlan {
+  const first: WpPost[] = [];
+  const later: WpPost[] = [];
+  const collisions: PostBatchPlan['collisions'] = [];
+  let taken = 0;
+  for (const post of batch) {
+    if (taken >= capacity) break;
+    taken += 1;
+    const slug = slugify(wpSlug(post.slug));
+    const owner = slugsSeen.get(slug);
+    if (owner === undefined) {
+      slugsSeen.set(slug, post.id);
+      first.push(post);
+    } else {
+      collisions.push({ post, slug, owner });
+      later.push(post);
+    }
+  }
+  return { waves: [first, later].filter((wave) => wave.length > 0), collisions, taken };
 }
 
 /**
@@ -642,7 +715,10 @@ export async function importAsset(asset: WpMedia, deps: AssetImportDeps): Promis
     return;
   }
 
-  const fetched = await source.fetchAsset(asset.source_url, maxAssetBytes);
+  // A rejected read is the same outcome as a refused one. Under concurrency an escaping
+  // error would also abandon every other asset in flight, whose uploads have landed and
+  // whose mappings would never reach the checkpoint.
+  const fetched = await source.fetchAsset(asset.source_url, maxAssetBytes).catch(() => null);
   if (!fetched) {
     // Counted, not just listed: the exit code reads the counter, and an import that
     // lost every cover to a network fault must not report success.
@@ -659,7 +735,9 @@ export async function importAsset(asset: WpMedia, deps: AssetImportDeps): Promis
   }
 
   const filename = path.basename(new URL(url).pathname) || `${asset.slug}.jpg`;
-  const uploaded = await target.uploadMedia(filename, fetched.data, detected, externalKey);
+  const uploaded = await target
+    .uploadMedia(filename, fetched.data, detected, externalKey)
+    .catch((err: unknown) => ({ status: 0, id: null, error: err instanceof Error ? err.message : String(err) }));
   if (!uploaded.id) {
     summary.counts.inc('failed');
     summary.failures.push({ id: externalKey, reason: uploaded.error ?? 'upload failed' });
