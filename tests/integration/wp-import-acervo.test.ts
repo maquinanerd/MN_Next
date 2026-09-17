@@ -109,9 +109,23 @@ describe('wp:import --external-images --auto-desk against a live pair of stand-i
         autoDeskAssigned: 1,
         autoDeskUnresolved: 1,
         noDesk: 1,
+        // 2002 is 2000 published twice: read, skipped, and not counted as filed.
+        duplicatesSkipped: 1,
         failed: 0,
       });
       expect(wp.externalRequests).toEqual([]);
+
+      const copies = JSON.parse(await readFile(path.join(workdir, 'duplicates.json'), 'utf8')) as {
+        duplicates: { skippedId: number; keptId: number; legacyPath: string; keptLegacyPath: string }[];
+      };
+      expect(copies.duplicates).toEqual([
+        {
+          skippedId: 2002,
+          keptId: 2000,
+          legacyPath: '/xbox-revela-novo-console-portatil-2/',
+          keptLegacyPath: '/xbox-revela-novo-console-portatil/',
+        },
+      ]);
       expect(cms.contents().media).toHaveLength(0);
       expect(cms.contents().articles).toHaveLength(0);
 
@@ -153,6 +167,10 @@ describe('wp:import --external-images --auto-desk against a live pair of stand-i
         noDesk: 1,
       });
       expect(store.articles.map((a) => a['externalKey'])).not.toContain('wp:post:2001');
+      // The copy is not written; the post it copies is.
+      expect(result.summary?.counts['duplicatesSkipped']).toBe(1);
+      expect(store.articles.map((a) => a['externalKey'])).not.toContain('wp:post:2002');
+      expect(store.articles.map((a) => a['externalKey'])).toContain('wp:post:2000');
       // The image of a post that is not imported is not worth fetching.
       expect(wp.externalRequests).not.toContain('/external/nunca.jpg');
 

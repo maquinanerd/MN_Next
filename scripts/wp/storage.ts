@@ -145,7 +145,7 @@ export interface UploadsOnDisk {
 export function tallyUploads(
   measured: readonly { id: number; url: string; size: number | null }[],
   maxBytes: number,
-): { sizes: (number | null)[]; uploads: UploadsOnDisk | null } {
+): { sizes: (number | null)[]; uploads: UploadsOnDisk | null; missing: { id: number; url: string }[] } {
   const uploads: UploadsOnDisk = { found: 0, foundBytes: 0, missing: 0, overCap: 0, missingSamples: [] };
   const missing: { id: number; url: string }[] = [];
   let known = 0;
@@ -165,8 +165,9 @@ export function tallyUploads(
     uploads.foundBytes += size;
     return size;
   });
-  uploads.missingSamples = missing.sort((a, b) => a.id - b.id).slice(0, 50);
-  return { sizes, uploads: known === 0 ? null : uploads };
+  missing.sort((a, b) => a.id - b.id);
+  uploads.missingSamples = missing.slice(0, 50);
+  return { sizes, uploads: known === 0 ? null : uploads, missing };
 }
 
 export function describeUploads(uploads: UploadsOnDisk | null, pending: number): string {

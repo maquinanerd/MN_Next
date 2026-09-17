@@ -152,6 +152,23 @@ function unfiledPost(origin: string, hotlinks: string): Record<string, unknown> 
 }
 
 /**
+ * Post 2000 published a second time, seconds later, the way the archive's real copies were
+ * (9880/9886): the same title and body byte for byte, WordPress's `-2` on the slug, and a
+ * second upload of the cover. The import skips it; its old URL is `redirects:build`'s.
+ */
+function copyPost(origin: string, hotlinks: string): Record<string, unknown> {
+  return {
+    ...unfiledPost(origin, hotlinks),
+    id: 2002,
+    date_gmt: '2026-08-30T12:00:20',
+    modified_gmt: '2026-08-30T13:00:20',
+    slug: 'xbox-revela-novo-console-portatil-2',
+    link: `${origin}/xbox-revela-novo-console-portatil-2/`,
+    featured_media: 102,
+  };
+}
+
+/**
  * A post with no desk and no evidence of one: `--auto-desk` leaves it out, on a list. Its
  * hotlinked image belongs to a post that will not be imported, so it is never fetched.
  */
@@ -195,7 +212,9 @@ function postRows(origin: string, hotlinks: string | null): Record<string, unkno
     categories: [9, i % 2 === 0 ? 3 : 5],
     tags: i % 3 === 0 ? [11, 12] : [11],
   }));
-  return hotlinks === null ? posts : [...posts, unfiledPost(origin, hotlinks), leftOutPost(origin, hotlinks)];
+  return hotlinks === null
+    ? posts
+    : [...posts, unfiledPost(origin, hotlinks), leftOutPost(origin, hotlinks), copyPost(origin, hotlinks)];
 }
 
 export async function startFakeWordPress(port = 0, options: FakeWordPressOptions = {}): Promise<FakeWordPress> {

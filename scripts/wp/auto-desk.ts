@@ -1,4 +1,4 @@
-import { DESK_SLUGS } from '@mn/content';
+import { DESK_SLUGS, toPlainText } from '@mn/content';
 
 /**
  * A desk for the posts WordPress never filed under one.
@@ -57,6 +57,33 @@ export interface DeskSignals {
   title: string;
   categories: readonly { slug: string; name: string }[];
   tags: readonly { slug: string; name: string }[];
+}
+
+/** A category or tag as the evidence reads it. */
+export interface TermName {
+  slug: string;
+  name: string;
+}
+
+/**
+ * A post's evidence, from the terms it carries.
+ *
+ * Shared by `wp:import` and `redirects:build`: the two must agree on which posts are filed,
+ * or a redirect is built for an article that was never imported, or missed for one that was.
+ */
+export function deskSignalsOf(
+  post: { id: number; slug: string; title: string; categories: readonly number[]; tags: readonly number[] },
+  categories: ReadonlyMap<number, TermName>,
+  tags: ReadonlyMap<number, TermName>,
+): DeskSignals {
+  const known = (term: TermName | undefined): term is TermName => term !== undefined;
+  return {
+    postId: post.id,
+    slug: post.slug,
+    title: toPlainText(post.title),
+    categories: post.categories.map((id) => categories.get(id)).filter(known),
+    tags: post.tags.map((id) => tags.get(id)).filter(known),
+  };
 }
 
 export type DeskOutcome = 'assigned' | 'tie' | 'weak' | 'no-signal' | 'demo-content' | 'test-content';

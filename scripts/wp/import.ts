@@ -15,11 +15,11 @@ import {
   runAsScript,
   type RunSummary,
 } from './cli';
-import { autoDeskReport, classifyDesk, type DeskDecision, type DeskSignals } from './auto-desk';
+import { autoDeskReport, classifyDesk, deskSignalsOf, type DeskDecision, type TermName } from './auto-desk';
 import { forEachConcurrent, singleFlight } from './concurrency';
+import type { DuplicatePair } from './duplicates';
 import {
   EXTERNAL_KEY_PREFIX,
-  ExternalImageCollector,
   externalImageDownloader,
   externalImagesSummary,
   importExternalImages,
@@ -27,6 +27,7 @@ import {
   type ExternalImageOutcome,
   type HostTally,
 } from './external-images';
+import { canonicalAssetUrl, planRun } from './plan';
 import { CheckpointWriter, idempotencyKey, loadState, mappingKey, type RunState } from './state';
 import {
   describeNeed,
@@ -212,11 +213,6 @@ export class MissingDeskError extends CliError {
   }
 }
 
-/** WordPress serves several sizes of the same asset; they all map to one original. */
-function canonicalAssetUrl(url: string): string {
-  return url.replace(/-\d+x\d+(\.[a-z]{3,4})$/i, '$1');
-}
-
 /** Whether an earlier run hosted third-party images, as far as the checkpoint or Kal El can tell. */
 function holdsHostedImages(state: RunState, alreadyImported: ReadonlyMap<string, string>): boolean {
   const prefix = mappingKey('external', '');
@@ -231,13 +227,6 @@ function lanes(value: string | number | boolean | undefined, flag: string): numb
   if (!Number.isInteger(n) || n < 1 || n > 32) throw new CliError(`--${flag} must be a whole number from 1 to 32`);
   return n;
 }
-
-interface Term {
-  slug: string;
-  name: string;
-}
-
-const isTerm = (term: Term | undefined): term is Term => term !== undefined;
 
 async function main(): Promise<void> {
   const { values } = parseArgs(process.argv.slice(2), FLAGS);
@@ -275,6 +264,8 @@ async function main(): Promise<void> {
       'categoriesAsTags',
       'noDesk',
       'slugCollision',
+      'duplicatesSkipped',
+      'mediaMissingUnused',
       ...(externalImages
         ? ['externalImagesFound', 'externalImagesTransferred', 'externalImagesReused', 'externalImagesFailed']
         : []),
@@ -437,8 +428,8 @@ async function main(): Promise<void> {
   /** WordPress category id -> its slug, so an unfiled post can be reported by name. */
   const categorySlugByWpId = new Map<number, string>();
   /** Slug and name of every term, kept only for `--auto-desk`, which reads them as evidence. */
-  const categoryTermByWpId = new Map<number, Term>();
-  const tagTermByWpId = new Map<number, Term>();
+  const categoryTermByWpId = new Map<number, TermName>();
+  const tagTermByWpId = new Map<number, TermName>();
   /** WordPress categories that left posts with nowhere to go, and how many each. */
   const orphanCategories = new Map<string, number>();
 
@@ -562,14 +553,7 @@ async function main(): Promise<void> {
   const decideDesk = (post: WpPost): DeskDecision => {
     let decision = deskDecisions.get(post.id);
     if (!decision) {
-      const signals: DeskSignals = {
-        postId: post.id,
-        slug: post.slug,
-        title: toPlainText(post.title),
-        categories: post.categories.map((id) => categoryTermByWpId.get(id)).filter(isTerm),
-        tags: post.tags.map((id) => tagTermByWpId.get(id)).filter(isTerm),
-      };
-      decision = classifyDesk(signals);
+      decision = classifyDesk(deskSignalsOf(post, categoryTermByWpId, tagTermByWpId));
       deskDecisions.set(post.id, decision);
     }
     return decision;
@@ -646,81 +630,82 @@ async function main(): Promise<void> {
 
   /*
    * The library is listed in full before any of it is sent: the storage check needs to
-   * know what is still to upload, and collecting third-party images needs to know which
-   * body images the library will answer for.
+   * know what is still to upload, and the plan needs to know which body images the
+   * library will answer for.
    */
   const library: WpMedia[] = [];
   if (!skipMedia) for await (const batch of source.media()) library.push(...batch);
+  const transferable = library.filter((asset) => ALLOWED_ASSET_TYPES.has(asset.mime_type));
 
-  // ------------------------------------------------------ third-party images
+  // ----------------------------------------------------------------- uploads
   //
-  // Collected by running the real transform over every post that will be imported, with
-  // a resolver that answers for the library as it will be once imported. Whatever it
-  // still cannot place, on a host other than the site's own, is a hotlinked image.
-  let externals: ExternalImage[] = [];
-  let unparseable = 0;
-  if (externalImages) {
-    const collector = new ExternalImageCollector();
-    const libraryKeys = new Set<string>();
-    for (const asset of library) {
-      if (!ALLOWED_ASSET_TYPES.has(asset.mime_type)) continue;
-      libraryKeys.add(canonicalAssetUrl(asset.source_url));
-      libraryKeys.add(shortcodeAssetRef(asset.id));
-    }
-    const planned: Image = { url: '/media/planned', width: 1200, height: 675, alt: '' };
-    const resolvePlanned = (src: string): Image | null =>
-      libraryKeys.has(src) || libraryKeys.has(canonicalAssetUrl(src)) ? planned : null;
+  // What --uploads holds of the library still to send. Measured before the plan, which
+  // asks who uses the files that are missing.
+  const libraryPending = transferable.filter(
+    (asset) =>
+      (alreadyImported.get(`wp:media:${asset.id}`) ?? state.mappings[mappingKey('media', asset.id)]) === undefined,
+  );
+  const measured = libraryPending.map((asset) => ({
+    id: asset.id,
+    url: asset.source_url,
+    size: null as number | null,
+  }));
+  const measure = source.assetSize?.bind(source);
+  if (measure && measured.length > 0) {
+    await forEachConcurrent(measured, 16, async (entry) => {
+      entry.size = await measure(entry.url).catch(() => null);
+    });
+  }
+  const onDisk = tallyUploads(measured, maxAssetBytes);
+  if (libraryPending.length > 0) {
+    console.log(`[wp:import] uploads: ${describeUploads(onDisk.uploads, libraryPending.length)}`);
+  }
 
-    let seen = 0;
-    collect: for await (const batch of source.posts(since)) {
-      for (const post of batch) {
-        if (limit > 0 && seen >= limit) break collect;
-        seen += 1;
-        // An image in a post that will not be imported is not worth hosting.
-        if (!willBeFiled(post)) continue;
-        htmlToBlocks(post.content, {
-          postId: post.id,
-          report: emptyReport(),
-          resolveImage: resolvePlanned,
-          ...siteHost,
-          onUnresolvedImage: collector.listener(post.id),
-        });
-      }
-    }
-    externals = collector.images();
-    unparseable = collector.unparseable;
+  // -------------------------------------------------------------------- plan
+  //
+  // Only a run over the whole archive can say that no imported post uses a file: with
+  // --since or --limit, a missing file fails the way it always did.
+  const wholeArchive = since === undefined && limit === 0;
+  const runPlan = await planRun({
+    posts: source.posts(since),
+    limit,
+    willBeFiled,
+    library: transferable,
+    collectExternal: externalImages,
+    missingOnDisk: wholeArchive && onDisk.uploads !== null ? new Set(onDisk.missing.map((file) => file.id)) : null,
+    ...siteHost,
+  });
+
+  let externals: ExternalImage[] = runPlan.externalImages;
+  if (externalImages) {
     summary.counts.inc('externalImagesFound', externals.length);
     console.log(
       `[wp:import] third-party images: ${externals.length} unique URLs on ${new Set(externals.map((i) => i.host)).size} hosts`,
     );
   }
 
+  const duplicateOf = new Map(runPlan.duplicates.map((pair) => [pair.skippedId, pair]));
+  if (duplicateOf.size > 0) {
+    console.log(`[wp:import] duplicates: ${duplicateOf.size} posts are copies of an earlier post and will be skipped`);
+  }
+
+  // A missing file no imported post uses has nothing to lose; one an imported post uses
+  // is a hole in that post, and fails as it always did.
+  const missingFiles = {
+    unused: wholeArchive ? onDisk.missing.filter((file) => !runPlan.missingUsedBy.has(file.id)) : [],
+    used: onDisk.missing
+      .filter((file) => runPlan.missingUsedBy.has(file.id))
+      .map((file) => ({ ...file, usedBy: runPlan.missingUsedBy.get(file.id) ?? [] })),
+  };
+
   // ----------------------------------------------------------------- storage
   let storage: { need: StorageNeed; uploads: UploadsOnDisk | null; verdict: string | null } | null = null;
-  const libraryPending = library.filter(
-    (asset) =>
-      ALLOWED_ASSET_TYPES.has(asset.mime_type) &&
-      (alreadyImported.get(`wp:media:${asset.id}`) ?? state.mappings[mappingKey('media', asset.id)]) === undefined,
-  );
   const externalPending = externals.filter(
     (image) =>
       (alreadyImported.get(image.externalKey) ?? state.mappings[mappingKey('external', image.hash)]) === undefined,
   ).length;
   if (libraryPending.length > 0 || externalPending > 0) {
-    const measured = libraryPending.map((asset) => ({
-      id: asset.id,
-      url: asset.source_url,
-      size: null as number | null,
-    }));
-    const measure = source.assetSize?.bind(source);
-    if (measure) {
-      await forEachConcurrent(measured, 16, async (entry) => {
-        entry.size = await measure(entry.url).catch(() => null);
-      });
-    }
-    const { sizes, uploads } = tallyUploads(measured, maxAssetBytes);
-    storage = { need: estimateNeed(sizes, externalPending), uploads, verdict: null };
-    console.log(`[wp:import] uploads: ${describeUploads(uploads, libraryPending.length)}`);
+    storage = { need: estimateNeed(onDisk.sizes, externalPending), uploads: onDisk.uploads, verdict: null };
     console.log(`[wp:import] storage: ${describeNeed(storage.need)}`);
 
     if (target) {
@@ -746,7 +731,20 @@ async function main(): Promise<void> {
 
   // ------------------------------------------------------------ library upload
   if (!skipMedia) {
-    const deps: AssetImportDeps = { source, target, indexes, state, summary, report, alreadyImported, maxAssetBytes };
+    const deps: AssetImportDeps = {
+      source,
+      target,
+      indexes,
+      state,
+      summary,
+      report,
+      alreadyImported,
+      maxAssetBytes,
+      missingFiles: {
+        unused: new Set(missingFiles.unused.map((file) => file.id)),
+        usedBy: runPlan.missingUsedBy,
+      },
+    };
     for (let start = 0; start < library.length; start += BATCH) {
       try {
         await forEachConcurrent(library.slice(start, start + BATCH), concurrency, (asset) => importAsset(asset, deps));
@@ -786,7 +784,9 @@ async function main(): Promise<void> {
       await checkpoint.save();
     }
   }
-  const external = externalImages ? externalImagesSummary(externals, externalTallies, unparseable) : null;
+  const external = externalImages
+    ? externalImagesSummary(externals, externalTallies, runPlan.unparseableExternal)
+    : null;
   externals = [];
 
   // ------------------------------------------------------------------- posts
@@ -812,11 +812,18 @@ async function main(): Promise<void> {
     ...(autoDeskFor ? { autoDesk: autoDeskFor } : {}),
   };
 
+  /** Whether each post a copy was taken from was imported in this run — decided once it has settled. */
+  const keptIds = new Set(runPlan.duplicates.map((pair) => pair.keptId));
+  const keptImported = new Map<number, boolean>();
+  const copiesRead: DuplicatePair[] = [];
+
   const importOne = async (post: WpPost): Promise<void> => {
     try {
       const result = await importPost(post, context);
       summary.counts.inc(result);
+      if (keptIds.has(post.id)) keptImported.set(post.id, true);
     } catch (err) {
+      if (keptIds.has(post.id)) keptImported.set(post.id, false);
       if (err instanceof MissingDeskError) {
         for (const id of err.categories) {
           const slug = categorySlugByWpId.get(id);
@@ -832,7 +839,9 @@ async function main(): Promise<void> {
   };
 
   for await (const batch of source.posts(since)) {
-    const plan = planPostBatch(batch, slugsSeen, limit > 0 ? limit - processed : Number.POSITIVE_INFINITY);
+    const plan = planPostBatch(batch, slugsSeen, limit > 0 ? limit - processed : Number.POSITIVE_INFINITY, (postId) =>
+      duplicateOf.has(postId),
+    );
     processed += plan.taken;
     summary.counts.inc('read', plan.taken);
     for (const { post, slug, owner } of plan.collisions) {
@@ -842,6 +851,7 @@ async function main(): Promise<void> {
         reason: `slug "${slug}" is already taken by wp:post:${owner}`,
       });
     }
+    for (const copy of plan.duplicates) copiesRead.push(duplicateOf.get(copy.id) as DuplicatePair);
     for (const wave of plan.waves) await forEachConcurrent(wave, concurrency, importOne);
     // The whole batch has settled, so every post before the cursor is done.
     state.cursor = processed;
@@ -849,8 +859,30 @@ async function main(): Promise<void> {
     if (limit > 0 && processed >= limit) break;
   }
 
+  /*
+   * A copy is skipped only once the post it copies is in: settled here, after every batch,
+   * because the lowest id of a group need not arrive first. If that post was not imported,
+   * skipping its copy would lose the story silently — so the copy fails with it instead.
+   */
+  const skippedCopies: DuplicatePair[] = [];
+  for (const pair of copiesRead) {
+    if (keptImported.get(pair.keptId) === true) {
+      summary.counts.inc('duplicatesSkipped');
+      skippedCopies.push(pair);
+      continue;
+    }
+    summary.counts.inc('failed');
+    summary.failures.push({
+      id: `wp:post:${pair.skippedId}`,
+      reason: `a copy of wp:post:${pair.keptId}, which was not imported in this run: not imported either`,
+    });
+  }
+
   // ----------------------------------------------------------------- reports
-  const desks = autoDesk ? autoDeskReport([...deskDecisions.values()]) : null;
+  // A skipped copy is not imported, so its desk decision is not one the report should count.
+  const desks = autoDesk
+    ? autoDeskReport([...deskDecisions.values()].filter((decision) => !duplicateOf.has(decision.postId)))
+    : null;
   if (desks) {
     summary.counts.inc('autoDeskAssigned', desks.counts.assigned);
     summary.counts.inc('autoDeskUnresolved', desks.counts.unresolved);
@@ -889,6 +921,11 @@ async function main(): Promise<void> {
             }
           : {}),
         ...(desks ? { autoDesk: desks.counts } : {}),
+        // Every one, not a sample: an operator deciding whether a gap matters needs the list.
+        mediaMissing: {
+          unused: missingFiles.unused,
+          used: missingFiles.used,
+        },
         failures: summary.failures.slice(0, 200),
       },
       null,
@@ -957,6 +994,32 @@ async function main(): Promise<void> {
     artefacts.push(desksPath);
   }
 
+  // Written on every run, empty or not: `redirects:build` derives the same pairs from the
+  // archive, and this is what the operator checks its redirects against.
+  const duplicatesPath = path.join(outDir, 'duplicates.json');
+  await writeFile(
+    duplicatesPath,
+    JSON.stringify(
+      {
+        note:
+          'Posts publicados duas vezes — título normalizado e corpo idênticos a um post anterior importado. ' +
+          'A cópia de id maior não é importada; seu endereço antigo é redirecionado por `pnpm redirects:build`.',
+        duplicates: skippedCopies
+          .sort((a, b) => a.skippedId - b.skippedId)
+          .map(({ skippedId, keptId, legacyPath, keptLegacyPath }) => ({
+            skippedId,
+            keptId,
+            legacyPath,
+            keptLegacyPath,
+          })),
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  );
+  artefacts.push(duplicatesPath);
+
   await checkpoint.save();
 
   summary.artefacts = [...artefacts, statePath];
@@ -971,6 +1034,8 @@ export interface PostBatchPlan {
   waves: WpPost[][];
   /** Posts whose slug an earlier post already claimed; they are still imported, after it. */
   collisions: { post: WpPost; slug: string; owner: number }[];
+  /** Copies of an earlier post: read, but neither imported nor given a slug to claim. */
+  duplicates: WpPost[];
   /** How many posts of the batch fit under `--limit`. */
   taken: number;
 }
@@ -988,14 +1053,22 @@ export function planPostBatch(
   batch: readonly WpPost[],
   slugsSeen: Map<string, number>,
   capacity: number,
+  isDuplicate: (postId: number) => boolean = () => false,
 ): PostBatchPlan {
   const first: WpPost[] = [];
   const later: WpPost[] = [];
   const collisions: PostBatchPlan['collisions'] = [];
+  const duplicates: WpPost[] = [];
   let taken = 0;
   for (const post of batch) {
     if (taken >= capacity) break;
     taken += 1;
+    // A copy's slug is its original's: letting it claim one would report a collision for
+    // a post that is never written.
+    if (isDuplicate(post.id)) {
+      duplicates.push(post);
+      continue;
+    }
     const slug = slugify(wpSlug(post.slug));
     const owner = slugsSeen.get(slug);
     if (owner === undefined) {
@@ -1006,7 +1079,7 @@ export function planPostBatch(
       later.push(post);
     }
   }
-  return { waves: [first, later].filter((wave) => wave.length > 0), collisions, taken };
+  return { waves: [first, later].filter((wave) => wave.length > 0), collisions, duplicates, taken };
 }
 
 /**
@@ -1047,6 +1120,11 @@ export interface AssetImportDeps {
   /** Media already in Kal El under this run's external keys, from an earlier run. */
   alreadyImported: Map<string, string>;
   maxAssetBytes: number;
+  /**
+   * Library files missing from `--uploads`, as the plan found them: those no imported post
+   * uses are skipped, those one does fail — without a pointless attempt to read them.
+   */
+  missingFiles?: { unused: ReadonlySet<number>; usedBy: ReadonlyMap<number, readonly number[]> };
 }
 
 /**
@@ -1094,6 +1172,21 @@ export async function importAsset(asset: WpMedia, deps: AssetImportDeps): Promis
 
   if (!ALLOWED_ASSET_TYPES.has(asset.mime_type)) {
     report.unknown[`media:${asset.mime_type}`] = (report.unknown[`media:${asset.mime_type}`] ?? 0) + 1;
+    return;
+  }
+  // Absent from --uploads and shown by no post this run imports: nothing to transfer, and
+  // nothing lost by not transferring it — the theme's demo images, in this archive.
+  if (deps.missingFiles?.unused.has(asset.id)) {
+    summary.counts.inc('mediaMissingUnused');
+    return;
+  }
+  const usedBy = deps.missingFiles?.usedBy.get(asset.id);
+  if (usedBy) {
+    summary.counts.inc('failed');
+    summary.failures.push({
+      id: externalKey,
+      reason: `file missing from --uploads, and used by ${usedBy.map((id) => `wp:post:${id}`).join(', ')}`,
+    });
     return;
   }
   if (image.alt.trim() === '') report.imagesMissingAlt += 1;

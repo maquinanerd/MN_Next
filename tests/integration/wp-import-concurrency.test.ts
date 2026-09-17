@@ -318,3 +318,100 @@ describe('who owns a contested slug does not depend on which lane finishes first
     expect(seen.has('d')).toBe(false);
   });
 });
+
+describe('copies and missing files, as the plan hands them to the phases', () => {
+  const post = (id: number, slug: string): WpPost => ({
+    id,
+    date_gmt: '2025-07-27T18:18:17',
+    modified_gmt: '2025-07-27T18:18:17',
+    slug,
+    status: 'publish',
+    type: 'post',
+    link: `https://old.example.com/${slug}/`,
+    title: slug,
+    content: '<p>texto</p>',
+    excerpt: '',
+    author: 1,
+    featured_media: 0,
+    categories: [],
+    tags: [],
+  });
+
+  it('reads a copy without importing it or letting it claim a slug', () => {
+    const seen = new Map<string, number>();
+    const plan = planPostBatch(
+      [post(9883, 'superman'), post(9884, 'superman'), post(9885, 'batman')],
+      seen,
+      Infinity,
+      (id) => id === 9884,
+    );
+    expect(plan.waves.map((wave) => wave.map((p) => p.id))).toEqual([[9883, 9885]]);
+    expect(plan.duplicates.map((p) => p.id)).toEqual([9884]);
+    expect(plan.collisions).toEqual([]);
+    expect(plan.taken).toBe(3);
+  });
+
+  const asset = (id: number): WpMedia => ({
+    id,
+    slug: `demo-image-${id}`,
+    source_url: `https://old.example.com/wp-content/uploads/2018/06/demo-image-${id}.jpg`,
+    mime_type: 'image/jpeg',
+    alt_text: '',
+    media_details: { width: 800, height: 600 },
+  });
+
+  const harness = () => {
+    const state = emptyState('2026-01-01T00:00:00.000Z');
+    const summary: RunSummary = {
+      tool: 'wp:import',
+      runId: state.runId,
+      applied: true,
+      counts: new Counter(),
+      failures: [],
+      artefacts: [],
+    };
+    let reads = 0;
+    let uploads = 0;
+    const deps: AssetImportDeps = {
+      source: {
+        fetchAsset: async () => {
+          reads += 1;
+          return null;
+        },
+      },
+      target: {
+        uploadMedia: async () => {
+          uploads += 1;
+          return { status: 201, id: 'nunca', error: null };
+        },
+        updateMediaMetadata: async () => ({ status: 200, data: { id: 'nunca' }, error: null }),
+      },
+      indexes: emptyIndexes(),
+      state,
+      summary,
+      report: emptyReport(),
+      alreadyImported: new Map(),
+      maxAssetBytes: 1024 * 1024,
+      missingFiles: { unused: new Set([1]), usedBy: new Map([[2, [9880]]]) },
+    };
+    return { deps, summary, counts: () => ({ reads, uploads }) };
+  };
+
+  it('skips a file no imported post uses, without trying to read or send it', async () => {
+    const h = harness();
+    await importAsset(asset(1), h.deps);
+    expect(h.summary.counts.get('mediaMissingUnused')).toBe(1);
+    expect(h.summary.counts.get('failed')).toBe(0);
+    expect(h.counts()).toEqual({ reads: 0, uploads: 0 });
+  });
+
+  it('fails a missing file that an imported post uses, naming the post', async () => {
+    const h = harness();
+    await importAsset(asset(2), h.deps);
+    expect(h.summary.counts.get('failed')).toBe(1);
+    expect(h.summary.failures).toEqual([
+      expect.objectContaining({ id: 'wp:media:2', reason: expect.stringContaining('wp:post:9880') }),
+    ]);
+    expect(h.counts()).toEqual({ reads: 0, uploads: 0 });
+  });
+});
