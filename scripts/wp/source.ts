@@ -38,6 +38,13 @@ export interface WpReadSource {
   authors(): AsyncGenerator<WpAuthor[]>;
   media(): AsyncGenerator<WpMedia[]>;
   fetchAsset(url: string, maxBytes: number, maxHops?: number): Promise<{ data: Buffer; mimeType: string } | null>;
+  /**
+   * Bytes an asset would occupy once transferred, without transferring it.
+   *
+   * `null` when the reader cannot know without downloading — the REST source; `0` when it
+   * knows the asset cannot be transferred at all. Only the storage estimate reads this.
+   */
+  assetSize?(url: string): Promise<number | null>;
 }
 
 const wpRendered = z.object({ rendered: z.string() }).transform((v) => v.rendered);

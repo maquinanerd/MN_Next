@@ -631,6 +631,36 @@ export class WordPressArchive implements WpReadSource {
    * directory, because the path came from the archive and an archive is data.
    */
   async fetchAsset(url: string, maxBytes: number): Promise<{ data: Buffer; mimeType: string } | null> {
+    const resolved = this.uploadPath(url);
+    if (resolved === null) return null;
+
+    try {
+      const info = await stat(resolved);
+      if (!info.isFile() || info.size > maxBytes) return null;
+      return { data: await readFile(resolved), mimeType: mimeFromPath(resolved) };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * The size of an asset on disk, for the storage estimate: `null` without an uploads
+   * directory — unknown, not absent — and `0` for a file that is not there to transfer.
+   */
+  async assetSize(url: string): Promise<number | null> {
+    if (!this.uploadsDir) return null;
+    const resolved = this.uploadPath(url);
+    if (resolved === null) return 0;
+    try {
+      const info = await stat(resolved);
+      return info.isFile() ? info.size : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** The file behind an asset URL, or `null` when there is none or the path escapes the uploads directory. */
+  private uploadPath(url: string): string | null {
     if (!this.uploadsDir) return null;
     let relative: string;
     try {
@@ -641,15 +671,7 @@ export class WordPressArchive implements WpReadSource {
     if (relative === '') return null;
 
     const resolved = nodePath.resolve(this.uploadsDir, relative);
-    if (!resolved.startsWith(this.uploadsDir + nodePath.sep)) return null;
-
-    try {
-      const info = await stat(resolved);
-      if (!info.isFile() || info.size > maxBytes) return null;
-      return { data: await readFile(resolved), mimeType: mimeFromPath(resolved) };
-    } catch {
-      return null;
-    }
+    return resolved.startsWith(this.uploadsDir + nodePath.sep) ? resolved : null;
   }
 }
 

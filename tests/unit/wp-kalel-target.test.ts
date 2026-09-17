@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { retryAfterMs } from '../../scripts/wp/cli';
+import {
+  ESTIMATED_BYTES_PER_IMAGE,
+  describeUploads,
+  estimateNeed,
+  storageVerdict,
+  tallyUploads,
+  type StorageAnswer,
+} from '../../scripts/wp/storage';
 import { KalElTarget, mediaIdempotencyKey } from '../../scripts/wp/target';
 
 /**
@@ -167,5 +175,93 @@ describe('reading storage', () => {
     expect(await missing.mediaStorage()).toMatchObject({ status: 404, data: null });
     const odd = target(() => ok({ free: 'lots' }));
     expect(await odd.mediaStorage()).toMatchObject({ data: null, error: 'unexpected storage response' });
+  });
+});
+
+describe('the storage decision', () => {
+  const GB = 1024 ** 3;
+  const answer = (freeBytes: number | null, status = 200): StorageAnswer => ({
+    status,
+    data: { provider: 'local', totalBytes: 500 * GB, freeBytes },
+    error: null,
+  });
+
+  it('estimates measured files as they are and everything else conservatively', () => {
+    const need = estimateNeed([1000, null, 0, 3000], 2);
+    expect(need).toEqual({
+      libraryAssets: 4,
+      libraryMeasured: 3,
+      libraryBytes: 4000 + ESTIMATED_BYTES_PER_IMAGE,
+      externalImages: 2,
+      externalBytes: 2 * ESTIMATED_BYTES_PER_IMAGE,
+      totalBytes: 4000 + 3 * ESTIMATED_BYTES_PER_IMAGE,
+    });
+  });
+
+  it('permits an import with its need and a quarter to spare', () => {
+    const need = estimateNeed([80 * GB], 0);
+    const verdict = storageVerdict(need, answer(100 * GB));
+    expect(verdict.ok).toBe(true);
+    // The numbers are printed, whichever way it goes.
+    expect(verdict.message).toContain('100.0 GB free');
+  });
+
+  it('refuses when free space is under the need times 1.25', () => {
+    const need = estimateNeed([81 * GB], 0);
+    expect(storageVerdict(need, answer(100 * GB))).toMatchObject({ ok: false });
+    expect(storageVerdict(need, answer(100 * GB)).message).toMatch(/not enough room/);
+  });
+
+  it('refuses an instance that cannot say — too old, without the scope, or with a provider that does not know', () => {
+    const need = estimateNeed([GB], 0);
+    const tooOld = storageVerdict(need, { status: 404, data: null, error: 'not_found' });
+    expect(tooOld).toMatchObject({ ok: false });
+    expect(tooOld.message).toContain('--skip-storage-check');
+    expect(storageVerdict(need, { status: 403, data: null, error: 'forbidden' }).message).toContain('media.manage');
+    expect(storageVerdict(need, answer(null))).toMatchObject({ ok: false });
+    expect(storageVerdict(need, { status: 0, data: null, error: 'ECONNREFUSED' })).toMatchObject({ ok: false });
+  });
+
+  it('has nothing to check when nothing is left to upload', () => {
+    expect(storageVerdict(estimateNeed([], 0), { status: 404, data: null, error: 'not_found' })).toMatchObject({
+      ok: true,
+    });
+  });
+});
+
+describe('what the uploads directory holds', () => {
+  const url = (id: number): string => `https://www.exemplo.com.br/wp-content/uploads/2025/07/${id}.jpg`;
+
+  it('counts found, missing and over the cap, and estimates only what it could not measure', () => {
+    const { sizes, uploads } = tallyUploads(
+      [
+        { id: 30, url: url(30), size: 2000 },
+        { id: 12, url: url(12), size: 0 },
+        { id: 7, url: url(7), size: 0 },
+        { id: 40, url: url(40), size: 5000 },
+      ],
+      4096,
+    );
+    expect(sizes).toEqual([2000, 0, 0, 0]);
+    expect(uploads).toEqual({
+      found: 1,
+      foundBytes: 2000,
+      missing: 2,
+      overCap: 1,
+      // Lowest id first, whatever order the lanes measured them in.
+      missingSamples: [
+        { id: 7, url: url(7) },
+        { id: 12, url: url(12) },
+      ],
+    });
+    expect(describeUploads(uploads, 4)).toBe('1 of 4 library files on disk (2.0 KB); 2 missing, 1 over --max-asset-mb');
+  });
+
+  it('says it does not know rather than calling every file missing', () => {
+    // An archive run without --uploads measures nothing: the files are not missing, unseen.
+    const { sizes, uploads } = tallyUploads([{ id: 1, url: url(1), size: null }], 4096);
+    expect(sizes).toEqual([null]);
+    expect(uploads).toBeNull();
+    expect(describeUploads(uploads, 1)).toContain('not checked');
   });
 });

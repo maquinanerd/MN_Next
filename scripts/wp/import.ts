@@ -28,11 +28,22 @@ import {
 } from './external-images';
 import { CheckpointWriter, idempotencyKey, loadState, mappingKey, type RunState } from './state';
 import {
+  describeNeed,
+  describeUploads,
+  estimateNeed,
+  storageVerdict,
+  tallyUploads,
+  type StorageNeed,
+  type UploadsOnDisk,
+} from './storage';
+import {
   ALLOWED_ASSET_TYPES,
   WordPressSource,
   detectImageType,
+  type WpAuthor,
   type WpMedia,
   type WpPost,
+  type WpTerm,
   wpSlug,
   type WpReadSource,
 } from './source';
@@ -114,6 +125,12 @@ const FLAGS = [
     description: 'third-party downloads in flight at once from a single host',
     type: 'number' as const,
     default: 2,
+  },
+  {
+    name: 'skip-storage-check',
+    description: 'upload without first confirming Kal El has room for it',
+    type: 'boolean' as const,
+    default: false,
   },
 ];
 
@@ -400,10 +417,32 @@ async function main(): Promise<void> {
   /** WordPress categories that left posts with nowhere to go, and how many each. */
   const orphanCategories = new Map<string, number>();
 
-  for await (const batch of source.categories()) {
-    for (const term of batch) {
+  /*
+   * Read now, written later.
+   *
+   * Which categories are desks is decided from the terms alone, and everything that comes
+   * before the storage check — which posts will be imported, which of their images to
+   * fetch — needs only that decision. The writes wait until the check has passed: the
+   * archive has 36.438 tags, and at Kal El's rate limit creating them is the better part
+   * of an hour, which is not something to do first and then refuse the import over.
+   */
+  const categoryTerms: WpTerm[] = [];
+  for await (const batch of source.categories()) categoryTerms.push(...batch);
+  const tagTerms: WpTerm[] = [];
+  for await (const batch of source.tags()) tagTerms.push(...batch);
+  const authorTerms: WpAuthor[] = [];
+  for await (const batch of source.authors()) authorTerms.push(...batch);
+
+  for (const term of categoryTerms) {
+    const slug = slugify(term.slug || term.name);
+    categorySlugByWpId.set(term.id, slug);
+    const desk = deskOf(slug, categoryOverrides);
+    if (desk !== null) indexes.deskSlugByWpId.set(term.id, desk);
+  }
+
+  async function writeTaxonomy(): Promise<void> {
+    for (const term of categoryTerms) {
       const slug = slugify(term.slug || term.name);
-      categorySlugByWpId.set(term.id, slug);
       if (classifyCategory(slug, categoryOverrides) === 'tag') {
         summary.counts.inc('categoriesAsTags');
         await ensureTerm(
@@ -419,8 +458,6 @@ async function main(): Promise<void> {
       }
 
       const desk = deskOf(slug, categoryOverrides) as string;
-      indexes.deskSlugByWpId.set(term.id, desk);
-      categorySlugByWpId.set(term.id, slug);
       await ensureTerm(
         'category',
         term.id,
@@ -453,10 +490,8 @@ async function main(): Promise<void> {
         );
       }
     }
-  }
 
-  for await (const batch of source.tags()) {
-    for (const term of batch) {
+    for (const term of tagTerms) {
       const slug = slugify(term.slug || term.name);
       await ensureTerm(
         'tag',
@@ -468,10 +503,8 @@ async function main(): Promise<void> {
         existingBySlug.tags,
       );
     }
-  }
 
-  for await (const batch of source.authors()) {
-    for (const author of batch) {
+    for (const author of authorTerms) {
       const slug = slugify(author.slug || author.name);
       await ensureTerm(
         'author',
@@ -518,8 +551,9 @@ async function main(): Promise<void> {
   }
 
   /*
-   * The library is listed in full before any of it is sent: collecting third-party images
-   * needs to know which body images the library will answer for.
+   * The library is listed in full before any of it is sent: the storage check needs to
+   * know what is still to upload, and collecting third-party images needs to know which
+   * body images the library will answer for.
    */
   const library: WpMedia[] = [];
   if (!skipMedia) for await (const batch of source.media()) library.push(...batch);
@@ -566,6 +600,55 @@ async function main(): Promise<void> {
       `[wp:import] third-party images: ${externals.length} unique URLs on ${new Set(externals.map((i) => i.host)).size} hosts`,
     );
   }
+
+  // ----------------------------------------------------------------- storage
+  let storage: { need: StorageNeed; uploads: UploadsOnDisk | null; verdict: string | null } | null = null;
+  const libraryPending = library.filter(
+    (asset) =>
+      ALLOWED_ASSET_TYPES.has(asset.mime_type) &&
+      (alreadyImported.get(`wp:media:${asset.id}`) ?? state.mappings[mappingKey('media', asset.id)]) === undefined,
+  );
+  const externalPending = externals.filter(
+    (image) =>
+      (alreadyImported.get(image.externalKey) ?? state.mappings[mappingKey('external', image.hash)]) === undefined,
+  ).length;
+  if (libraryPending.length > 0 || externalPending > 0) {
+    const measured = libraryPending.map((asset) => ({
+      id: asset.id,
+      url: asset.source_url,
+      size: null as number | null,
+    }));
+    const measure = source.assetSize?.bind(source);
+    if (measure) {
+      await forEachConcurrent(measured, 16, async (entry) => {
+        entry.size = await measure(entry.url).catch(() => null);
+      });
+    }
+    const { sizes, uploads } = tallyUploads(measured, maxAssetBytes);
+    storage = { need: estimateNeed(sizes, externalPending), uploads, verdict: null };
+    console.log(`[wp:import] uploads: ${describeUploads(uploads, libraryPending.length)}`);
+    console.log(`[wp:import] storage: ${describeNeed(storage.need)}`);
+
+    if (target) {
+      if (values['skip-storage-check'] === true) {
+        console.log('[wp:import] storage: check skipped (--skip-storage-check)');
+      } else {
+        const verdict = storageVerdict(storage.need, await target.mediaStorage());
+        console.log(`[wp:import] storage: ${verdict.message}`);
+        // Refused before the first upload, which is the only moment refusing is free.
+        if (!verdict.ok) throw new CliError(`refusing to upload: ${verdict.message}`);
+        storage.verdict = verdict.message;
+      }
+    }
+  }
+  libraryPending.length = 0;
+
+  // ------------------------------------------------------------ taxonomy write
+  await writeTaxonomy();
+  // Written: the lists are dead weight for the rest of a run that reads 41.318 posts.
+  categoryTerms.length = 0;
+  tagTerms.length = 0;
+  authorTerms.length = 0;
 
   // ------------------------------------------------------------ library upload
   if (!skipMedia) {
@@ -691,6 +774,7 @@ async function main(): Promise<void> {
         droppedAttributes: report.droppedAttributes,
         imagesMissingAlt: report.imagesMissingAlt,
         concurrency,
+        ...(storage ? { storage } : {}),
         ...(external
           ? {
               externalImages: {
