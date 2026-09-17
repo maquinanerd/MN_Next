@@ -11,13 +11,21 @@ import { SITE_ID, type Row } from './corpus';
  * only way its central claim, that a second run updates instead of duplicating, stops
  * being a property of the design and becomes an observation.
  *
- * Three behaviours are modelled because the importer depends on each of them:
+ * Four behaviours are modelled because the importer depends on each of them:
  *
- *  - `Idempotency-Key` returns the first result for a repeated step, never a second row.
+ *  - `Idempotency-Key` returns the first result for a repeated step, never a second row —
+ *    and, as in Kal El, a key outside `[A-Za-z0-9._-]{8,128}` is a 400. The fake used to
+ *    accept any key, which is how an importer whose every upload key contained a colon
+ *    passed here while the real CMS would have refused all 73.173 of them.
  *  - `externalKey` is unique per site, so a create for an already-imported item is a 409.
  *  - `If-Match` refuses a PATCH whose version is stale, so an article edited in the CMS
  *    after import survives a re-run instead of being overwritten.
+ *  - A media upload names its `externalKey` in the query string, the only place Kal El
+ *    reads it from.
  */
+
+/** Kal El's `idempotencyKeySchema` (packages/contracts/src/common.ts). */
+const IDEMPOTENCY_KEY = /^[A-Za-z0-9._-]{8,128}$/;
 
 export interface Store {
   articles: Row[];
@@ -56,6 +64,8 @@ export async function handleWrite(
 
   const key = req.headers['idempotency-key'];
   const idem = typeof key === 'string' ? key : null;
+  if (idem !== null && !IDEMPOTENCY_KEY.test(idem))
+    return fail(res, 400, 'bad_request', 'invalid Idempotency-Key header');
   if (idem && idempotent.has(idem)) return json(res, 200, { data: idempotent.get(idem) });
 
   const remember = <T>(value: T): T => {
@@ -161,11 +171,9 @@ export async function handleWrite(
 
   // -------------------------------------------------------------------- media
   if (rest === '/media' && req.method === 'POST') {
-    // Deliberately crude: only `externalKey` matters to the importer, and parsing a
-    // whole multipart body to reach one field would be theatre.
-    const text = raw.toString('latin1');
-    const found = /name="externalKey"\r?\n\r?\n([^\r\n]+)/.exec(text);
-    const externalKey = found?.[1] ?? null;
+    // The query string, as in Kal El (apps/api/src/routes/site.ts). A form field of the
+    // same name is ignored there, and so it is here.
+    const externalKey = new URL(req.url ?? '/', 'http://fake.local').searchParams.get('externalKey') || null;
 
     const twin = externalKey ? store.media.find((m) => m['externalKey'] === externalKey) : undefined;
     if (twin) return json(res, 200, { data: remember({ id: twin.id }) });
@@ -173,7 +181,7 @@ export async function handleWrite(
     const row: Row = {
       id: mint(0x0d),
       siteId: SITE_ID,
-      filename: 'uploaded.jpg',
+      filename: /filename="([^"]*)"/.exec(raw.toString('latin1'))?.[1] ?? 'uploaded.jpg',
       mimeType: 'image/jpeg',
       sizeBytes: raw.length,
       width: 1600,

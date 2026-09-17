@@ -142,6 +142,29 @@ export function rateLimiter(perSecond: number): () => Promise<void> {
   };
 }
 
+const DEFAULT_RETRY_AFTER_MS = 1_000;
+const MAX_RETRY_AFTER_MS = 5 * 60_000;
+
+/**
+ * How long a `Retry-After` header asks the caller to wait, in milliseconds.
+ *
+ * The header is either delta-seconds or an HTTP date, and servers send both. A missing or
+ * unreadable value still means "not now", so it becomes a short default rather than an
+ * immediate retry; an absurd one is capped, so a misconfigured proxy cannot park the run
+ * for a day.
+ */
+export function retryAfterMs(header: string | null, now: number = Date.now()): number {
+  const value = header?.trim() ?? '';
+  if (value !== '') {
+    if (/^\d+(\.\d+)?$/.test(value)) return Math.min(Number(value) * 1000, MAX_RETRY_AFTER_MS);
+    const at = Date.parse(value);
+    if (!Number.isNaN(at)) return Math.min(Math.max(0, at - now), MAX_RETRY_AFTER_MS);
+  }
+  return DEFAULT_RETRY_AFTER_MS;
+}
+
+export const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
  * Runs `main` only when this module is the command actually being run.
  *
