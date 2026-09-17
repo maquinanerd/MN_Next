@@ -25,6 +25,21 @@ import { createServer, type Server, type ServerResponse } from 'node:http';
 export interface FakeWordPress {
   url: string;
   close: () => Promise<void>;
+  /** Requests for hotlinked images, in order — how a test tells a download from a reuse. */
+  externalRequests: string[];
+}
+
+export interface FakeWordPressOptions {
+  /**
+   * The archive's two remaining problems, as the importer meets them.
+   *
+   * Body images hotlinked from another host — served by this same server under the name
+   * `localhost`, which is a different host from `127.0.0.1` as far as any URL is
+   * concerned: one image that downloads (only with its query string intact), one that is
+   * gone, one that is an HTML page. And two posts filed under no desk: one whose title
+   * says what it is about, one that gives no clue.
+   */
+  acervo?: boolean;
 }
 
 const rendered = (html: string) => ({ rendered: html });
@@ -88,7 +103,7 @@ function mediaRows(origin: string): Record<string, unknown>[] {
 }
 
 /** Raw WordPress body: shortcodes, a resized image URL, an embed, a cited quote. */
-function body(i: number, origin: string): string {
+function body(i: number, origin: string, hotlinks: string | null): string {
   return [
     `<p>Primeiro parágrafo da matéria ${i}, com <strong>ênfase</strong> e um <a href="https://exemplo.test">link</a>.</p>`,
     '<h2>Um subtítulo</h2>',
@@ -100,11 +115,67 @@ function body(i: number, origin: string): string {
     '[gallery ids="101,102"]',
     '[embed]https://www.youtube.com/watch?v=abc123[/embed]',
     '<blockquote><p>Uma citação.</p><cite>Fonte</cite></blockquote>',
+    // The `&#038;` WordPress writes into URLs, with no alt text: the alt has to come from
+    // the next post that shows the same picture.
+    ...(hotlinks !== null && i === 1
+      ? [`<p>De outro veículo:</p><img src="${hotlinks}/external/capa.jpg?w=1100&#038;q=80" alt="" />`]
+      : []),
   ].join('\n');
 }
 
-function postRows(origin: string): Record<string, unknown>[] {
-  return Array.from({ length: POST_COUNT }, (_, i) => ({
+/** A post with no desk among its categories, whose title is the evidence of one. */
+function unfiledPost(origin: string, hotlinks: string): Record<string, unknown> {
+  return {
+    id: 2000,
+    date_gmt: '2026-08-30T12:00:00',
+    modified_gmt: '2026-08-30T13:00:00',
+    slug: 'xbox-revela-novo-console-portatil',
+    status: 'publish',
+    type: 'post',
+    link: `${origin}/xbox-revela-novo-console-portatil/`,
+    title: rendered('Xbox revela novo console portátil'),
+    content: rendered(
+      [
+        '<p>O console chega em novembro.</p>',
+        // The same picture as in post 1001, spelled `&amp;` this time.
+        `<img src="${hotlinks}/external/capa.jpg?w=1100&amp;q=80" alt="Console portátil em destaque" />`,
+        `<img src="${hotlinks}/external/sumiu.jpg" alt="" />`,
+        `<img src="${hotlinks}/external/pagina.jpg" alt="" />`,
+      ].join('\n'),
+    ),
+    excerpt: rendered('<p>O console chega em novembro.</p>'),
+    author: 2,
+    featured_media: 101,
+    categories: [9],
+    tags: [],
+  };
+}
+
+/**
+ * A post with no desk and no evidence of one: `--auto-desk` leaves it out, on a list. Its
+ * hotlinked image belongs to a post that will not be imported, so it is never fetched.
+ */
+function leftOutPost(origin: string, hotlinks: string): Record<string, unknown> {
+  return {
+    id: 2001,
+    date_gmt: '2026-08-31T12:00:00',
+    modified_gmt: '2026-08-31T13:00:00',
+    slug: 'star-wars-prepara-terreno',
+    status: 'publish',
+    type: 'post',
+    link: `${origin}/star-wars-prepara-terreno/`,
+    title: rendered('Star Wars prepara terreno para morte marcante na franquia'),
+    content: rendered(`<p>Sem pistas.</p><img src="${hotlinks}/external/nunca.jpg" alt="" />`),
+    excerpt: rendered('<p>Sem pistas.</p>'),
+    author: 2,
+    featured_media: 0,
+    categories: [9],
+    tags: [],
+  };
+}
+
+function postRows(origin: string, hotlinks: string | null): Record<string, unknown>[] {
+  const posts = Array.from({ length: POST_COUNT }, (_, i) => ({
     id: 1000 + i,
     date_gmt: new Date(Date.UTC(2026, 7, 20 + (i % 8), 12)).toISOString().replace('Z', ''),
     modified_gmt: new Date(Date.UTC(2026, 7, 20 + (i % 8), 13)).toISOString().replace('Z', ''),
@@ -113,7 +184,7 @@ function postRows(origin: string): Record<string, unknown>[] {
     type: 'post',
     link: `${origin}/2026/08/materia-numero-${i}/`,
     title: rendered(`Matéria número ${i} — acentuação &amp; entidades`),
-    content: rendered(body(i, origin)),
+    content: rendered(body(i, origin, hotlinks)),
     excerpt: rendered(`<p>Resumo da matéria ${i}.</p>`),
     // Numeric ids, exactly as WordPress sends them.
     author: i % 2 === 0 ? 2 : 7,
@@ -124,15 +195,33 @@ function postRows(origin: string): Record<string, unknown>[] {
     categories: [9, i % 2 === 0 ? 3 : 5],
     tags: i % 3 === 0 ? [11, 12] : [11],
   }));
+  return hotlinks === null ? posts : [...posts, unfiledPost(origin, hotlinks), leftOutPost(origin, hotlinks)];
 }
 
-export async function startFakeWordPress(port = 0): Promise<FakeWordPress> {
+export async function startFakeWordPress(port = 0, options: FakeWordPressOptions = {}): Promise<FakeWordPress> {
   // Collections are built after binding, because the media URLs and post links have to
   // name this server's own origin for the asset download to be a real one.
   let collections: Record<string, unknown[]> = {};
+  const externalRequests: string[] = [];
 
   const server: Server = createServer((req, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', 'http://wp.local');
+
+    if (options.acervo && url.pathname.startsWith('/external/')) {
+      externalRequests.push(`${url.pathname}${url.search}`);
+      // Only the rendition the article showed: a download that lost the query string on
+      // the way gets the 404 a CDN gives for a size it does not serve.
+      if (url.pathname === '/external/capa.jpg' && url.search === '?w=1100&q=80') {
+        res.writeHead(200, { 'content-type': 'image/jpeg', 'content-length': JPEG.length });
+        return res.end(JPEG);
+      }
+      if (url.pathname === '/external/pagina.jpg') {
+        res.writeHead(200, { 'content-type': 'image/jpeg' });
+        return res.end('<!doctype html><title>Página</title>');
+      }
+      res.writeHead(404, { 'content-type': 'text/plain' });
+      return res.end('not found');
+    }
 
     if (url.pathname.startsWith('/wp-content/uploads/')) {
       res.writeHead(200, { 'content-type': 'image/jpeg', 'content-length': JPEG.length });
@@ -172,7 +261,7 @@ export async function startFakeWordPress(port = 0): Promise<FakeWordPress> {
   const origin = `http://127.0.0.1:${boundPort}`;
 
   collections = {
-    posts: postRows(origin),
+    posts: postRows(origin, options.acervo ? `http://localhost:${boundPort}` : null),
     categories: CATEGORIES,
     tags: TAGS,
     users: USERS,
@@ -181,6 +270,7 @@ export async function startFakeWordPress(port = 0): Promise<FakeWordPress> {
 
   return {
     url: origin,
+    externalRequests,
     close: () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
   };
 }
