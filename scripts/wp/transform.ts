@@ -183,7 +183,21 @@ export interface TransformOptions {
    * licensing question and a broken-mapping bug into one indistinguishable number.
    */
   siteHost?: string;
+  /**
+   * Told about every body image the resolver could not place: its `src` exactly as the
+   * resolver received it, its alt text as the tag carried it (sanitiser-escaped, like the
+   * `src`), and the kind it was counted under in the report.
+   *
+   * This is how the importer learns which third-party images an archive hotlinks. It
+   * listens here rather than parsing bodies itself on purpose: a second parser would
+   * normalise URLs its own way, and an image collected under one spelling and looked up
+   * under another is downloaded, uploaded, and then silently not found.
+   */
+  onUnresolvedImage?: (image: { src: string; alt: string; kind: string }) => void;
 }
+
+/** The report kind of an image hotlinked from another host; the host follows the prefix. */
+export const EXTERNAL_IMAGE_KIND = 'image:external:';
 
 /**
  * Converts one post body.
@@ -445,7 +459,7 @@ function unresolvedKind(src: string, siteHost?: string): string {
   try {
     const host = new URL(src).hostname.toLowerCase();
     if (!siteHost || host === siteHost.toLowerCase()) return 'image:unresolved';
-    return `image:external:${host}`;
+    return `${EXTERNAL_IMAGE_KIND}${host}`;
   } catch {
     // A rooted path or a shortcode placeholder: not a host question.
     return 'image:unresolved';
@@ -474,7 +488,9 @@ function pushImage(attrs: string, blocks: ContentBlock[], options: TransformOpti
   }
   const image = resolveImage(src);
   if (!image) {
-    note(report, unresolvedKind(src, siteHost), postId, src);
+    const kind = unresolvedKind(src, siteHost);
+    note(report, kind, postId, src);
+    options.onUnresolvedImage?.({ src, alt, kind });
     return;
   }
   if (alt.trim() === '') report.imagesMissingAlt += 1;

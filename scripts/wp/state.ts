@@ -30,6 +30,14 @@ export interface RunState {
    */
   pendingMediaMeta: number[];
   /**
+   * The same debt for third-party images, keyed by the hash in their `externalKey`.
+   *
+   * Kept apart from `pendingMediaMeta` because the two are different identities: a
+   * WordPress media id is a number the archive assigned, a hotlinked image has no id
+   * anywhere but the URL it was served from.
+   */
+  pendingExternalMeta: string[];
+  /**
    * The article version this importer last wrote, per source item.
    *
    * `If-Match` alone only protects the moment between reading a version and writing it,
@@ -52,6 +60,7 @@ export function emptyState(now: string, runId = randomUUID()): RunState {
     counts: { read: 0, created: 0, updated: 0, skipped: 0, failed: 0 },
     mappings: {},
     pendingMediaMeta: [],
+    pendingExternalMeta: [],
     articleVersions: {},
     failures: [],
   };
@@ -80,6 +89,7 @@ export async function loadState(file: string, now: string, resume: boolean): Pro
   const carried = {
     // A checkpoint written before these fields existed is still a valid checkpoint.
     pendingMediaMeta: parsed.pendingMediaMeta ?? [],
+    pendingExternalMeta: parsed.pendingExternalMeta ?? [],
     articleVersions: parsed.articleVersions ?? {},
     mappings: parsed.mappings ?? {},
   };
@@ -166,7 +176,7 @@ export class CheckpointWriter {
 }
 
 export function mappingKey(
-  kind: 'post' | 'media' | 'category' | 'tag' | 'author' | 'redirect',
+  kind: 'post' | 'media' | 'external' | 'category' | 'tag' | 'author' | 'redirect',
   id: string | number,
 ): string {
   return `wp${kind[0]?.toUpperCase()}${kind.slice(1)}:${id}`;

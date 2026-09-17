@@ -16,6 +16,16 @@ import {
   type RunSummary,
 } from './cli';
 import { forEachConcurrent } from './concurrency';
+import {
+  EXTERNAL_KEY_PREFIX,
+  ExternalImageCollector,
+  externalImageDownloader,
+  externalImagesSummary,
+  importExternalImages,
+  type ExternalImage,
+  type ExternalImageOutcome,
+  type HostTally,
+} from './external-images';
 import { CheckpointWriter, idempotencyKey, loadState, mappingKey, type RunState } from './state';
 import {
   ALLOWED_ASSET_TYPES,
@@ -83,11 +93,32 @@ const FLAGS = [
   },
   {
     name: 'concurrency',
-    description: 'records handled at once: library assets and posts',
+    description: 'records handled at once: library assets, third-party images, posts',
     type: 'number' as const,
     default: 4,
   },
+  {
+    name: 'external-images',
+    description: 'download third-party body images and host them in Kal El',
+    type: 'boolean' as const,
+    default: false,
+  },
+  {
+    name: 'external-downloads',
+    description: 'third-party downloads in flight at once, across every host',
+    type: 'number' as const,
+    default: 8,
+  },
+  {
+    name: 'external-per-host',
+    description: 'third-party downloads in flight at once from a single host',
+    type: 'number' as const,
+    default: 2,
+  },
 ];
+
+/** Media and posts are handed to the lanes in slices of this size, with a checkpoint after each. */
+const BATCH = 200;
 
 /**
  * Everything a post refers to, keyed the way the post refers to it.
@@ -156,6 +187,14 @@ function canonicalAssetUrl(url: string): string {
   return url.replace(/-\d+x\d+(\.[a-z]{3,4})$/i, '$1');
 }
 
+/** Whether an earlier run hosted third-party images, as far as the checkpoint or Kal El can tell. */
+function holdsHostedImages(state: RunState, alreadyImported: ReadonlyMap<string, string>): boolean {
+  const prefix = mappingKey('external', '');
+  for (const key of Object.keys(state.mappings)) if (key.startsWith(prefix)) return true;
+  for (const key of alreadyImported.keys()) if (key.startsWith(EXTERNAL_KEY_PREFIX)) return true;
+  return false;
+}
+
 /** A lane count from the command line: a whole number, and not one that turns politeness into a flood. */
 function lanes(value: string | number | boolean | undefined, flag: string): number {
   const n = Number(value);
@@ -175,7 +214,10 @@ async function main(): Promise<void> {
   const outDir = String(values.out);
   const statePath = String(values.state);
   const maxAssetBytes = Number(values['max-asset-mb']) * 1024 * 1024;
+  const externalImages = values['external-images'] === true;
   const concurrency = lanes(values.concurrency, 'concurrency');
+  const externalDownloads = lanes(values['external-downloads'], 'external-downloads');
+  const externalPerHost = lanes(values['external-per-host'], 'external-per-host');
 
   const now = new Date().toISOString();
   const state: RunState = await loadState(statePath, now, values.resume === true);
@@ -195,6 +237,9 @@ async function main(): Promise<void> {
       'categoriesAsTags',
       'noDesk',
       'slugCollision',
+      ...(externalImages
+        ? ['externalImagesFound', 'externalImagesTransferred', 'externalImagesReused', 'externalImagesFailed']
+        : []),
     ]),
     failures: [],
     artefacts: [],
@@ -447,21 +492,125 @@ async function main(): Promise<void> {
   const checkpoint = new CheckpointWriter(statePath, state);
   const since = values.since ? String(values.since) : undefined;
 
-  // ------------------------------------------------------------------- media
-  if (values['skip-media'] !== true) {
-    const alreadyImported = target ? await target.mediaIndexByExternalKey() : new Map<string, string>();
-    const deps: AssetImportDeps = { source, target, indexes, state, summary, report, alreadyImported, maxAssetBytes };
+  /** Whether a post will be filed under a desk — answered from the plan, before anything exists. */
+  const willBeFiled = (post: WpPost): boolean => post.categories.some((id) => indexes.deskSlugByWpId.has(id));
 
-    for await (const batch of source.media()) {
+  // ------------------------------------------------------------------- media
+  const skipMedia = values['skip-media'] === true;
+  // One read of what Kal El already holds, before anything is uploaded, shared by both
+  // kinds of media.
+  const alreadyImported =
+    target && (!skipMedia || externalImages) ? await target.mediaIndexByExternalKey() : new Map<string, string>();
+
+  /*
+   * An import that has hosted third-party images must go on resolving them.
+   *
+   * Without the flag they are not collected, so every body converts with those images
+   * unresolved — and updating an article sends its whole document. Each article the run
+   * touched would lose its hosted images, and the run would exit 0. The runbook's second
+   * run and the cutover delta are exactly such runs, so this refuses before any write.
+   */
+  if (target && !externalImages && holdsHostedImages(state, alreadyImported)) {
+    throw new CliError(
+      'this import has already hosted third-party images: pass --external-images, or every article this run ' +
+        'updates would be sent without them',
+    );
+  }
+
+  /*
+   * The library is listed in full before any of it is sent: collecting third-party images
+   * needs to know which body images the library will answer for.
+   */
+  const library: WpMedia[] = [];
+  if (!skipMedia) for await (const batch of source.media()) library.push(...batch);
+
+  // ------------------------------------------------------ third-party images
+  //
+  // Collected by running the real transform over every post that will be imported, with
+  // a resolver that answers for the library as it will be once imported. Whatever it
+  // still cannot place, on a host other than the site's own, is a hotlinked image.
+  let externals: ExternalImage[] = [];
+  let unparseable = 0;
+  if (externalImages) {
+    const collector = new ExternalImageCollector();
+    const libraryKeys = new Set<string>();
+    for (const asset of library) {
+      if (!ALLOWED_ASSET_TYPES.has(asset.mime_type)) continue;
+      libraryKeys.add(canonicalAssetUrl(asset.source_url));
+      libraryKeys.add(shortcodeAssetRef(asset.id));
+    }
+    const planned: Image = { url: '/media/planned', width: 1200, height: 675, alt: '' };
+    const resolvePlanned = (src: string): Image | null =>
+      libraryKeys.has(src) || libraryKeys.has(canonicalAssetUrl(src)) ? planned : null;
+
+    let seen = 0;
+    collect: for await (const batch of source.posts(since)) {
+      for (const post of batch) {
+        if (limit > 0 && seen >= limit) break collect;
+        seen += 1;
+        // An image in a post that will not be imported is not worth hosting.
+        if (!willBeFiled(post)) continue;
+        htmlToBlocks(post.content, {
+          postId: post.id,
+          report: emptyReport(),
+          resolveImage: resolvePlanned,
+          ...siteHost,
+          onUnresolvedImage: collector.listener(post.id),
+        });
+      }
+    }
+    externals = collector.images();
+    unparseable = collector.unparseable;
+    summary.counts.inc('externalImagesFound', externals.length);
+    console.log(
+      `[wp:import] third-party images: ${externals.length} unique URLs on ${new Set(externals.map((i) => i.host)).size} hosts`,
+    );
+  }
+
+  // ------------------------------------------------------------ library upload
+  if (!skipMedia) {
+    const deps: AssetImportDeps = { source, target, indexes, state, summary, report, alreadyImported, maxAssetBytes };
+    for (let start = 0; start < library.length; start += BATCH) {
       try {
-        await forEachConcurrent(batch, concurrency, (asset) => importAsset(asset, deps));
+        await forEachConcurrent(library.slice(start, start + BATCH), concurrency, (asset) => importAsset(asset, deps));
       } finally {
         // Also on the way out of a failure: every asset that finished did so in Kal El,
         // and a mapping left unsaved is an upload the next run repeats.
         await checkpoint.save();
       }
     }
+    library.length = 0;
   }
+
+  // ------------------------------------------------- third-party image upload
+  let externalTallies = new Map<string, HostTally>();
+  const externalOutcomes: ExternalImageOutcome[] = [];
+  if (externalImages) {
+    try {
+      externalTallies = await importExternalImages(externals, {
+        target,
+        imageByUrl: indexes.imageByUrl,
+        state,
+        summary,
+        alreadyImported,
+        download: externalImageDownloader({
+          allowedHosts: new Set(externals.map((image) => image.host)),
+          maxBytes: maxAssetBytes,
+          // The rehearsal flag reaches body URLs only when they are this very machine.
+          allowLoopbackHosts: allowPrivateHosts,
+        }),
+        concurrency,
+        downloads: externalDownloads,
+        perHost: externalPerHost,
+        checkpoint: () => checkpoint.save(),
+        record: (outcome) => externalOutcomes.push(outcome),
+      });
+    } finally {
+      await checkpoint.save();
+    }
+  }
+  const external = externalImages ? externalImagesSummary(externals, externalTallies, unparseable) : null;
+  externals = [];
 
   // ------------------------------------------------------------------- posts
   let processed = 0;
@@ -542,6 +691,15 @@ async function main(): Promise<void> {
         droppedAttributes: report.droppedAttributes,
         imagesMissingAlt: report.imagesMissingAlt,
         concurrency,
+        ...(external
+          ? {
+              externalImages: {
+                ...external,
+                // The whole table is in external-images.json; here, the hosts that matter.
+                byHost: external.byHost.slice(0, 15).map(({ samples: _samples, ...tally }) => tally),
+              },
+            }
+          : {}),
         failures: summary.failures.slice(0, 200),
       },
       null,
@@ -574,10 +732,39 @@ async function main(): Promise<void> {
     ),
     'utf8',
   );
+  const artefacts = [reportPath, unknownPath, unmappedPath];
+
+  if (external) {
+    const externalPath = path.join(outDir, 'external-images.json');
+    await writeFile(
+      externalPath,
+      JSON.stringify(
+        {
+          note:
+            'Imagens de terceiros no corpo dos posts importados, por host. `failed` são falhas do host ' +
+            '(não mudam o código de saída); `failedOnKalEl` são nossas e contam em `failed` da execução.',
+          applied: apply,
+          ...external,
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+    // One line per image: what was hosted, from where, under which media id.
+    const auditPath = path.join(outDir, 'external-images.ndjson');
+    const lines = [...externalOutcomes].sort((a, b) => a.host.localeCompare(b.host) || a.url.localeCompare(b.url));
+    await writeFile(
+      auditPath,
+      lines.map((line) => JSON.stringify(line)).join('\n') + (lines.length ? '\n' : ''),
+      'utf8',
+    );
+    artefacts.push(externalPath, auditPath);
+  }
 
   await checkpoint.save();
 
-  summary.artefacts = [reportPath, unknownPath, unmappedPath, statePath];
+  summary.artefacts = [...artefacts, statePath];
   printSummary(summary);
 
   // See `runAsScript`: set, not exited with, so a run that wrote exits cleanly on Windows.
@@ -628,13 +815,6 @@ export function planPostBatch(
 }
 
 /**
- * Turns whatever a body says about an image into the image Kal El now holds.
- *
- * Exported so it can be exercised end-to-end with the indexes `importAsset` actually
- * builds: this resolver and that indexing step are one contract, and a test that
- * reimplements either half proves nothing about the pair.
- */
-/**
  * The run's exit code.
  *
  * A dry run that found problems is a success — finding them is what it is for. A run
@@ -645,8 +825,21 @@ export function exitCodeFor(apply: boolean, summary: RunSummary): 0 | 1 {
   return apply && summary.counts.get('failed') > 0 ? 1 : 0;
 }
 
+/**
+ * Turns whatever a body says about an image into the image Kal El now holds.
+ *
+ * Exported so it can be exercised end-to-end with the indexes `importAsset` actually
+ * builds: this resolver and that indexing step are one contract, and a test that
+ * reimplements either half proves nothing about the pair.
+ *
+ * The exact spelling first, then the canonical one. A library asset is registered under
+ * its original URL, and every resized variant (`-800x450.jpg`) has to fall back to it. A
+ * third-party image is registered under each exact `src` a body used, because there the
+ * `-800x450` is not a variant of anything the import holds — it names a different file
+ * on somebody else's server — and folding it would show one rendition in place of another.
+ */
 export function imageResolver(indexes: Indexes): (src: string) => Image | null {
-  return (src) => indexes.imageByUrl.get(canonicalAssetUrl(src)) ?? null;
+  return (src) => indexes.imageByUrl.get(src) ?? indexes.imageByUrl.get(canonicalAssetUrl(src)) ?? null;
 }
 
 export interface AssetImportDeps {
