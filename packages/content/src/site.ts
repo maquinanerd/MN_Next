@@ -91,6 +91,8 @@ export const RESERVED_SEGMENTS = new Set([
   'sitemap.xml',
   'sitemap',
   'robots.txt',
+  // Where `middleware.ts` resolves WordPress permalinks; never an editoria or a tag.
+  'legado',
 ]);
 
 export interface SocialLink {

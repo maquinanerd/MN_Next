@@ -1,11 +1,13 @@
 import type { Metadata } from 'next';
-import { notFound, permanentRedirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import { articlePath, safeSlugParam } from '@mn/content';
 import { JsonLd, articleMetadata, articleNode, breadcrumbNode, buildGraph } from '@mn/seo';
 
 import { ArticleView } from '../../../components/ArticleView';
+import { Moved } from '../../../components/Moved';
 import { materiaView, repo } from '../../../lib/content';
 import { previewAllows } from '../../../lib/preview';
+import { safeInternalPath } from '../../../lib/redirects';
 import { seoContext } from '../../../lib/seo-context';
 
 /**
@@ -38,8 +40,10 @@ export default async function OfferPage({ params }: { params: Promise<Params> })
   const { article, preview } = await load(await params);
   if (!article) notFound();
   if (article.layout !== 'offer') {
-    const path = articlePath(article);
-    if (path) permanentRedirect(path);
+    // Sent on with `Moved`: a redirect thrown from this cached page comes back from the
+    // cache with no `Location`.
+    const path = safeInternalPath(articlePath(article) ?? '');
+    if (path) return <Moved to={path} />;
     notFound();
   }
 

@@ -86,7 +86,10 @@ describe('robots.txt decides from APP_ENV, not from the hostname', () => {
       'https://www.maquinanerd.com.br/news-sitemap.xml',
     ]);
     const rules = Array.isArray(result.rules) ? result.rules : [result.rules];
-    expect(rules[0]?.disallow).toEqual(['/api/', '/preview/', '/busca', '/media/']);
+    expect(rules[0]?.disallow).toEqual(['/api/', '/preview/', '/busca']);
+    // The covers: `og:image` and the Article image are `/media/{id}`. Disallowed, Google
+    // could fetch none of them — no Discover card with a large image, no Google Images.
+    expect(rules[0]?.allow).toContain('/media/');
   });
 
   it('closes a staging host whose name gives nothing away', () => {

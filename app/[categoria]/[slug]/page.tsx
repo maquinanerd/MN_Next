@@ -1,9 +1,10 @@
 import type { Metadata } from 'next';
-import { notFound, permanentRedirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import { RESERVED_SEGMENTS, articlePath, safeSlugParam } from '@mn/content';
 import { JsonLd, articleMetadata, articleNode, breadcrumbNode, buildGraph, reviewNode } from '@mn/seo';
 
 import { ArticleView } from '../../../components/ArticleView';
+import { Moved } from '../../../components/Moved';
 import { materiaView, repo } from '../../../lib/content';
 import { previewAllows } from '../../../lib/preview';
 import { safeInternalPath } from '../../../lib/redirects';
@@ -67,12 +68,13 @@ export default async function ArticlePage({ params }: { params: Promise<Params> 
   if (!canonical) notFound();
 
   // One address per article. An offer lives under /ofertas; an article asked for under
-  // another editoria — a WordPress post filed in several categories, a desk renamed after
-  // the link was shared — goes to its own with a 308, instead of a 404 or a duplicate.
+  // another editoria — a desk renamed after the link was shared — is sent on to its own,
+  // instead of a 404 or a duplicate. With `Moved`, not a thrown redirect: this page is
+  // cached, and a cached redirect comes back with no `Location`.
   if (!preview && canonical !== requested) {
     const target = safeInternalPath(canonical);
     if (!target) notFound();
-    permanentRedirect(target);
+    return <Moved to={target} />;
   }
 
   const view = await materiaView(article);

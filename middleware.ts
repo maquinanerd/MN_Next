@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { legacyRedirect } from './lib/redirects';
+import { firstPageRedirect, legacyPermalinkCandidate, legacyRedirect } from './lib/redirects';
 
 /**
  * Legacy URL preservation, and the indexing policy of a deployment that is not the site.
@@ -33,7 +33,7 @@ function route(request: NextRequest): NextResponse {
   const { pathname, search } = request.nextUrl;
 
   const match = legacyRedirect(pathname, request.nextUrl.searchParams);
-  if (!match) return NextResponse.next();
+  if (!match) return uncachedAnswers(request);
 
   if (match.status === 410) {
     return new NextResponse('Esta página foi removida permanentemente.', {
@@ -48,6 +48,37 @@ function route(request: NextRequest): NextResponse {
   url.search = match.dropQuery ? '' : search;
 
   return NextResponse.redirect(url, match.status);
+}
+
+/**
+ * The answers a cached page must not give.
+ *
+ * Next caches the pages that render listings and editorias, and a redirect thrown from a
+ * cached page comes back from that cache as a `308` with no `Location` — a redirect to
+ * nowhere for a crawler. From 2026-09-16 to 2026-09-21 that was every WordPress permalink.
+ * So page 1 of a listing is redirected here, and a single segment that may be a permalink
+ * is rewritten — the address stays the old one — to `/legado/[slug]`, which renders on
+ * request and redirects with its destination.
+ */
+function uncachedAnswers(request: NextRequest): NextResponse {
+  const { pathname, search } = request.nextUrl;
+
+  const listing = firstPageRedirect(pathname);
+  if (listing) {
+    const url = request.nextUrl.clone();
+    url.pathname = listing;
+    url.search = search;
+    return NextResponse.redirect(url, 308);
+  }
+
+  const permalink = legacyPermalinkCandidate(pathname);
+  if (permalink) {
+    const url = request.nextUrl.clone();
+    url.pathname = `/legado/${permalink}`;
+    return NextResponse.rewrite(url);
+  }
+
+  return NextResponse.next();
 }
 
 /**
