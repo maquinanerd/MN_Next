@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -70,9 +70,9 @@ describe('wp:import against a live pair of stand-ins', () => {
   /**
    * Runs the CLI and returns its summary, whatever the exit code.
    *
-   * A non-zero exit is not an error here — it is one of the behaviours under test. The
-   * run that skips an article an editor changed *must* exit 1, and the summary it printed
-   * on the way out is exactly what has to be read.
+   * A non-zero exit is not an error here — it is one of the behaviours under test, and the
+   * summary a failed run printed on the way out is exactly what has to be read. (An article
+   * an editor changed is not one: it is counted in `editedInCms` and the run exits 0.)
    */
   async function importRun(args: string[]): Promise<{ counts: Record<string, number>; failures: unknown[] }> {
     const { stdout } = await runOrCapture(
@@ -133,6 +133,23 @@ describe('wp:import against a live pair of stand-ins', () => {
       // The archive's `filmes` and `series` arrive under the editorias the kit names.
       expect(store.categories.map((c) => c['slug']).sort()).toEqual(['cinema', 'series-e-tv']);
       expect(store.tags.map((t) => t['slug'])).toContain('noticias');
+
+      // What the first production session lost to the real CMS's validation, now taken:
+      // a name WordPress stored escaped arrives decoded, and a list of titles past a tag's
+      // 80 characters arrives cut at a word, under a slug within its 100.
+      expect(store.tags.find((t) => t['slug'] === 'deadpool-wolverine')?.['name']).toBe('Deadpool & Wolverine');
+      const long = store.tags.find((t) => String(t['slug']).startsWith('multiplos-titulos-de-filmes'));
+      expect(String(long?.['name']).length).toBeLessThanOrEqual(80);
+      expect(String(long?.['name']).endsWith('…')).toBe(true);
+      expect(String(long?.['slug']).length).toBeLessThanOrEqual(100);
+      expect(summary.counts['termsShortened']).toBe(1);
+
+      // And the post whose paragraph is past a text node's 10.000 characters is in, whole.
+      const giant = store.articles.find((a) => a['externalKey'] === 'wp:post:1002');
+      const texts = JSON.stringify(giant?.['document']).match(/"text":"[^"]*"/g) ?? [];
+      expect(texts.length).toBeGreaterThan(0);
+      for (const text of texts) expect(text.length - '"text":""'.length).toBeLessThanOrEqual(10_000);
+      expect(JSON.stringify(giant?.['document'])).toContain('sem quebras de linha');
       expect(summary.counts['categoriesAsTags']).toBe(expected.categoriesInWordPress - expected.categories);
       expect(store.authors).toHaveLength(expected.authors);
       expect(store.media).toHaveLength(expected.media);
@@ -188,8 +205,16 @@ describe('wp:import against a live pair of stand-ins', () => {
 
       const summary = await importRun(['--apply', '--resume']);
 
-      // It is reported, not swallowed: the operator has to know one article was skipped.
-      expect(JSON.stringify(summary.failures)).toContain('edited after import');
+      // Counted and listed, not failed: the operator has to know one article was skipped,
+      // and the session's idempotency pass still has to run — it runs only after a clean
+      // first pass, and the newsroom edits imported articles every day.
+      expect(summary.counts['editedInCms']).toBe(1);
+      expect(summary.failures).toEqual([]);
+      const listed = JSON.parse(await readFile(path.join(workdir, 'edited-in-cms.json'), 'utf8')) as {
+        articles: { id: string; reason: string }[];
+      };
+      expect(listed.articles).toHaveLength(1);
+      expect(listed.articles[0]?.reason).toContain('edited after import');
 
       // The importer read version N, sent If-Match: N, and the CMS refused. Overwriting
       // an editorial change with a re-import is worse than skipping and reporting.
@@ -211,8 +236,28 @@ describe('wp:import against a live pair of stand-ins', () => {
 
       const summary = await importRun(['--apply']);
 
-      expect(JSON.stringify(summary.failures)).toContain('edited after import');
+      expect(summary.counts['editedInCms']).toBe(1);
       expect(cms.contents().articles[0]?.['title']).toBe(editedTitle);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'a tag the import wrote escaped is renamed, and one the newsroom renamed is not',
+    async () => {
+      const tags = cms.contents().tags;
+      const deadpool = tags.find((t) => t['slug'] === 'deadpool-wolverine');
+      const netflix = tags.find((t) => t['slug'] === 'netflix');
+      // As the first production session left it, and as an editor might have since.
+      Object.assign(deadpool as Record<string, unknown>, { name: 'Deadpool &amp; Wolverine' });
+      Object.assign(netflix as Record<string, unknown>, { name: 'Netflix Brasil' });
+
+      const summary = await importRun(['--apply', '--resume']);
+
+      expect(summary.failures).toEqual([]);
+      expect(summary.counts['termsRenamed']).toBe(1);
+      expect(deadpool?.['name']).toBe('Deadpool & Wolverine');
+      expect(netflix?.['name']).toBe('Netflix Brasil');
     },
     TIMEOUT,
   );

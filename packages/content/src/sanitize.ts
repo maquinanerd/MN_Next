@@ -176,18 +176,126 @@ export function sanitizeHtml(input: string): { html: string; report: SanitizeRep
   return { html, report };
 }
 
-/** Strips every tag; used for excerpts, meta descriptions and reading-time counting. */
+/**
+ * The named character references plain text meets: markup's own, typography, and the
+ * Portuguese and Spanish letters an editor or a plugin wrote escaped. WordPress stores term
+ * names HTML-escaped (`Deadpool &amp; Wolverine`), and excerpts in this archive carry
+ * `ser&aacute;`.
+ */
+const NAMED_ENTITIES: Readonly<Record<string, string>> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: ' ',
+  hellip: '…',
+  ndash: '–',
+  mdash: '—',
+  lsquo: '‘',
+  rsquo: '’',
+  sbquo: '‚',
+  ldquo: '“',
+  rdquo: '”',
+  bdquo: '„',
+  laquo: '«',
+  raquo: '»',
+  bull: '•',
+  middot: '·',
+  deg: '°',
+  ordf: 'ª',
+  ordm: 'º',
+  copy: '©',
+  reg: '®',
+  trade: '™',
+  euro: '€',
+  iexcl: '¡',
+  iquest: '¿',
+  aacute: 'á',
+  Aacute: 'Á',
+  agrave: 'à',
+  Agrave: 'À',
+  acirc: 'â',
+  Acirc: 'Â',
+  atilde: 'ã',
+  Atilde: 'Ã',
+  auml: 'ä',
+  Auml: 'Ä',
+  ccedil: 'ç',
+  Ccedil: 'Ç',
+  eacute: 'é',
+  Eacute: 'É',
+  egrave: 'è',
+  Egrave: 'È',
+  ecirc: 'ê',
+  Ecirc: 'Ê',
+  euml: 'ë',
+  Euml: 'Ë',
+  iacute: 'í',
+  Iacute: 'Í',
+  igrave: 'ì',
+  Igrave: 'Ì',
+  icirc: 'î',
+  Icirc: 'Î',
+  iuml: 'ï',
+  Iuml: 'Ï',
+  ntilde: 'ñ',
+  Ntilde: 'Ñ',
+  oacute: 'ó',
+  Oacute: 'Ó',
+  ograve: 'ò',
+  Ograve: 'Ò',
+  ocirc: 'ô',
+  Ocirc: 'Ô',
+  otilde: 'õ',
+  Otilde: 'Õ',
+  ouml: 'ö',
+  Ouml: 'Ö',
+  uacute: 'ú',
+  Uacute: 'Ú',
+  ugrave: 'ù',
+  Ugrave: 'Ù',
+  ucirc: 'û',
+  Ucirc: 'Û',
+  uuml: 'ü',
+  Uuml: 'Ü',
+};
+
+/** A code point text may carry: not a surrogate, not a control character other than whitespace. */
+function isTextCodePoint(code: number): boolean {
+  if (!Number.isInteger(code) || code <= 0 || code > 0x10ffff) return false;
+  if (code >= 0xd800 && code <= 0xdfff) return false;
+  if (code < 0x20) return code === 0x09 || code === 0x0a || code === 0x0d;
+  return code < 0x7f || code > 0x9f;
+}
+
+/**
+ * Character references to the characters they name, in one pass.
+ *
+ * One pass, because decoding is not repeatable: `&amp;lt;` is the text `&lt;`, and the
+ * replace-per-entity chain this used to be turned it into `<`. Numeric references are
+ * decoded whole (`&#34;`, `&#x201C;`); a reference this table does not know, or one naming
+ * no character, is left exactly as written.
+ */
+export function decodeEntities(text: string): string {
+  return text.replace(/&(#\d{1,7}|#x[0-9a-f]{1,6}|[a-z][a-z0-9]{1,31});/gi, (whole, ref: string) => {
+    if (ref.startsWith('#')) {
+      const code =
+        ref[1] === 'x' || ref[1] === 'X' ? Number.parseInt(ref.slice(2), 16) : Number.parseInt(ref.slice(1), 10);
+      return isTextCodePoint(code) ? String.fromCodePoint(code) : whole;
+    }
+    return NAMED_ENTITIES[ref] ?? NAMED_ENTITIES[ref.toLowerCase()] ?? whole;
+  });
+}
+
+/** Strips every tag and decodes what is left; used for titles, excerpts and names. */
 export function toPlainText(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, ' ')
-    .replace(/<\/(p|li|h[1-6]|blockquote|tr)>/gi, ' ')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
+  return decodeEntities(
+    html
+      .replace(/<br\s*\/?>/gi, ' ')
+      .replace(/<\/(p|li|h[1-6]|blockquote|tr)>/gi, ' ')
+      .replace(/<[^>]+>/g, ''),
+  )
     .replace(/\s+/g, ' ')
     .trim();
 }

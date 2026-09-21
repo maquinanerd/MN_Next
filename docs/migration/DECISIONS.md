@@ -832,3 +832,57 @@ copiar o arquivo outra vez.
 Uma importação interrompida no meio disso não perde o que subiu: retoma com `-Recover` e o
 mesmo comando ([RUNBOOK §4.2.2](./RUNBOOK.md)), e o Kal El devolve pelo `externalKey` a mídia
 que já tem em vez de duplicá-la.
+
+### 7.18 A primeira sessão de produção, e a segunda (2026-09-21)
+
+A primeira passada da sessão de 2026-09-17 terminou às 18:45: 41.318 posts lidos, **40.907
+matérias criadas**, as 73.128 mídias do acervo no Kal El, 31.019 imagens de terceiros
+hospedadas (21.108 baixadas nesta execução e 9.911 já presentes da execução interrompida em
+§7.17), 1.126 imagens de terceiros que o host não entregou, 236 cópias puladas, 124 posts
+arquivados pelo `--auto-desk` e 172 de fora. E **20 falhas**, todas `VALIDATION_ERROR` do Kal El:
+
+- **17 tags com nome acima de 80 caracteres.** Listas de títulos que uma automação arquivou
+  como tag ("Múltiplos títulos de filmes (incluindo Jaws, Blade Runner: The Final Cut,
+  Alien: Romulus, …)"); três delas também com o slug acima de 100;
+- **3 matérias (wp 113552, 114755 e 116292) com um único parágrafo de 11.802 a 15.018
+  caracteres**, acima dos 10.000 de um nó de texto — texto de automação sem quebra de linha.
+
+Como desenhado, a sessão não rodou a segunda passada (ela só roda depois de uma primeira sem
+falhas), retomou os webhooks e revogou o token.
+
+**Achado no site, não na contagem:** o WordPress guarda nomes de termo com o `&` escapado, e a
+importação os gravou assim. 235 tags — 83 categorias rebaixadas a tag e 152 tags, entre elas
+"Deadpool & Wolverine", "Lilo & Stitch" e "Dungeons & Dragons" — apareciam no título da página
+como `Deadpool &amp; Wolverine`. Nos textos, o mesmo acontecia em 1 título, 3 resumos
+(`ser&aacute;`) e 8 textos alternativos.
+
+O que mudou para a segunda sessão:
+
+- **nomes de termo** são decodificados e cabem nos limites do Kal El — tag 80/100, categoria e
+  autor 120/140 — cortados numa palavra, com "…", e o slug num hífen. Nenhum slug gravado muda:
+  só passam do limite os 17, que nunca foram criados. O endereço antigo das três listas com slug
+  acima de 100 deixa de resolver; são listas de títulos de um post cada;
+- **as 235 tags gravadas com o nome escapado são renomeadas** (`PATCH /tags/:id`, só o nome),
+  apenas enquanto o nome guardado for exatamente o que a importação escreveu: um nome que a
+  redação mudou é da redação;
+- **um nó de texto acima de 10.000 caracteres vira vários**, com as mesmas marcas, e o leitor vê
+  o mesmo parágrafo. Legenda, crédito e texto alternativo de imagem acima do limite (2.000, 500 e 500) são cortados, em vez de recusarem a matéria inteira;
+- **`toPlainText` decodifica numa passada só**, referências numéricas e nomeadas. A cadeia de
+  substituições anterior também decodificava duas vezes: `&amp;lt;` virava `<`;
+- **matéria que a redação editou no CMS** desde a importação fica como está, conta em
+  `editedInCms` e é listada em `edited-in-cms.json`, sem falhar a execução. O site é publicado
+  do Kal El desde 2026-09-17 e a redação edita matérias importadas todos os dias; contada como
+  falha, cada edição impediria a sessão de chegar à prova de idempotência;
+- **uma listagem de termos que falha interrompe a execução.** Antes ela virava uma lista vazia,
+  e cada termo existente seria um 409 na criação.
+
+O Kal El de mentira dos testes passou a recusar o que o real recusa — os limites de termo, o nó
+de texto de 10.000 e os campos de imagem — e aceita `PATCH /tags/:id`. O WordPress de mentira
+ganhou a tag escapada, a lista longa e o parágrafo gigante: o ensaio de ponta a ponta agora
+teria falhado como a produção falhou.
+
+**Ensaio com as flags de produção (2026-09-21):** 41.318 lidos, 40.910 a importar,
+`failed: 0`, 17 nomes encurtados. As 124 decisões do `--auto-desk` e os 236 pares de cópias
+são os mesmos da produção, post a post: nenhuma matéria muda de editoria — e portanto de
+endereço — quando a segunda sessão reenviar os campos. E os 40.910 documentos, montados como o
+importador os envia, passam no `documentV2Schema` do próprio Kal El.

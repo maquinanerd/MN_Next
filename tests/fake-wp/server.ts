@@ -64,7 +64,23 @@ const DESK_CATEGORIES = 2;
 const TAGS = [
   { id: 11, name: 'Marvel', slug: 'marvel' },
   { id: 12, name: 'Netflix', slug: 'netflix' },
+  // As the real archive stores them, and as the first production session failed on them:
+  // a name HTML-escaped, and a list of titles past a tag's 80 characters (wp 1614).
+  { id: 13, name: 'Deadpool &amp; Wolverine', slug: 'deadpool-wolverine' },
+  {
+    id: 14,
+    name: 'Múltiplos títulos de filmes (incluindo Jaws, Blade Runner: The Final Cut, Alien: Romulus, American Psycho, Kill Bill)',
+    slug: 'multiplos-titulos-de-filmes-incluindo-jaws-blade-runner-the-final-cut-alien-romulus-american-psycho-kill-bill',
+  },
 ];
+
+/**
+ * One paragraph past a text node's 10.000 characters, the shape of the three posts the
+ * first production session lost (wp 113552, 114755, 116292): an automation that never
+ * broke a line.
+ */
+export const GIANT_PARAGRAPH =
+  'Um parágrafo que nunca termina, escrito por uma automação sem quebras de linha. '.repeat(160);
 
 const USERS = [
   { id: 2, name: 'Redação', slug: 'redacao', description: 'A redação.' },
@@ -115,6 +131,7 @@ function body(i: number, origin: string, hotlinks: string | null): string {
     '[gallery ids="101,102"]',
     '[embed]https://www.youtube.com/watch?v=abc123[/embed]',
     '<blockquote><p>Uma citação.</p><cite>Fonte</cite></blockquote>',
+    ...(i === 2 ? [`<p>${GIANT_PARAGRAPH}</p>`] : []),
     // The `&#038;` WordPress writes into URLs, with no alt text: the alt has to come from
     // the next post that shows the same picture.
     ...(hotlinks !== null && i === 1
