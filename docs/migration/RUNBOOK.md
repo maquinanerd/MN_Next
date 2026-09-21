@@ -376,7 +376,7 @@ O relatório fica em `artifacts/migration/producao/`: `import-report.json` (cont
 ausente do disco, falhas), `external-images.json` (por host), `auto-desk.json` (cada decisão
 com a evidência, e a lista do que ficou de fora) e `duplicates.json`.
 
-O que a primeira passada faz sem falhar, por decisão (DECISIONS §7.16):
+O que a primeira passada faz sem falhar, por decisão (DECISIONS §7.16 e §7.18):
 
 - **posts publicados duas vezes** (título e corpo idênticos) entram uma vez só; a cópia é
   contada em `duplicatesSkipped`;
@@ -385,7 +385,14 @@ O que a primeira passada faz sem falhar, por decisão (DECISIONS §7.16):
 - **imagem de terceiro que não baixa** (404, página HTML, host de exemplo) conta por host em
   `externalImagesFailed` e sai do corpo, como antes; falha de gravação no Kal El conta como
   `failed`;
-- **post sem editoria que o `--auto-desk` não classifica** fica de fora, em `noDesk`.
+- **post sem editoria que o `--auto-desk` não classifica** fica de fora, em `noDesk`;
+- **matéria que a redação editou no Kal El depois da importação** fica como a redação deixou,
+  conta em `editedInCms` e é listada em `edited-in-cms.json`;
+- **nome de termo** é decodificado (`&amp;` vira `&`) e, se passar do limite do Kal El, cortado
+  numa palavra (`termsShortened`); uma tag que uma execução anterior gravou com o nome escapado é
+  renomeada (`termsRenamed`), a não ser que a redação já a tenha renomeado;
+- **parágrafo acima de 10.000 caracteres** vai em vários nós de texto, e o leitor vê o mesmo
+  parágrafo.
 
 - **Antes:** o Kal El com a leitura por ids e `GET /media/storage`
   ([kal-el#12](https://github.com/maquinanerd/kal-el/pull/12)) no ar, o portal com o H3 no

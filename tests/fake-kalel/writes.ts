@@ -27,6 +27,58 @@ import { SITE_ID, type Row } from './corpus';
 /** Kal El's `idempotencyKeySchema` (packages/contracts/src/common.ts). */
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._-]{8,128}$/;
 
+/**
+ * Kal El's length limits on a term (packages/contracts/src/editorial.ts).
+ *
+ * The fake took any length, and the first production session lost 17 tags to the real
+ * limit — names past 80 characters that every rehearsal here had accepted.
+ */
+const TERM_LIMITS: Record<string, { name: number; slug: number }> = {
+  categories: { name: 120, slug: 140 },
+  tags: { name: 80, slug: 100 },
+  authors: { name: 120, slug: 140 },
+};
+
+/**
+ * The first part of an article past one of Kal El's document limits, or null.
+ *
+ * A text node's 10.000 characters above all: three posts of the real archive were one
+ * paragraph longer than that, and the real CMS refused each whole.
+ */
+function documentProblem(value: unknown): string | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const problem = documentProblem(item);
+      if (problem) return problem;
+    }
+    return null;
+  }
+  if (!value || typeof value !== 'object') return null;
+  const node = value as Record<string, unknown>;
+  if (node['type'] === 'text' && typeof node['text'] === 'string' && node['text'].length > 10_000) {
+    return 'a text node is over 10000 characters';
+  }
+  if (node['type'] === 'image') {
+    const attrs = (node['attrs'] ?? {}) as Record<string, unknown>;
+    const over = (field: string, max: number) => typeof attrs[field] === 'string' && String(attrs[field]).length > max;
+    if (over('caption', 2000) || over('credit', 500) || over('altText', 500)) return 'an image field is too long';
+  }
+  for (const child of Object.values(node)) {
+    const problem = documentProblem(child);
+    if (problem) return problem;
+  }
+  return null;
+}
+
+/** An article body's first violation of the limits the importer has met, or null. */
+function articleProblem(body: Record<string, unknown>): string | null {
+  const title = body['title'];
+  if (title !== undefined && (typeof title !== 'string' || title.length < 1 || title.length > 400)) return 'title';
+  const excerpt = body['excerpt'];
+  if (typeof excerpt === 'string' && excerpt.length > 2000) return 'excerpt';
+  return documentProblem(body['document']);
+}
+
 export interface Store {
   articles: Row[];
   media: Row[];
@@ -88,6 +140,15 @@ export async function handleWrite(
   if (term?.[1] && req.method === 'POST') {
     const name = term[1] as 'categories' | 'tags' | 'authors';
     const body = asJson();
+    const limits = TERM_LIMITS[name];
+    const termName = typeof body['name'] === 'string' ? body['name'] : '';
+    const termSlug = typeof body['slug'] === 'string' ? body['slug'] : '';
+    if (
+      limits &&
+      (termName.length < 1 || termName.length > limits.name || termSlug.length < 1 || termSlug.length > limits.slug)
+    ) {
+      return fail(res, 400, 'VALIDATION_ERROR', 'validation failed');
+    }
     const collection = store[name];
     // The real CMS deduplicates a term by slug, which is what makes two WordPress terms
     // that slugify the same become one.
@@ -115,6 +176,8 @@ export async function handleWrite(
   // ------------------------------------------------------------------ article
   if (rest === '/articles' && req.method === 'POST') {
     const body = asJson();
+    const problem = articleProblem(body);
+    if (problem) return fail(res, 400, 'VALIDATION_ERROR', `validation failed: ${problem}`);
     const twin = store.articles.find((a) => a['externalKey'] === body['externalKey']);
     if (twin) return fail(res, 409, 'conflict', 'externalKey already exists');
 
@@ -165,8 +228,30 @@ export async function handleWrite(
       return fail(res, 409, 'version_conflict', 'the article changed since it was read');
     }
 
-    Object.assign(row, asJson(), { version: Number(row['version']) + 1, updatedAt: now() });
+    const body = asJson();
+    const problem = articleProblem(body);
+    if (problem) return fail(res, 400, 'VALIDATION_ERROR', `validation failed: ${problem}`);
+    Object.assign(row, body, { version: Number(row['version']) + 1, updatedAt: now() });
     return json(res, 200, { data: { id: row['id'], version: row['version'] } });
+  }
+
+  // A tag renamed in place, as `PATCH /tags/:id` does; the importer repairs its own names so.
+  const tagPatch = /^\/tags\/([0-9a-f-]{36})$/.exec(rest);
+  if (tagPatch?.[1] && req.method === 'PATCH') {
+    const row = store.tags.find((t) => t['id'] === tagPatch[1]);
+    if (!row) return fail(res, 404, 'not_found', 'tag not found');
+    const body = asJson();
+    const limits = TERM_LIMITS['tags'] as { name: number; slug: number };
+    const nextName = body['name'];
+    if (
+      nextName !== undefined &&
+      (typeof nextName !== 'string' || nextName.length < 1 || nextName.length > limits.name)
+    ) {
+      return fail(res, 400, 'VALIDATION_ERROR', 'validation failed');
+    }
+    if (typeof nextName === 'string') row['name'] = nextName;
+    row['updatedAt'] = now();
+    return json(res, 200, { data: { id: row['id'], name: row['name'], slug: row['slug'] } });
   }
 
   // -------------------------------------------------------------------- media

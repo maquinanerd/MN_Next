@@ -125,6 +125,24 @@ describe('toPlainText', () => {
   it('produces a single-spaced string for excerpts', () => {
     expect(toPlainText('<p>Um  texto</p><p>com&nbsp;dois</p>')).toBe('Um texto com dois');
   });
+
+  it('decodes the escaped names WordPress stores, which the site showed as written', () => {
+    expect(toPlainText('Deadpool &amp; Wolverine')).toBe('Deadpool & Wolverine');
+    expect(toPlainText('O filme ser&aacute; apresentado em Cannes')).toBe('O filme será apresentado em Cannes');
+    expect(toPlainText('A sitcom que pode substituir &#34;The Conners&#34;')).toBe(
+      'A sitcom que pode substituir "The Conners"',
+    );
+    expect(toPlainText('&#x201C;aspas&#x201D; e &hellip;')).toBe('“aspas” e …');
+  });
+
+  it('decodes once: an escaped entity is text, not markup', () => {
+    // The replace-per-entity chain this was turned `&amp;lt;` into `<`.
+    expect(toPlainText('escreva &amp;lt;b&amp;gt; para negrito')).toBe('escreva &lt;b&gt; para negrito');
+  });
+
+  it('leaves a reference it cannot place exactly as written', () => {
+    expect(toPlainText('&naoexiste; e &#0; e &#xD800;')).toBe('&naoexiste; e &#0; e &#xD800;');
+  });
 });
 
 describe('readingMinutes', () => {

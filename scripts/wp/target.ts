@@ -43,6 +43,31 @@ export const kalelMediaStorageSchema = z.object({
 export type KalElMediaStorage = z.infer<typeof kalelMediaStorageSchema>;
 
 /**
+ * Kal El's length limits on what the importer writes (packages/contracts/src/editorial.ts).
+ *
+ * Past any of them the whole record is a 400 VALIDATION_ERROR. The first production run
+ * found two the hard way: 17 tag names over 80 characters, and three posts whose only
+ * paragraph was a text node of 11.800 to 15.000 characters.
+ */
+export const KALEL_LIMITS = {
+  tag: { name: 80, slug: 100 },
+  category: { name: 120, slug: 140 },
+  author: { name: 120, slug: 140 },
+  /** One text node of a document. */
+  text: 10_000,
+  caption: 2000,
+  credit: 500,
+  altText: 500,
+} as const;
+
+/** A term as the list endpoints return it; the name is what tells an import's own row from an editor's. */
+export interface KalElTerm {
+  id: string;
+  slug: string;
+  name: string;
+}
+
+/**
  * The `Idempotency-Key` of one upload.
  *
  * Two constraints, both learned from the CMS rather than chosen. Kal El accepts only
@@ -288,16 +313,22 @@ export class KalElTarget {
     return this.json<{ id: string }>('POST', '/authors', body, key);
   }
 
-  async listCategories() {
-    return this.json<{ id: string; slug: string }[]>('GET', '/categories');
+  /** Renames a tag. Only the name: the slug is the tag's URL, and a URL does not move. */
+  async renameTag(tagId: string, name: string) {
+    return this.json<{ id: string }>('PATCH', `/tags/${tagId}`, { name });
   }
 
+  async listCategories() {
+    return this.json<KalElTerm[]>('GET', '/categories');
+  }
+
+  /** Every tag of the site: without `limit` the endpoint returns the whole list. */
   async listTags() {
-    return this.json<{ id: string; slug: string }[]>('GET', '/tags');
+    return this.json<KalElTerm[]>('GET', '/tags');
   }
 
   async listAuthors() {
-    return this.json<{ id: string; slug: string }[]>('GET', '/authors');
+    return this.json<KalElTerm[]>('GET', '/authors');
   }
 
   /**

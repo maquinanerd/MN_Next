@@ -51,7 +51,7 @@ import {
 } from './source';
 import { WordPressArchive } from './archive';
 import { isLoopbackHost } from '@mn/content/security/address';
-import { KalElTarget } from './target';
+import { KALEL_LIMITS, KalElTarget, type KalElTerm } from './target';
 import { WP_DESKS_ALSO_TAGGED, classifyCategory, deskOf, deskFor, loadCategoryMap, type CategoryMap } from './taxonomy';
 import { emptyReport, htmlToBlocks, shortcodeAssetRef, type TransformReport } from './transform';
 
@@ -213,6 +213,97 @@ export class MissingDeskError extends CliError {
   }
 }
 
+/**
+ * An article an editor has changed in Kal El since the import wrote it.
+ *
+ * Left as the newsroom has it, and counted in `editedInCms` — not as a failure. The site
+ * has been published from Kal El since 2026-09-17 and the newsroom edits imported
+ * articles every day; counting each edit as a failed import made a second session
+ * impossible to finish, because its idempotency pass runs only after a first pass that
+ * exits clean. Every one is listed in `edited-in-cms.json`.
+ */
+export class EditedInCmsError extends CliError {}
+
+/** How to repair a term an earlier run wrote under the wrong name. */
+interface TermRepair {
+  /** The name that run sent: WordPress's own, escaped. */
+  written: string;
+  /** The name it should have sent. */
+  name: string;
+  rename: (id: string, name: string) => Promise<{ data: { id: string } | null; error: string | null }>;
+}
+
+/**
+ * Whether a stored term name is the import's own mistake to repair.
+ *
+ * Only while it is still exactly what the import wrote. An editor who renamed the tag in
+ * the CMS since owns the name now, even if theirs still carries an `&amp;`.
+ */
+export function termNeedsRepair(stored: string, written: string, name: string): boolean {
+  return stored === written && name !== written;
+}
+
+/**
+ * A WordPress term name as Kal El takes it: decoded, and no longer than `max`.
+ *
+ * WordPress stores names HTML-escaped, and the first production run wrote 235 of them as
+ * they were — the site then titled a page `Deadpool &amp; Wolverine`. And 17 names here are
+ * past a tag's 80 characters: lists of titles an automation filed as tags. Those are cut at
+ * a word and marked, not refused and lost.
+ */
+export function termName(raw: string, max: number): string {
+  const name = toPlainText(raw);
+  if (name.length <= max) return name;
+  const head = name.slice(0, max - 1);
+  const space = head.lastIndexOf(' ');
+  const cut = space > max / 2 ? head.slice(0, space) : head;
+  return `${cut.replace(/[\s,;:(\-–—]+$/u, '')}…`;
+}
+
+/**
+ * A term's slug, no longer than `max`, cut at a hyphen.
+ *
+ * `slugify` already stops at 120 characters, which a tag's 100 does not allow. Only the
+ * names cut by `termName` reach this far, and none of them was ever created — so no
+ * stored slug, and no link to one, moves.
+ */
+export function termSlug(raw: string, max: number): string {
+  const slug = slugify(raw);
+  if (slug.length <= max) return slug;
+  const head = slug.slice(0, max);
+  const hyphen = head.lastIndexOf('-');
+  return hyphen > 0 ? head.slice(0, hyphen) : head;
+}
+
+/**
+ * Text as a Kal El document takes it: no text node over `max` characters.
+ *
+ * Three posts of the archive are a single paragraph of 11.800 to 15.000 characters — an
+ * automation that never broke a line — and the first production run lost them to a
+ * VALIDATION_ERROR. Consecutive text nodes with the same marks render as one run of text,
+ * so the paragraph reads exactly as before. The cut falls after a space where there is
+ * one, and never between the halves of a surrogate pair.
+ */
+export function splitText(text: string, max: number = KALEL_LIMITS.text): string[] {
+  const parts: string[] = [];
+  let rest = text;
+  while (rest.length > max) {
+    const space = rest.lastIndexOf(' ', max - 1);
+    let cut = space > 0 ? space + 1 : max;
+    const last = rest.charCodeAt(cut - 1);
+    if (last >= 0xd800 && last <= 0xdbff) cut -= 1;
+    parts.push(rest.slice(0, cut));
+    rest = rest.slice(cut);
+  }
+  parts.push(rest);
+  return parts;
+}
+
+/** A string no longer than `max`, marked where it was cut. */
+function clip(value: string, max: number): string {
+  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
+}
+
 /** Whether an earlier run hosted third-party images, as far as the checkpoint or Kal El can tell. */
 function holdsHostedImages(state: RunState, alreadyImported: ReadonlyMap<string, string>): boolean {
   const prefix = mappingKey('external', '');
@@ -266,6 +357,9 @@ async function main(): Promise<void> {
       'slugCollision',
       'duplicatesSkipped',
       'mediaMissingUnused',
+      'editedInCms',
+      'termsRenamed',
+      'termsShortened',
       ...(externalImages
         ? ['externalImagesFound', 'externalImagesTransferred', 'externalImagesReused', 'externalImagesFailed']
         : []),
@@ -365,17 +459,22 @@ async function main(): Promise<void> {
   // Existing target terms are read first so a re-run reuses them instead of relying on
   // the idempotency key alone — the key expires, the slug does not.
   const existingBySlug = {
-    categories: new Map<string, string>(),
-    tags: new Map<string, string>(),
-    authors: new Map<string, string>(),
+    categories: new Map<string, KalElTerm>(),
+    tags: new Map<string, KalElTerm>(),
+    authors: new Map<string, KalElTerm>(),
   };
   if (target) {
-    for (const [row, index] of [
-      [await target.listCategories(), existingBySlug.categories],
-      [await target.listTags(), existingBySlug.tags],
-      [await target.listAuthors(), existingBySlug.authors],
+    for (const [label, row, index] of [
+      ['categories', await target.listCategories(), existingBySlug.categories],
+      ['tags', await target.listTags(), existingBySlug.tags],
+      ['authors', await target.listAuthors(), existingBySlug.authors],
     ] as const) {
-      for (const entry of row.data ?? []) index.set(entry.slug, entry.id);
+      // "Could not read" is not "there are none": every create that followed would be a 409
+      // for a term Kal El already has.
+      if (row.error !== null || row.data === null) {
+        throw new CliError(`could not read the existing ${label}: ${row.error ?? 'no data'}`);
+      }
+      for (const entry of row.data) index.set(entry.slug, entry);
     }
   }
 
@@ -384,6 +483,11 @@ async function main(): Promise<void> {
    *
    * A failure here is a failure of the run: an article that loses its desk is worse than
    * an article that was not imported, because the first looks like success.
+   *
+   * `repair` is for a term an earlier run of this importer wrote under a name it should
+   * not have — WordPress's escaped spelling, `Deadpool &amp; Wolverine`, which the site then
+   * showed as such. It renames only while the stored name is still exactly the one that run
+   * wrote: a name an editor has changed since is the newsroom's.
    */
   async function ensureTerm(
     kind: 'category' | 'tag' | 'author',
@@ -392,12 +496,28 @@ async function main(): Promise<void> {
     create: () => Promise<{ data: { id: string } | null; error: string | null }>,
     byWpId: Map<number, string>,
     bySlug: Map<string, string>,
-    existing: Map<string, string>,
+    existing: Map<string, KalElTerm>,
+    repair?: TermRepair,
   ): Promise<void> {
-    const known = bySlug.get(slug) ?? existing.get(slug);
+    const known = bySlug.get(slug);
     if (known) {
       byWpId.set(wpId, known);
-      bySlug.set(slug, known);
+      return;
+    }
+    const found = existing.get(slug);
+    if (found) {
+      byWpId.set(wpId, found.id);
+      bySlug.set(slug, found.id);
+      if (repair && termNeedsRepair(found.name, repair.written, repair.name)) {
+        const res = await repair.rename(found.id, repair.name);
+        if (res.data?.id) {
+          summary.counts.inc('termsRenamed');
+          found.name = repair.name;
+        } else {
+          summary.counts.inc('failed');
+          summary.failures.push({ id: `${kind}:${wpId}`, reason: `rename failed: ${res.error ?? 'unknown'}` });
+        }
+      }
       return;
     }
     if (!target) {
@@ -460,20 +580,35 @@ async function main(): Promise<void> {
     for (const term of tagTerms) tagTermByWpId.set(term.id, { slug: slugify(term.slug || term.name), name: term.name });
   }
 
+  /**
+   * One WordPress term — a tag, or a category demoted to one — as a Kal El tag.
+   *
+   * The name is decoded and fitted to Kal El's 80 characters, the slug to its 100. A name
+   * the first production run wrote escaped is repaired in place (see `ensureTerm`).
+   */
+  const ensureTag = (term: WpTerm): Promise<void> => {
+    const slug = termSlug(term.slug || term.name, KALEL_LIMITS.tag.slug);
+    const name = termName(term.name, KALEL_LIMITS.tag.name);
+    if (name !== toPlainText(term.name)) summary.counts.inc('termsShortened');
+    return ensureTerm(
+      'tag',
+      term.id,
+      slug,
+      () => target!.createTag({ name, slug }, idempotencyKey('tag', term.id)),
+      indexes.tagByWpId,
+      indexes.tagBySlug,
+      existingBySlug.tags,
+      target ? { written: term.name, name, rename: (id, next) => target.renameTag(id, next) } : undefined,
+    );
+  };
+
   async function writeTaxonomy(): Promise<void> {
     for (const term of categoryTerms) {
+      // Unfitted, as everywhere a desk is decided: fitting is for what Kal El stores.
       const slug = slugify(term.slug || term.name);
       if (classifyCategory(slug, categoryOverrides) === 'tag') {
         summary.counts.inc('categoriesAsTags');
-        await ensureTerm(
-          'tag',
-          term.id,
-          slug,
-          () => target!.createTag({ name: term.name, slug }, idempotencyKey('tag', term.id)),
-          indexes.tagByWpId,
-          indexes.tagBySlug,
-          existingBySlug.tags,
-        );
+        await ensureTag(term);
         continue;
       }
 
@@ -486,7 +621,7 @@ async function main(): Promise<void> {
           target!.createCategory(
             // A renamed desk takes the editoria's name, not the archive's ("Filmes" is now Cinema).
             {
-              name: isEditoriaSlug(desk) ? EDITORIA_NAMES[desk] : term.name,
+              name: isEditoriaSlug(desk) ? EDITORIA_NAMES[desk] : termName(term.name, KALEL_LIMITS.category.name),
               slug: desk,
               description: term.description || null,
             },
@@ -498,41 +633,20 @@ async function main(): Promise<void> {
       );
 
       // `reviews` is filed under Especiais and also kept as a tag, so its archive survives.
-      if (WP_DESKS_ALSO_TAGGED.has(slug)) {
-        await ensureTerm(
-          'tag',
-          term.id,
-          slug,
-          () => target!.createTag({ name: term.name, slug }, idempotencyKey('tag', term.id)),
-          indexes.tagByWpId,
-          indexes.tagBySlug,
-          existingBySlug.tags,
-        );
-      }
+      if (WP_DESKS_ALSO_TAGGED.has(slug)) await ensureTag(term);
     }
 
-    for (const term of tagTerms) {
-      const slug = slugify(term.slug || term.name);
-      await ensureTerm(
-        'tag',
-        term.id,
-        slug,
-        () => target!.createTag({ name: term.name, slug }, idempotencyKey('tag', term.id)),
-        indexes.tagByWpId,
-        indexes.tagBySlug,
-        existingBySlug.tags,
-      );
-    }
+    for (const term of tagTerms) await ensureTag(term);
 
     for (const author of authorTerms) {
-      const slug = slugify(author.slug || author.name);
+      const slug = termSlug(author.slug || author.name, KALEL_LIMITS.author.slug);
       await ensureTerm(
         'author',
         author.id,
         slug,
         () =>
           target!.createAuthor(
-            { name: author.name, slug, bio: author.description || null },
+            { name: termName(author.name, KALEL_LIMITS.author.name), slug, bio: author.description || null },
             idempotencyKey('author', author.id),
           ),
         indexes.authorByWpId,
@@ -567,7 +681,7 @@ async function main(): Promise<void> {
    * the same desk at the same moment wait for it instead of racing to make two.
    */
   const deskCategory = singleFlight(async (desk: string): Promise<string | null> => {
-    const known = indexes.categoryBySlug.get(desk) ?? existingBySlug.categories.get(desk);
+    const known = indexes.categoryBySlug.get(desk) ?? existingBySlug.categories.get(desk)?.id;
     if (known) return known;
     if (!target) {
       const placeholder = `dry:category:${desk}`;
@@ -816,6 +930,8 @@ async function main(): Promise<void> {
   const keptIds = new Set(runPlan.duplicates.map((pair) => pair.keptId));
   const keptImported = new Map<number, boolean>();
   const copiesRead: DuplicatePair[] = [];
+  /** Articles the newsroom changed since they were imported, left as they are. */
+  const editedInCms: { id: string; reason: string }[] = [];
 
   const importOne = async (post: WpPost): Promise<void> => {
     try {
@@ -823,6 +939,13 @@ async function main(): Promise<void> {
       summary.counts.inc(result);
       if (keptIds.has(post.id)) keptImported.set(post.id, true);
     } catch (err) {
+      if (err instanceof EditedInCmsError) {
+        // It is in Kal El, in the newsroom's version: a copy of it is still a copy.
+        if (keptIds.has(post.id)) keptImported.set(post.id, true);
+        summary.counts.inc('editedInCms');
+        editedInCms.push({ id: `wp:post:${post.id}`, reason: err.message });
+        return;
+      }
       if (keptIds.has(post.id)) keptImported.set(post.id, false);
       if (err instanceof MissingDeskError) {
         for (const id of err.categories) {
@@ -1019,6 +1142,24 @@ async function main(): Promise<void> {
     'utf8',
   );
   artefacts.push(duplicatesPath);
+
+  // Every one, on every run: what the import did not overwrite, so nobody wonders why.
+  const editedPath = path.join(outDir, 'edited-in-cms.json');
+  await writeFile(
+    editedPath,
+    JSON.stringify(
+      {
+        note:
+          'Matérias que a redação editou no Kal El depois da importação. Ficaram como a redação deixou; ' +
+          'a importação não as sobrescreve.',
+        articles: editedInCms.sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true })),
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  );
+  artefacts.push(editedPath);
 
   await checkpoint.save();
 
@@ -1282,7 +1423,8 @@ function describeAsset(asset: WpMedia, url: string): Image {
     url,
     width: asset.media_details.width ?? 1200,
     height: asset.media_details.height ?? 675,
-    alt: asset.alt_text ?? '',
+    // Decoded like every other text: eight alts in this archive carry `&quot;` or `&amp;`.
+    alt: toPlainText(asset.alt_text ?? ''),
     ...(asset.caption ? { caption: toPlainText(asset.caption) } : {}),
   };
 }
@@ -1414,7 +1556,7 @@ async function importPost(post: WpPost, ctx: ImportContext): Promise<'created' |
     // Did an editor touch this since we last wrote it?
     const ours = ctx.state.articleVersions[externalKey];
     if (ours !== undefined && ours !== existing.version) {
-      throw new CliError(
+      throw new EditedInCmsError(
         `article ${externalKey} is at version ${existing.version} in Kal El but the import last wrote ${ours}; ` +
           'it was edited after import and is left untouched',
       );
@@ -1445,7 +1587,7 @@ async function importPost(post: WpPost, ctx: ImportContext): Promise<'created' |
     if (res.status === 409) {
       // Someone edited this article in the CMS after it was imported. Overwriting an
       // editorial change with a re-import is worse than skipping it and reporting.
-      throw new CliError(`article ${externalKey} changed in Kal El since the last import; left untouched`);
+      throw new EditedInCmsError(`article ${externalKey} changed in Kal El since the last import; left untouched`);
     }
     if (!res.data) throw new CliError(`update failed for ${externalKey}: ${res.error ?? 'unknown'}`);
     ctx.state.mappings[mappingKey('post', post.id)] = existing.id;
@@ -1466,20 +1608,22 @@ async function importPost(post: WpPost, ctx: ImportContext): Promise<'created' |
  * Only the node types Kal El actually has. A `specTable` becomes a two-column `table`,
  * a `callout` becomes a paragraph — losing the presentation but never the words, which
  * is the right trade for a migration.
+ *
+ * Within Kal El's limits, too: a text node past 10.000 characters is split (`splitText`),
+ * and a caption, credit or alt text past its own limit is cut and marked — one oversized
+ * field refuses the whole article otherwise.
+ *
+ * Exported so the limits can be checked on the nodes the import really sends.
  */
-function blocksToKalElNodes(blocks: ContentBlock[], indexes: Indexes): Record<string, unknown>[] {
+export function blocksToKalElNodes(blocks: ContentBlock[], indexes: Indexes): Record<string, unknown>[] {
   const inline = (content: { type: string; text?: string; marks?: { type: string; href?: string }[] }[]) =>
-    content.map((node) =>
-      node.type === 'break'
-        ? { type: 'hardBreak' }
-        : {
-            type: 'text',
-            text: node.text ?? '',
-            marks: (node.marks ?? []).map((m) =>
-              m.type === 'link' ? { type: 'link', attrs: { href: m.href } } : { type: m.type },
-            ),
-          },
-    );
+    content.flatMap((node) => {
+      if (node.type === 'break') return [{ type: 'hardBreak' }];
+      const marks = (node.marks ?? []).map((m) =>
+        m.type === 'link' ? { type: 'link', attrs: { href: m.href } } : { type: m.type },
+      );
+      return splitText(node.text ?? '').map((text) => ({ type: 'text', text, marks }));
+    });
 
   const mediaIdFor = (url: string): string | null => {
     const match = /^\/media\/([0-9a-f-]{36})$/.exec(url);
@@ -1498,7 +1642,7 @@ function blocksToKalElNodes(blocks: ContentBlock[], indexes: Indexes): Record<st
         nodes.push({
           type: 'heading',
           attrs: { level: block.level },
-          content: [{ type: 'text', text: block.text, marks: [] }],
+          content: splitText(block.text).map((text) => ({ type: 'text', text, marks: [] })),
         });
         break;
       case 'quote':
@@ -1525,9 +1669,9 @@ function blocksToKalElNodes(blocks: ContentBlock[], indexes: Indexes): Record<st
           type: 'image',
           attrs: {
             mediaId,
-            ...(block.image.caption ? { caption: block.image.caption } : {}),
-            ...(block.image.credit ? { credit: block.image.credit } : {}),
-            altText: block.image.alt,
+            ...(block.image.caption ? { caption: clip(block.image.caption, KALEL_LIMITS.caption) } : {}),
+            ...(block.image.credit ? { credit: clip(block.image.credit, KALEL_LIMITS.credit) } : {}),
+            altText: clip(block.image.alt, KALEL_LIMITS.altText),
           },
         });
         break;
