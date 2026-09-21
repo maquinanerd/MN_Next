@@ -886,3 +886,40 @@ teria falhado como a produção falhou.
 são os mesmos da produção, post a post: nenhuma matéria muda de editoria — e portanto de
 endereço — quando a segunda sessão reenviar os campos. E os 40.910 documentos, montados como o
 importador os envia, passam no `documentV2Schema` do próprio Kal El.
+
+### 7.19 Os endereços antigos respondiam um redirecionamento sem destino (2026-09-21)
+
+**O que o Google recebia desde a virada (2026-09-16).** O endereço antigo de cada matéria —
+`/{slug}`, o permalink do WordPress — era resolvido dentro da página `/[categoria]`, que o Next
+guarda em cache (ISR, 120 s). O Next 15.5 guarda no cache o redirecionamento lançado durante
+essa renderização e depois o serve como `308 Permanent Redirect` **sem o cabeçalho
+`Location`**: o navegador segue pelo código da página, o robô não tem para onde ir. E os
+endereços pedidos antes de a importação chegar à matéria ficaram com um 404 em cache, servido
+"velho" por até um ano (`stale-while-revalidate`). Numa amostra de 40 endereços antigos, em
+2026-09-21, **nenhum** chegava à matéria: 34 respondiam 404 e 6 o 308 sem destino.
+
+O teste de ponta a ponta existia e passava: pedia o endereço uma vez só, e a primeira resposta
+— renderizada na hora — sai certa. O defeito é da segunda em diante, que vem do cache.
+
+**Primeira tentativa, descartada:** chamar `connection()` antes do redirecionamento, para tirar
+só essa resposta do cache. Numa rota ISR o Next responde 500 (`DYNAMIC_SERVER_USAGE`) — uma
+rota decidida estática no build não pode virar dinâmica na hora. O teste local pegou antes de
+ir para o ar.
+
+**O que ficou:**
+
+- o `middleware.ts` reconhece um trecho único que não é editoria nem rota do site e o reescreve
+  — o endereço continua o antigo — para `/legado/[slug]`, renderizada sempre na hora
+  (`force-dynamic`), que redireciona com destino (308) ou responde 404;
+- a página 1 de uma listagem (`/page/1`, `/cinema/page/1`) é redirecionada no próprio
+  middleware (308), sem passar pela página em cache;
+- matéria pedida em outra editoria, e oferta pedida como matéria, respondem com `Moved`: um
+  `refresh` instantâneo — que o Google lê como redirecionamento permanente — mais o canonical
+  da matéria, que já aponta para o endereço certo. Essas páginas continuam em cache, e isso
+  sobrevive ao cache;
+- `/2026/08/19/`, arquivo de um dia no WordPress, deixou de ser lido como uma matéria de nome
+  "19".
+
+Os testes de ponta a ponta agora pedem cada endereço **três vezes** e exigem o destino em todas.
+
+**Depois do deploy:** limpar o cache da Cloudflare, que guardou os 404 e os 308 sem destino.

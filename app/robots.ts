@@ -35,12 +35,16 @@ export default function robots(): MetadataRoute.Robots {
     };
   }
 
+  // `/media/` stays crawlable: it is where every cover lives — the `og:image`, the image of
+  // the article's structured data. Disallowed until 2026-09-21, it kept Google from every
+  // one of them: no large image in Discover, nothing in Google Images, and an Article
+  // whose image the crawler was not allowed to fetch.
   return {
     rules: [
       {
         userAgent: '*',
-        allow: ['/', '/_next/image', '/_next/static'],
-        disallow: ['/api/', '/preview/', '/busca', '/media/'],
+        allow: ['/', '/_next/image', '/_next/static', '/media/'],
+        disallow: ['/api/', '/preview/', '/busca'],
       },
     ],
     sitemap: [`${base}/sitemap.xml`, `${base}/news-sitemap.xml`],

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import { listingMetadata } from '@mn/seo';
 
 import { Header } from '../../../components/Chrome';
@@ -27,7 +27,9 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
 
 export default async function LatestPage({ params }: { params: Promise<Params> }) {
   const page = parsePage((await params).n);
-  if (page === 1) redirect('/');
+  // Page 1 is `/`, and `middleware.ts` sends it there: redirected from this cached page,
+  // the answer would come back from the cache with no `Location`.
+  if (page === 1) notFound();
   const view = await latestView(page);
   if (view.feed.length === 0) notFound();
   const now = agora();

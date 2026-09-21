@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { expect, test } from '@playwright/test';
+import { expect, test, type APIRequestContext } from '@playwright/test';
 
 /**
  * Behaviour of the surfaces the kit defines (maquina-nerd-kit/docs/03), in fixture mode.
@@ -366,16 +366,44 @@ test.describe('legacy URLs', () => {
     }
   });
 
-  test('a bare article slug redirects permanently to its editoria', async ({ request }) => {
+  /*
+   * Asked three times, not once. The first answer is rendered on request; the ones after it
+   * used to come from Next's cache as a `308` with **no `Location`** — a redirect to nowhere
+   * for a crawler. That is what every WordPress permalink answered in production from
+   * 2026-09-16, while this test, asking once, stayed green.
+   */
+  const everyTime = async (request: APIRequestContext, from: string, status: number, to: string): Promise<void> => {
+    for (const attempt of [1, 2, 3]) {
+      const res = await request.get(from, { maxRedirects: 0 });
+      expect(res.status(), `${from}, pedido ${attempt}`).toBe(status);
+      expect(res.headers()['location'] ?? '', `${from}, pedido ${attempt}`).toContain(to);
+    }
+  };
+
+  test('a bare article slug redirects permanently to its editoria, every time', async ({ request }) => {
     const slug = 'pirates-of-the-caribbean-avanca-com-negociacoes-para-johnny-depp';
-    const res = await request.get(`/${slug}`, { maxRedirects: 0 });
-    expect(res.status()).toBe(308);
-    expect(res.headers()['location']).toContain(`/cinema/${slug}`);
+    await everyTime(request, `/${slug}`, 308, `/cinema/${slug}`);
   });
 
-  test('a bare offer slug redirects to /ofertas', async ({ request }) => {
-    const res = await request.get('/controle-xbox-edicao-especial-tem-queda-de-preco-na-amazon', { maxRedirects: 0 });
-    expect(res.headers()['location']).toContain(OFFER);
+  test('a bare offer slug redirects to /ofertas, every time', async ({ request }) => {
+    await everyTime(request, '/controle-xbox-edicao-especial-tem-queda-de-preco-na-amazon', 308, OFFER);
+  });
+
+  test('a bare tag slug redirects to its archive, every time', async ({ request }) => {
+    await everyTime(request, '/netflix', 308, '/tag/netflix');
+  });
+
+  test('page 1 of a listing goes to the listing itself, every time', async ({ request }) => {
+    await everyTime(request, '/page/1', 308, '/');
+    await everyTime(request, '/cinema/page/1', 308, '/cinema');
+  });
+
+  test('an unknown segment is a 404 every time, not a cached one', async ({ request }) => {
+    for (const attempt of [1, 2, 3]) {
+      expect((await request.get('/isto-tambem-nao-existe', { maxRedirects: 0 })).status(), `pedido ${attempt}`).toBe(
+        404,
+      );
+    }
   });
 
   test('a bare tag slug redirects to the tag archive', async ({ page }) => {
@@ -404,12 +432,18 @@ test.describe('legacy URLs', () => {
     expect(xml).not.toMatch(/\/tag\/oferta</);
   });
 
-  test('an article asked for under another editoria goes to its own', async ({ request }) => {
-    const res = await request.get('/games/o-misterio-de-scarlett-johansson-a-estrela-perdida-da-marvel', {
-      maxRedirects: 0,
-    });
-    expect(res.status()).toBe(308);
-    expect(res.headers().location).toMatch(/\/cinema\/o-misterio-de-scarlett-johansson-a-estrela-perdida-da-marvel$/);
+  test('an article asked for under another editoria is sent on to its own', async ({ request }) => {
+    // An article page is cached, so it sends on with an instant refresh — read by Google as
+    // a permanent redirect — and the article's own canonical; a thrown redirect would come
+    // back from the cache with no Location.
+    const slug = 'o-misterio-de-scarlett-johansson-a-estrela-perdida-da-marvel';
+    for (const attempt of [1, 2, 3]) {
+      const res = await request.get(`/games/${slug}`, { maxRedirects: 0 });
+      expect(res.status(), `pedido ${attempt}`).toBe(200);
+      const html = await res.text();
+      expect(html, `pedido ${attempt}`).toContain(`http-equiv="refresh" content="0;url=/cinema/${slug}"`);
+      expect(html, `pedido ${attempt}`).toMatch(new RegExp(`<link rel="canonical" href="[^"]*/cinema/${slug}"`));
+    }
   });
 
   test('a page number that is not a whole page in range is a 404', async ({ request }) => {

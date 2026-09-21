@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { RENAMED_DESKS } from '@mn/content';
+import { EDITORIA_SLUGS, RENAMED_DESKS, RESERVED_SEGMENTS } from '@mn/content';
 
-import { RENAMED_DESK_REDIRECTS, legacyRedirect, normalise, safeInternalPath } from '../../lib/redirects';
+import {
+  RENAMED_DESK_REDIRECTS,
+  firstPageRedirect,
+  legacyPermalinkCandidate,
+  legacyRedirect,
+  normalise,
+  safeInternalPath,
+} from '../../lib/redirects';
 
 /**
  * The redirect table is operator data, so the destination validator is treated as a
@@ -105,11 +112,64 @@ describe('legacyRedirect', () => {
     expect(legacyRedirect('/ofertas/uma-oferta', noParams)).toBeNull();
   });
 
+  it('sends a dated permalink to its slug, and leaves the archive of a day alone', () => {
+    expect(legacyRedirect('/2024/05/uma-materia', noParams)).toEqual({ to: '/uma-materia', status: 301 });
+    expect(legacyRedirect('/2024/05/17/uma-materia', noParams)).toEqual({ to: '/uma-materia', status: 301 });
+    // Not a post named "19": read as one, it went to /19 and a 404.
+    expect(legacyRedirect('/2026/08/19', noParams)).toBeNull();
+  });
+
   it('never produces an off-site destination', () => {
     for (const path of ['/feed', '/categoria/series', '/author/x', '/wp-sitemap.xml']) {
       const match = legacyRedirect(path, noParams);
       if (match && match.status !== 410) expect(match.to.startsWith('/')).toBe(true);
       if (match && match.status !== 410) expect(match.to.startsWith('//')).toBe(false);
     }
+  });
+});
+
+/*
+ * What `middleware.ts` answers before a cached page can.
+ *
+ * From 2026-09-16 to 2026-09-21 every WordPress permalink went to the cached `/[categoria]`
+ * page, whose redirects came back from Next's cache as a 308 with no `Location`. A path
+ * that may be a permalink is now rewritten to `/legado/[slug]`, rendered on request.
+ */
+describe('legacyPermalinkCandidate', () => {
+  it('takes a single segment that is neither an editoria nor a route of the site', () => {
+    expect(legacyPermalinkCandidate('/marvel-confirma-estreia-ghost-rider-2028')).toBe(
+      'marvel-confirma-estreia-ghost-rider-2028',
+    );
+    expect(legacyPermalinkCandidate('/netflix')).toBe('netflix');
+  });
+
+  it('leaves the editorias, which are cached pages of their own', () => {
+    for (const slug of EDITORIA_SLUGS) expect(legacyPermalinkCandidate(`/${slug}`), slug).toBeNull();
+  });
+
+  it('leaves every route of the site, and itself', () => {
+    for (const segment of RESERVED_SEGMENTS) expect(legacyPermalinkCandidate(`/${segment}`), segment).toBeNull();
+    expect(legacyPermalinkCandidate('/legado')).toBeNull();
+  });
+
+  it('leaves the home, nested paths and files', () => {
+    expect(legacyPermalinkCandidate('/')).toBeNull();
+    expect(legacyPermalinkCandidate('/cinema/uma-materia')).toBeNull();
+    expect(legacyPermalinkCandidate('/tag/marvel')).toBeNull();
+    expect(legacyPermalinkCandidate('/ads.txt')).toBeNull();
+    expect(legacyPermalinkCandidate('/favicon.ico')).toBeNull();
+  });
+});
+
+describe('firstPageRedirect', () => {
+  it('sends page 1 of a listing to the listing itself', () => {
+    expect(firstPageRedirect('/page/1')).toBe('/');
+    expect(firstPageRedirect('/cinema/page/1')).toBe('/cinema');
+  });
+
+  it('leaves every other page alone', () => {
+    expect(firstPageRedirect('/page/2')).toBeNull();
+    expect(firstPageRedirect('/cinema/page/12')).toBeNull();
+    expect(firstPageRedirect('/cinema')).toBeNull();
   });
 });

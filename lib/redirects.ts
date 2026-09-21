@@ -1,3 +1,6 @@
+// The leaf module, not the package: it imports nothing, so the edge bundle stays this file.
+import { RESERVED_SEGMENTS, isEditoriaSlug } from '@mn/content/site';
+
 import legacyTable from '../data/legacy-redirects.json';
 
 /**
@@ -99,7 +102,9 @@ const WP_RULES: { test: RegExp; to: string; status: 301 | 410; dropQuery?: boole
  * `/2024/05/foo` to `/foo` reaches the same answer without 41.318 rows of JSON in the
  * edge bundle to encode a rule with no exceptions in it.
  */
-const DATE_PERMALINK = /^\/(?:\d{4})\/(?:\d{2})(?:\/(?:\d{2}))?\/([a-z0-9-]+)$/;
+// The slug has a letter in it: `/2026/08/19` is the archive of a day, not a post named
+// "19" — read as one, it went to `/19` and a 404.
+const DATE_PERMALINK = /^\/(?:\d{4})\/(?:\d{2})(?:\/(?:\d{2}))?\/([a-z0-9-]*[a-z][a-z0-9-]*)$/;
 
 /**
  * Desk slugs that were renamed for the new front end (kit docs/03 fixes the editoria
@@ -167,6 +172,41 @@ export function legacyRedirect(pathname: string, searchParams: URLSearchParams):
   }
 
   return null;
+}
+
+/** One path segment and nothing else — no nested path, no file extension (`/ads.txt`). */
+const SINGLE_SEGMENT = /^\/([^/.]+)$/;
+
+/**
+ * The segment of a path that may be a WordPress permalink, or null.
+ *
+ * The old site answered every article (`/%postname%/`) and, with the category base
+ * stripped, every category archive at `/{slug}`. Those are resolved against the CMS by
+ * `/legado/[slug]`, which renders on request: the cached `/[categoria]` page, where the
+ * lookup used to live, served its cached redirects as a 308 with no `Location`. An
+ * editoria and a route of this site are never candidates.
+ */
+export function legacyPermalinkCandidate(pathname: string): string | null {
+  const segment = SINGLE_SEGMENT.exec(pathname)?.[1];
+  if (!segment) return null;
+  const lower = segment.toLowerCase();
+  if (isEditoriaSlug(lower) || RESERVED_SEGMENTS.has(lower)) return null;
+  return segment;
+}
+
+/** `/page/1` and `/{editoria}/page/1`. */
+const FIRST_PAGE = /^\/(?:([a-z0-9-]+)\/)?page\/1$/;
+
+/**
+ * Where page 1 of a listing lives: the listing itself, whose URL is the canonical.
+ *
+ * Answered here rather than by the page, for the same reason as the permalinks: the
+ * listing pages are cached, and a redirect a cached page throws loses its `Location`.
+ */
+export function firstPageRedirect(pathname: string): string | null {
+  const match = FIRST_PAGE.exec(pathname);
+  if (!match) return null;
+  return match[1] ? `/${match[1]}` : '/';
 }
 
 export function redirectTableSize(): number {
