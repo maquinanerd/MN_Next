@@ -750,9 +750,7 @@ export class KalElContentRepository implements ContentRepository {
     if (kind === 'tags') {
       return {
         // Reserved tags are switches, not archives: `/tag/oferta` is a 404 by design.
-        entries: (await this.allTags())
-          .filter((t) => !isReservedTag(t.slug))
-          .map((t) => ({ path: `/tag/${t.slug}` })),
+        entries: (await this.allTags()).filter((t) => !isReservedTag(t.slug)).map((t) => ({ path: `/tag/${t.slug}` })),
         nextCursor: null,
       };
     }

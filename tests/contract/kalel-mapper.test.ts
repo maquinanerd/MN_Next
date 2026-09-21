@@ -282,6 +282,38 @@ describe('editedAt — "Atualizado em" only for a real edit', () => {
       }),
     ).toBe('2026-09-05T15:00:00Z');
   });
+
+  it('is null when a later import session rewrote the article, not an editor', () => {
+    // Created by the first session (17/09), rewritten by the second (21/09): the second
+    // alone would read as 40.907 edits and "Atualizado em" under every one.
+    expect(
+      editedAt({
+        publishedAt: '2026-08-19T15:04:54Z',
+        createdAt: '2026-09-17T21:45:07Z',
+        updatedAt: '2026-09-21T22:10:00Z',
+      }),
+    ).toBeNull();
+  });
+
+  it('still counts an edit to a story the newsroom published during an import window', () => {
+    expect(
+      editedAt({
+        publishedAt: '2026-09-22T09:00:00Z',
+        createdAt: '2026-09-22T08:50:00Z',
+        updatedAt: '2026-09-23T11:00:00Z',
+      }),
+    ).toBe('2026-09-23T11:00:00Z');
+  });
+
+  it('counts an edit to an imported article once the import windows are over', () => {
+    expect(
+      editedAt({
+        publishedAt: '2026-08-19T15:04:54Z',
+        createdAt: '2026-09-17T21:45:07Z',
+        updatedAt: '2026-10-02T14:00:00Z',
+      }),
+    ).toBe('2026-10-02T14:00:00Z');
+  });
 });
 
 describe('isBrandUnsafe', () => {

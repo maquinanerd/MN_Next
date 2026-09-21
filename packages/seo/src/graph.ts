@@ -1,11 +1,4 @@
-import {
-  articlePath,
-  type Article,
-  type ArticleSummary,
-  type Author,
-  type Category,
-  type Tag,
-} from '@mn/content';
+import { articlePath, type Article, type ArticleSummary, type Author, type Category, type Tag } from '@mn/content';
 
 import { COVER_VARIANTS, coverVariant, type CoverVariant } from './cover';
 
@@ -102,7 +95,12 @@ function articleImage(ctx: SeoContext, image: Article['cover']): Node | Node[] |
     .map((variant) => coverVariant(image, variant))
     .filter((crop): crop is NonNullable<typeof crop> => crop !== null);
   if (crops.length === 0) return imageNode(ctx, image);
-  return crops.map((crop) => ({ '@type': 'ImageObject', url: absolute(ctx, crop.url), width: crop.width, height: crop.height }));
+  return crops.map((crop) => ({
+    '@type': 'ImageObject',
+    url: absolute(ctx, crop.url),
+    width: crop.width,
+    height: crop.height,
+  }));
 }
 
 function imageNode(ctx: SeoContext, image: Article['cover']): Node | undefined {

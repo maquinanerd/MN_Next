@@ -167,6 +167,29 @@ test.describe('media comes back through the authenticated proxy', () => {
     expect(res.status()).toBe(404);
   });
 
+  /*
+   * The crops the Article image and the og:image point at (packages/seo/src/cover.ts): a
+   * 1200 px JPEG in the ratio the name says, whatever the original's format and size.
+   */
+  test('a cover crop is a 1200 px JPEG in its ratio', async ({ request }) => {
+    const id = String(CORPUS_MEDIA[0]?.id);
+    for (const [variant, width, height] of [
+      ['16x9', 1200, 675],
+      ['4x3', 1200, 900],
+      ['1x1', 1200, 1200],
+    ] as const) {
+      const res = await request.get(`/media/${id}/${variant}.jpg`);
+      expect(res.status(), variant).toBe(200);
+      expect(res.headers()['content-type'], variant).toBe('image/jpeg');
+      expect(jpegSize(await res.body()), variant).toEqual({ width, height });
+    }
+  });
+
+  test('a crop the site does not make is a 404', async ({ request }) => {
+    expect((await request.get(`/media/${String(CORPUS_MEDIA[0]?.id)}/2x1.jpg`)).status()).toBe(404);
+    expect((await request.get(`/media/${String(CORPUS_MEDIA[0]?.id)}/16x9.png`)).status()).toBe(404);
+  });
+
   test('a cover from beyond the first offset page still resolves', async ({ request }) => {
     // The index is walked 200 rows at a time. If the walk stopped after one page, every
     // image past that point would silently lose its cover — the exact failure a previous
@@ -305,3 +328,18 @@ test.describe('preview opens the draft, and only the draft', () => {
     expect(cookies.map((h) => h.value).some((v) => v.startsWith('mn-preview-grant='))).toBe(false);
   });
 });
+
+/** Width and height from a JPEG's frame header (SOF0–SOF3), read without a decoder. */
+function jpegSize(bytes: Buffer): { width: number; height: number } | null {
+  let at = 2;
+  while (at + 9 < bytes.length) {
+    if (bytes[at] !== 0xff) return null;
+    const marker = bytes[at + 1] ?? 0;
+    const length = bytes.readUInt16BE(at + 2);
+    if (marker >= 0xc0 && marker <= 0xc3) {
+      return { height: bytes.readUInt16BE(at + 5), width: bytes.readUInt16BE(at + 7) };
+    }
+    at += 2 + length;
+  }
+  return null;
+}

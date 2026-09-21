@@ -32,6 +32,9 @@ importers:
       server-only:
         specifier: 0.0.1
         version: 0.0.1
+      sharp:
+        specifier: ^0.35.4
+        version: 0.35.4(@types/node@22.18.1)
       zod:
         specifier: 3.25.76
         version: 3.25.76
@@ -81,9 +84,6 @@ importers:
       prettier:
         specifier: 3.6.2
         version: 3.6.2
-      sharp:
-        specifier: ^0.35.4
-        version: 0.35.4(@types/node@22.18.1)
       tailwindcss:
         specifier: 4.1.13
         version: 4.1.13

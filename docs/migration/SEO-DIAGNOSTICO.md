@@ -25,7 +25,7 @@ A causa mais provável, com alta confiança, é o **volume de conteúdo automati
 em 14 meses, com pico de 7.261 em abril de 2026 (cerca de 240 por dia), quase todos reescritas de
 notícias de veículos estrangeiros (terminam em "Fontes: Variety, ComicBook, Movieweb"), e desde
 março de 2026 todos — 20.521 — assinados por um único autor. É o padrão que a política de spam do
-Google chama de *abuso de conteúdo em escala* e que a cobertura do setor associa ao core update de
+Google chama de _abuso de conteúdo em escala_ e que a cobertura do setor associa ao core update de
 maio (agregadores e compiladores perderam, fontes originais ganharam). O próprio Google já sinaliza
 isso fora do tráfego: **109.621 URLs do site ele decidiu não indexar** (77.086 "detectadas, mas não
 indexadas" e 32.535 "rastreadas, mas não indexadas"), e o site **nunca apareceu no Discover**
@@ -42,18 +42,18 @@ reavaliado quando o conjunto muda, e isso costuma aparecer em core updates segui
 
 ## 2. Linha do tempo
 
-| Data | Evento |
-| --- | --- |
-| jul/2025 | início da publicação em escala: 1.560 posts no mês (antes, quase nada desde 2018) |
-| ago–nov/2025 | 3.500 a 5.100 posts por mês |
-| jan/2026 | 96 posts |
-| abr/2026 | **7.261 posts** — pico de volume e pico de tráfego |
-| 21/05 a 02/06/2026 | **core update de maio de 2026** (Google Search Status Dashboard) |
-| 03 a 09/06/2026 | primeira semana limpa depois do update: −99% de cliques |
-| jun–ago/2026 | 3.364, 2.558 e 718 posts por mês; tráfego perto de zero |
-| 16/09/2026 | virada para o portal novo no Kal El |
-| 17/09/2026 | importação do acervo (40.907 matérias) |
-| 16 a 21/09/2026 | nenhuma matéria nova publicada; sitemap de notícias vazio |
+| Data               | Evento                                                                            |
+| ------------------ | --------------------------------------------------------------------------------- |
+| jul/2025           | início da publicação em escala: 1.560 posts no mês (antes, quase nada desde 2018) |
+| ago–nov/2025       | 3.500 a 5.100 posts por mês                                                       |
+| jan/2026           | 96 posts                                                                          |
+| abr/2026           | **7.261 posts** — pico de volume e pico de tráfego                                |
+| 21/05 a 02/06/2026 | **core update de maio de 2026** (Google Search Status Dashboard)                  |
+| 03 a 09/06/2026    | primeira semana limpa depois do update: −99% de cliques                           |
+| jun–ago/2026       | 3.364, 2.558 e 718 posts por mês; tráfego perto de zero                           |
+| 16/09/2026         | virada para o portal novo no Kal El                                               |
+| 17/09/2026         | importação do acervo (40.907 matérias)                                            |
+| 16 a 21/09/2026    | nenhuma matéria nova publicada; sitemap de notícias vazio                         |
 
 ---
 
@@ -63,12 +63,12 @@ reavaliado quando o conjunto muda, e isso costuma aparecer em core updates segui
 
 **Pesquisa na Web, antes e depois do update:**
 
-| | 14 a 20/05/2026 | 03 a 09/06/2026 | Variação |
-| --- | --- | --- | --- |
-| Cliques | 1.970 | 15 | −99,2% |
-| Impressões | 394 mil | 2,09 mil | −99,5% |
-| CTR | 0,5% | 0,7% | — |
-| Posição média | 5,7 | 53,7 | −48 posições |
+|               | 14 a 20/05/2026 | 03 a 09/06/2026 | Variação     |
+| ------------- | --------------- | --------------- | ------------ |
+| Cliques       | 1.970           | 15              | −99,2%       |
+| Impressões    | 394 mil         | 2,09 mil        | −99,5%       |
+| CTR           | 0,5%            | 0,7%            | —            |
+| Posição média | 5,7             | 53,7            | −48 posições |
 
 - 16 meses: 22,5 mil cliques, 4,37 milhões de impressões, CTR 0,5%, posição média 13,8.
 - 10 a 19/09/2026: de 0 a 2 cliques por dia, cerca de 120 impressões por dia, posição média entre
@@ -82,18 +82,18 @@ reavaliado quando o conjunto muda, e isso costuma aparecer em core updates segui
 
 **Indexação:** 9.620 páginas indexadas, 132 mil não indexadas:
 
-| Motivo | Páginas |
-| --- | --- |
-| Detectada, mas não indexada no momento | 77.086 |
-| Rastreada, mas não indexada no momento | 32.535 |
-| Excluída pela tag `noindex` | 15.801 |
-| Página com redirecionamento | 5.138 |
-| Não encontrado (404) | 811 |
-| Erro no servidor (5xx) | 209 |
-| Página alternativa com canônica adequada | 133 |
-| Cópia sem canônica selecionada pelo usuário | 65 |
-| Erro de redirecionamento | 53 |
-| Bloqueada pelo robots.txt | 23 |
+| Motivo                                      | Páginas |
+| ------------------------------------------- | ------- |
+| Detectada, mas não indexada no momento      | 77.086  |
+| Rastreada, mas não indexada no momento      | 32.535  |
+| Excluída pela tag `noindex`                 | 15.801  |
+| Página com redirecionamento                 | 5.138   |
+| Não encontrado (404)                        | 811     |
+| Erro no servidor (5xx)                      | 209     |
+| Página alternativa com canônica adequada    | 133     |
+| Cópia sem canônica selecionada pelo usuário | 65      |
+| Erro de redirecionamento                    | 53      |
+| Bloqueada pelo robots.txt                   | 23      |
 
 **Ações manuais:** nenhuma. **Problemas de segurança:** nenhum.
 
@@ -106,16 +106,16 @@ três sitemaps do WordPress ainda cadastrados (`post-sitemap.xml`, `page-sitemap
 
 ### 3.2 O acervo
 
-| Medida | Valor |
-| --- | --- |
-| Posts | 41.318 (quase todos de jul/2025 a ago/2026) |
-| Pico mensal | 7.261 (abr/2026) |
-| Autores | Pablo Gameleira 22.194 · Abel 16.877 · João 2.240 · José 7 |
-| Desde mar/2026 | 20.521 posts, todos de um único autor |
-| Posts com link externo | 29.848 |
-| Posts que terminam citando "Fonte(s)" | 29.817 |
-| Tamanho médio desde mar/2026 | 557 palavras |
-| Tags | 36.438 tags e 8.613 categorias rebaixadas a tag (37.150 no sitemap) |
+| Medida                                | Valor                                                               |
+| ------------------------------------- | ------------------------------------------------------------------- |
+| Posts                                 | 41.318 (quase todos de jul/2025 a ago/2026)                         |
+| Pico mensal                           | 7.261 (abr/2026)                                                    |
+| Autores                               | Pablo Gameleira 22.194 · Abel 16.877 · João 2.240 · José 7          |
+| Desde mar/2026                        | 20.521 posts, todos de um único autor                               |
+| Posts com link externo                | 29.848                                                              |
+| Posts que terminam citando "Fonte(s)" | 29.817                                                              |
+| Tamanho médio desde mar/2026          | 557 palavras                                                        |
+| Tags                                  | 36.438 tags e 8.613 categorias rebaixadas a tag (37.150 no sitemap) |
 
 Sinais de automação sem revisão no próprio acervo: três posts de um parágrafo só com 11.802 a
 15.018 caracteres, 17 "tags" que são listas de títulos com mais de 80 caracteres, 236 posts
@@ -125,21 +125,21 @@ publicados duas vezes com título e corpo idênticos (DECISIONS §7.16 e §7.18)
 
 Problemas técnicos encontrados em produção:
 
-| # | Problema | Efeito | Situação |
-| --- | --- | --- | --- |
-| T1 | Endereço antigo (`/{slug}`) respondia 308 sem `Location` ou 404 em cache (DECISIONS §7.19) | as 41.316 URLs indexadas do WordPress não levavam a lugar nenhum; 0 de 40 na amostra chegavam à matéria | **corrigido** (PR #8) |
-| T2 | `robots.txt` bloqueava `/media/` | o Google não podia buscar nenhuma capa: sem card grande no Discover, sem Google Imagens, imagem do Article inacessível | **corrigido** (PR #8) |
-| T3 | Nenhuma matéria publicada desde 16/09 | sitemap de notícias vazio (erro no Search Console); sem frescor para Notícias e Discover | depende da redação |
-| T4 | Capa enviada em AVIF sai AVIF no `og:image` | Facebook e WhatsApp não mostram AVIF: link compartilhado sem imagem | a corrigir (P1) |
-| T5 | Dados estruturados com uma imagem só, no tamanho original (até 3200×1800) | o Google recomenda 16:9, 4:3 e 1:1, com pelo menos 1200 px de largura | a corrigir (P1) |
-| T6 | `author: []` em matéria criada no Kal El sem autor | Article sem autor; nenhuma assinatura visível | a corrigir (P1) |
-| T7 | `dateModified` de 40.907 matérias = data da importação | parece atualização em massa, o "frescor artificial" que as diretrizes desaconselham | a corrigir (P1) |
-| T8 | 37.150 tags indexáveis e no sitemap, a maioria com uma ou duas matérias | páginas finas em volume; dilui rastreamento e a avaliação do site | a corrigir (P1) |
-| T9 | `lastmod` do índice de sitemaps e das tags = hora da geração | o Google para de confiar no `lastmod` do site inteiro quando ele não é verdadeiro | a corrigir (P1) |
-| T10 | Nenhuma página de política editorial, correções, expediente ou metodologia de crítica | sinais de confiança (E-E-A-T) ausentes | conteúdo do dono (P1) |
-| T11 | Imagens antigas (`/wp-content/uploads/…`) respondem 404 | perde Google Imagens e as imagens embutidas em outros sites | a corrigir (P2) |
-| T12 | Sem `<link rel="alternate">` do RSS no `<head>`; datas sem `<time datetime>` | descoberta e leitura de data mais frágeis | a corrigir (P2) |
-| T13 | Endereço antigo com barra final faz dois saltos (`/slug/` → `/slug` → `/cinema/slug`) | o Google segue, mas o ideal é um salto | melhoria (P2) |
+| #   | Problema                                                                                   | Efeito                                                                                                                 | Situação              |
+| --- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| T1  | Endereço antigo (`/{slug}`) respondia 308 sem `Location` ou 404 em cache (DECISIONS §7.19) | as 41.316 URLs indexadas do WordPress não levavam a lugar nenhum; 0 de 40 na amostra chegavam à matéria                | **corrigido** (PR #8) |
+| T2  | `robots.txt` bloqueava `/media/`                                                           | o Google não podia buscar nenhuma capa: sem card grande no Discover, sem Google Imagens, imagem do Article inacessível | **corrigido** (PR #8) |
+| T3  | Nenhuma matéria publicada desde 16/09                                                      | sitemap de notícias vazio (erro no Search Console); sem frescor para Notícias e Discover                               | depende da redação    |
+| T4  | Capa enviada em AVIF sai AVIF no `og:image`                                                | Facebook e WhatsApp não mostram AVIF: link compartilhado sem imagem                                                    | a corrigir (P1)       |
+| T5  | Dados estruturados com uma imagem só, no tamanho original (até 3200×1800)                  | o Google recomenda 16:9, 4:3 e 1:1, com pelo menos 1200 px de largura                                                  | a corrigir (P1)       |
+| T6  | `author: []` em matéria criada no Kal El sem autor                                         | Article sem autor; nenhuma assinatura visível                                                                          | a corrigir (P1)       |
+| T7  | `dateModified` de 40.907 matérias = data da importação                                     | parece atualização em massa, o "frescor artificial" que as diretrizes desaconselham                                    | a corrigir (P1)       |
+| T8  | 37.150 tags indexáveis e no sitemap, a maioria com uma ou duas matérias                    | páginas finas em volume; dilui rastreamento e a avaliação do site                                                      | a corrigir (P1)       |
+| T9  | `lastmod` do índice de sitemaps e das tags = hora da geração                               | o Google para de confiar no `lastmod` do site inteiro quando ele não é verdadeiro                                      | a corrigir (P1)       |
+| T10 | Nenhuma página de política editorial, correções, expediente ou metodologia de crítica      | sinais de confiança (E-E-A-T) ausentes                                                                                 | conteúdo do dono (P1) |
+| T11 | Imagens antigas (`/wp-content/uploads/…`) respondem 404                                    | perde Google Imagens e as imagens embutidas em outros sites                                                            | a corrigir (P2)       |
+| T12 | Sem `<link rel="alternate">` do RSS no `<head>`; datas sem `<time datetime>`               | descoberta e leitura de data mais frágeis                                                                              | a corrigir (P2)       |
+| T13 | Endereço antigo com barra final faz dois saltos (`/slug/` → `/slug` → `/cinema/slug`)      | o Google segue, mas o ideal é um salto                                                                                 | melhoria (P2)         |
 
 O que está certo e fica como está: `lang="pt-BR"`, título e descrição por página, canonical,
 `max-image-preview:large`, Open Graph e Twitter Card, `NewsMediaOrganization`, `WebSite`,
@@ -153,19 +153,19 @@ interna `noindex`, HTTPS com HSTS, paginação de editoria com canonical própri
 Levantamento feito em 2026-09-21 no HTML, `robots.txt` e sitemaps de cada site. O "nós" é o
 estado depois do PR #8.
 
-| Prática | EUA (IGN, GameSpot, Valnet¹) | Brasil (Omelete, Canaltech, IGN BR, Jovem Nerd, Legião) | Nós |
-| --- | --- | --- | --- |
-| Sitemap de notícias do Google News | todos, janela de ~48 h | Omelete, Canaltech e IGN BR (os dois primeiros com janela longa demais); Jovem Nerd não tem sitemap nenhum | tem, vazio por falta de publicação |
-| Sitemaps de matérias por mês/ano | todos | Omelete (mensal) | por blocos de 5.000 |
-| Tags indexadas | Valnet indexa, mas só ~300 a 2.500 "listing pages" no sitemap; GameSpot bloqueia `/tags/` e expõe 8 hubs curados; IGN usa hubs de entidade | Omelete: 1.775 temas no sitemap | **37.150 no sitemap** |
-| Página 2+ de tag/autor | `noindex` + canonical para a página 1 (Valnet) | IGN BR: canonical para a página 1 | `noindex`, canonical próprio |
-| `NewsArticle` com várias proporções de imagem | Valnet: 4 (16:9, 2:1, 4:3, 1:1); IGN: 3 | Omelete: 3 tamanhos; Canaltech: 5 | 1, e bloqueada até o PR #8 |
-| Autor como `Person` com `url` e `sameAs` | todos | parcial (sem `sameAs`) | `url` sem `sameAs`; vazio em matéria sem autor |
-| Página de autor com `ProfilePage`, bio e redes | todos | Omelete sem bio; Jovem Nerd e Legião sem nada | a verificar e completar |
-| Crítica com nota estruturada (`Review`/`reviewRating`) | IGN, GameSpot, Valnet (com prós e contras); Polygon não dá nota por política | Omelete e IGN BR | nó `Review` existe no código |
-| Política editorial, correções, expediente | IGN tem tudo, declarado no JSON-LD (`ethicsPolicy`, `correctionsPolicy`); Valnet tem página central de integridade editorial e expediente no "Sobre" | fraco: Omelete nada; Canaltech equipe no "Sobre"; Jovem Nerd só fundadores | nada |
-| `robots.txt` para robôs de IA | Valnet e IGN bloqueiam GPTBot, ClaudeBot, CCBot etc.; quase ninguém bloqueia Google-Extended | a maioria não menciona; Canaltech libera explicitamente | não menciona |
-| `max-image-preview:large` | todos | quase todos | tem |
+| Prática                                                | EUA (IGN, GameSpot, Valnet¹)                                                                                                                         | Brasil (Omelete, Canaltech, IGN BR, Jovem Nerd, Legião)                                                    | Nós                                            |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| Sitemap de notícias do Google News                     | todos, janela de ~48 h                                                                                                                               | Omelete, Canaltech e IGN BR (os dois primeiros com janela longa demais); Jovem Nerd não tem sitemap nenhum | tem, vazio por falta de publicação             |
+| Sitemaps de matérias por mês/ano                       | todos                                                                                                                                                | Omelete (mensal)                                                                                           | por blocos de 5.000                            |
+| Tags indexadas                                         | Valnet indexa, mas só ~300 a 2.500 "listing pages" no sitemap; GameSpot bloqueia `/tags/` e expõe 8 hubs curados; IGN usa hubs de entidade           | Omelete: 1.775 temas no sitemap                                                                            | **37.150 no sitemap**                          |
+| Página 2+ de tag/autor                                 | `noindex` + canonical para a página 1 (Valnet)                                                                                                       | IGN BR: canonical para a página 1                                                                          | `noindex`, canonical próprio                   |
+| `NewsArticle` com várias proporções de imagem          | Valnet: 4 (16:9, 2:1, 4:3, 1:1); IGN: 3                                                                                                              | Omelete: 3 tamanhos; Canaltech: 5                                                                          | 1, e bloqueada até o PR #8                     |
+| Autor como `Person` com `url` e `sameAs`               | todos                                                                                                                                                | parcial (sem `sameAs`)                                                                                     | `url` sem `sameAs`; vazio em matéria sem autor |
+| Página de autor com `ProfilePage`, bio e redes         | todos                                                                                                                                                | Omelete sem bio; Jovem Nerd e Legião sem nada                                                              | a verificar e completar                        |
+| Crítica com nota estruturada (`Review`/`reviewRating`) | IGN, GameSpot, Valnet (com prós e contras); Polygon não dá nota por política                                                                         | Omelete e IGN BR                                                                                           | nó `Review` existe no código                   |
+| Política editorial, correções, expediente              | IGN tem tudo, declarado no JSON-LD (`ethicsPolicy`, `correctionsPolicy`); Valnet tem página central de integridade editorial e expediente no "Sobre" | fraco: Omelete nada; Canaltech equipe no "Sobre"; Jovem Nerd só fundadores                                 | nada                                           |
+| `robots.txt` para robôs de IA                          | Valnet e IGN bloqueiam GPTBot, ClaudeBot, CCBot etc.; quase ninguém bloqueia Google-Extended                                                         | a maioria não menciona; Canaltech libera explicitamente                                                    | não menciona                                   |
+| `max-image-preview:large`                              | todos                                                                                                                                                | quase todos                                                                                                | tem                                            |
 
 ¹ Screen Rant, Collider, CBR e Polygon pertencem à Valnet e compartilham a mesma plataforma.
 
@@ -202,12 +202,12 @@ fontes primárias. O Máquina Nerd publica, em volume, a tradução resumida do 
 
 ### P0 — já
 
-| Ação | Situação |
-| --- | --- |
-| Endereços antigos com destino (T1) e capas liberadas no `robots.txt` (T2) | PR #8; depois do merge, deploy e limpeza do cache da Cloudflare |
-| Voltar a publicar no Kal El (T3), mas **não** no ritmo de antes | decisão do dono |
-| Tirar do Search Console os sitemaps do WordPress (`post-sitemap.xml`, `page-sitemap.xml`, `sitemap_index.xml`) | operacional |
-| Terminar a segunda sessão de importação (3 matérias, 17 tags, 235 nomes com `&amp;`) | aguardando o comando do dono |
+| Ação                                                                                                           | Situação                                                        |
+| -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Endereços antigos com destino (T1) e capas liberadas no `robots.txt` (T2)                                      | PR #8; depois do merge, deploy e limpeza do cache da Cloudflare |
+| Voltar a publicar no Kal El (T3), mas **não** no ritmo de antes                                                | decisão do dono                                                 |
+| Tirar do Search Console os sitemaps do WordPress (`post-sitemap.xml`, `page-sitemap.xml`, `sitemap_index.xml`) | operacional                                                     |
+| Terminar a segunda sessão de importação (3 matérias, 17 tags, 235 nomes com `&amp;`)                           | aguardando o comando do dono                                    |
 
 ### P1 — próximas semanas, no código
 
