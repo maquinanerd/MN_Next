@@ -3,14 +3,16 @@ import type { SitemapKind } from '@mn/content';
 import { urlSet } from '@mn/seo';
 
 import { repo } from '../../../lib/content';
+import { hubTagSlugs } from '../../../lib/content/editorias';
 import { seoContext } from '../../../lib/seo-context';
 
 /**
  * Child sitemaps, named by the index at `/sitemap.xml`.
  *
  * Article files carry their page number in the filename (`articles-1.xml`,
- * `articles-2.xml`, …) so the index can enumerate them. Taxonomy files are single files
- * — there are hundreds of categories and tags, not tens of thousands.
+ * `articles-2.xml`, …) so the index can enumerate them. Taxonomy files are single files.
+ * The tag file lists the editorias' subject hubs only (`hubTagSlugs`): the archive brought
+ * 37.150 tags, most on one or two stories.
  */
 export const revalidate = 3600;
 
@@ -35,7 +37,10 @@ export async function GET(_request: Request, ctx: { params: Promise<{ kind: stri
   // A page past the end is a 404, not an empty file a crawler would keep re-fetching.
   if (parsed.kind === 'articles' && page.entries.length === 0 && parsed.page > 1) notFound();
 
-  return new Response(urlSet(seoContext(), page.entries), {
+  const hubs = parsed.kind === 'tags' ? hubTagSlugs() : null;
+  const entries = hubs ? page.entries.filter((e) => hubs.has(e.path.slice('/tag/'.length))) : page.entries;
+
+  return new Response(urlSet(seoContext(), entries), {
     headers: {
       'content-type': 'application/xml; charset=utf-8',
       'cache-control': 'public, s-maxage=3600, stale-while-revalidate=7200',

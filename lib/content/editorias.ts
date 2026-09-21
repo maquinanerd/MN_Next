@@ -1,4 +1,4 @@
-import { EDITORIA_NAMES, SITE, SOCIAL_LINKS, type EditoriaSlug } from '@mn/content';
+import { EDITORIA_NAMES, SITE, SOCIAL_LINKS, slugify, type EditoriaSlug } from '@mn/content';
 import type { Editoria, EditoriaRef, FooterLink, NavItem, SiteFooterProps } from '@mn/ui';
 
 /**
@@ -94,6 +94,17 @@ export const EDITORIAS: Record<EditoriaSlug, Editoria> = {
 };
 
 /** Notícias is the home, in brand red. Also the fallback for a category outside the seven. */
+/**
+ * The tags that are topic hubs: every editoria's subjects, the filters under its title.
+ *
+ * Only these go in the tag sitemap. The other 37 thousand tags stay reachable by link and
+ * indexable from five articles up; a sitemap listing each of them presented one-story pages
+ * as destinations.
+ */
+export function hubTagSlugs(): Set<string> {
+  return new Set(Object.values(EDITORIAS).flatMap((e) => e.assuntos.slice(1).map((label) => slugify(label))));
+}
+
 export const NOTICIAS: EditoriaRef = {
   slug: 'noticias',
   nome: 'Notícias',

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import type { Article, ArticleSummary, Image } from '@mn/content';
 
+import { coverVariant } from './cover';
 import { absolute, articleUrl, type SeoContext } from './graph';
 
 /**
@@ -19,16 +20,23 @@ const OG_FALLBACK: Image = {
   alt: 'Máquina Nerd',
 };
 
+/**
+ * The feed, announced on every page. Next replaces `alternates` whole, so a page that sets
+ * its own canonical drops the one the layout declared unless it repeats it — which is how
+ * every article and listing lost its RSS link.
+ */
+function feedAlternate(ctx: SeoContext) {
+  return { 'application/rss+xml': `${ctx.siteUrl}/feed.xml` };
+}
+
 function ogImage(ctx: SeoContext, image: Image | null | undefined) {
   const resolved = image ?? OG_FALLBACK;
-  return [
-    {
-      url: absolute(ctx, resolved.url),
-      width: resolved.width,
-      height: resolved.height,
-      alt: resolved.alt || 'Máquina Nerd',
-    },
-  ];
+  const alt = resolved.alt || 'Máquina Nerd';
+  // The 16:9 JPEG crop, not the original: an upload in AVIF left Facebook and WhatsApp
+  // with no preview at all, and an original of 3200 px is a heavy card for every share.
+  const crop = coverVariant(resolved, '16x9');
+  if (crop) return [{ url: absolute(ctx, crop.url), width: crop.width, height: crop.height, type: 'image/jpeg', alt }];
+  return [{ url: absolute(ctx, resolved.url), width: resolved.width, height: resolved.height, alt }];
 }
 
 export function baseMetadata(ctx: SeoContext): Metadata {
@@ -43,7 +51,7 @@ export function baseMetadata(ctx: SeoContext): Metadata {
     applicationName: ctx.siteName,
     alternates: {
       canonical: '/',
-      types: { 'application/rss+xml': `${ctx.siteUrl}/feed.xml` },
+      types: feedAlternate(ctx),
     },
     openGraph: {
       type: 'website',
@@ -63,7 +71,7 @@ export function articleMetadata(ctx: SeoContext, article: Article): Metadata {
   return {
     title: article.seo.title ?? article.title,
     description: article.seo.description ?? article.excerpt,
-    alternates: { canonical: url },
+    alternates: { canonical: url, types: feedAlternate(ctx) },
     openGraph: {
       type: 'article',
       locale: 'pt_BR',
@@ -72,7 +80,7 @@ export function articleMetadata(ctx: SeoContext, article: Article): Metadata {
       title: article.seo.title ?? article.title,
       description: article.seo.description ?? article.excerpt,
       publishedTime: article.publishedAt ?? article.updatedAt,
-      modifiedTime: article.updatedAt,
+      modifiedTime: article.editedAt ?? article.publishedAt ?? article.updatedAt,
       authors: article.authors.map((a) => absolute(ctx, `/autor/${a.slug}`)),
       section: article.category?.name,
       tags: article.tags.map((t) => t.name),
@@ -121,7 +129,7 @@ export function listingMetadata(
   return {
     title,
     description: opts.description,
-    alternates: { canonical: absolute(ctx, canonical) },
+    alternates: { canonical: absolute(ctx, canonical), types: feedAlternate(ctx) },
     openGraph: {
       type: 'website',
       locale: 'pt_BR',

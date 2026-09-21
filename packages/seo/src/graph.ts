@@ -1,4 +1,13 @@
-import { articlePath, type Article, type ArticleSummary, type Author, type Category, type Tag } from '@mn/content';
+import {
+  articlePath,
+  type Article,
+  type ArticleSummary,
+  type Author,
+  type Category,
+  type Tag,
+} from '@mn/content';
+
+import { COVER_VARIANTS, coverVariant, type CoverVariant } from './cover';
 
 /**
  * Schema.org graph construction.
@@ -63,11 +72,37 @@ export function absolute(ctx: SeoContext, path: string): string {
 }
 
 function personNode(ctx: SeoContext, author: Author): Node {
+  const sameAs = Object.values(author.social ?? {}).filter((href): href is string => Boolean(href));
   return {
     '@type': 'Person',
     name: author.name,
     url: absolute(ctx, `/autor/${author.slug}`),
+    ...(sameAs.length ? { sameAs } : {}),
   };
+}
+
+/**
+ * Who signs the article: its authors, or — with none — the newsroom itself.
+ *
+ * An Article with `author: []` is an Article with no author, and articles created in the CMS
+ * without a byline went out that way. The organization is a valid author for Google and the
+ * true one for an unsigned newsroom text.
+ */
+function authorNodes(ctx: SeoContext, authors: Author[]): Node[] {
+  return authors.length ? authors.map((a) => personNode(ctx, a)) : [{ '@id': `${ctx.siteUrl}/#organization` }];
+}
+
+/**
+ * The cover in the three aspect ratios Google asks an Article image for, each 1200 px wide;
+ * the original alone when it is not a CMS image or is too small to crop.
+ */
+function articleImage(ctx: SeoContext, image: Article['cover']): Node | Node[] | undefined {
+  if (!image) return undefined;
+  const crops = (Object.keys(COVER_VARIANTS) as CoverVariant[])
+    .map((variant) => coverVariant(image, variant))
+    .filter((crop): crop is NonNullable<typeof crop> => crop !== null);
+  if (crops.length === 0) return imageNode(ctx, image);
+  return crops.map((crop) => ({ '@type': 'ImageObject', url: absolute(ctx, crop.url), width: crop.width, height: crop.height }));
 }
 
 function imageNode(ctx: SeoContext, image: Article['cover']): Node | undefined {
@@ -103,12 +138,13 @@ export function articleNode(ctx: SeoContext, article: Article): Node {
     url,
     mainEntityOfPage: { '@type': 'WebPage', '@id': url },
     datePublished: article.publishedAt ?? article.updatedAt,
-    dateModified: article.updatedAt,
+    // The last edit a reader would call one (`editedAt`), not the last import.
+    dateModified: article.editedAt ?? article.publishedAt ?? article.updatedAt,
     inLanguage: 'pt-BR',
     isAccessibleForFree: true,
-    author: article.authors.map((a) => personNode(ctx, a)),
+    author: authorNodes(ctx, article.authors),
     publisher: { '@id': `${ctx.siteUrl}/#organization` },
-    ...(article.cover ? { image: imageNode(ctx, article.cover) } : {}),
+    ...(article.cover ? { image: articleImage(ctx, article.cover) } : {}),
     ...(article.category ? { articleSection: article.category.name } : {}),
     ...(article.tags.length ? { keywords: article.tags.map((t) => t.name).join(', ') } : {}),
     ...(article.commercial
@@ -139,7 +175,7 @@ export function reviewNode(ctx: SeoContext, article: Article): Node | null {
     name: article.title,
     reviewBody: article.review.verdict,
     datePublished: article.publishedAt ?? article.updatedAt,
-    author: article.authors.map((a) => personNode(ctx, a)),
+    author: authorNodes(ctx, article.authors),
     publisher: { '@id': `${ctx.siteUrl}/#organization` },
     reviewRating: {
       '@type': 'Rating',

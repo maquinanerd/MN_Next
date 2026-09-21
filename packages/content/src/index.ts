@@ -2,6 +2,7 @@ export * from './domain/types';
 export * from './repository';
 export * from './errors';
 export * from './cache-tags';
+export * from './dates';
 export * from './slug';
 export * from './paths';
 export { SITEMAP_PAGE_SIZE } from './sitemap-page-size';
