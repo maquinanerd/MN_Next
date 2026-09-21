@@ -283,12 +283,20 @@ test.describe('article — offer', () => {
     await expect(sponsored.getByText('Parceiro · Patrocinado').first()).toBeVisible();
   });
 
-  test('the editoria URL of an offer redirects permanently to /ofertas', async ({ request }) => {
-    const res = await request.get('/games/controle-xbox-edicao-especial-tem-queda-de-preco-na-amazon', {
-      maxRedirects: 0,
-    });
-    expect(res.status()).toBe(308);
-    expect(res.headers()['location']).toContain(OFFER);
+  test('the editoria URL of an offer sends the reader on to /ofertas, every time', async ({ request, page }) => {
+    // An instant refresh plus the offer's canonical — Google reads it as a permanent
+    // redirect — because this page is cached and a cached redirect loses its Location.
+    const from = '/games/controle-xbox-edicao-especial-tem-queda-de-preco-na-amazon';
+    for (const attempt of [1, 2, 3]) {
+      const res = await request.get(from, { maxRedirects: 0 });
+      expect(res.status(), `pedido ${attempt}`).toBe(200);
+      const html = await res.text();
+      expect(html, `pedido ${attempt}`).toContain(`http-equiv="refresh" content="0;url=${OFFER}"`);
+      expect(html, `pedido ${attempt}`).toMatch(new RegExp(`<link rel="canonical" href="[^"]*${OFFER}"`));
+    }
+    // And a browser actually goes there.
+    await page.goto(from);
+    await page.waitForURL(`**${OFFER}`);
   });
 });
 

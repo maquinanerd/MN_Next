@@ -125,6 +125,9 @@ test.describe('the page layout comes from the reserved tags', () => {
     const offer = CORPUS_ARTICLES[4];
     const slug = String(offer?.slug);
     await page.goto('/' + 'animes/' + slug);
+    // Sent on by an instant refresh: the article pages are cached, and a redirect thrown
+    // from a cached page comes back from the cache with no Location.
+    await page.waitForURL('**/ofertas/' + slug);
     expect(new URL(page.url()).pathname).toBe('/ofertas/' + slug);
     await expect(page.getByText(/podem estar disponíveis em uma ou mais lojas parceiras/)).toBeVisible();
   });
