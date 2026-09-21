@@ -26,10 +26,17 @@ type Params = { categoria: string; slug: string };
  * Prerenders the most recent articles; older ones render on first request. Bounded so a
  * deploy is not proportional to a ten-year archive, and a CMS outage during the build
  * yields an empty list rather than a failed build.
+ *
+ * Forty, not five hundred. With the archive imported, 500 prerendered articles made a few
+ * thousand CMS reads inside half a minute of the build; Kal El answered 429 and the deploy
+ * of 2026-09-21 failed on it. A page not prerendered is rendered on its first request and
+ * cached exactly the same way.
  */
+const PRERENDERED_ARTICLES = 40;
+
 export async function generateStaticParams(): Promise<Params[]> {
   try {
-    const recent = await repo().listRecentNews(new Date(Date.now() - 365 * 24 * 60 * 60 * 1000), 500);
+    const recent = await repo().listRecentNews(new Date(Date.now() - 365 * 24 * 60 * 60 * 1000), PRERENDERED_ARTICLES);
     return recent
       .filter((a) => a.layout !== 'offer' && a.category !== null)
       .map((a) => ({ categoria: a.category?.slug ?? '', slug: a.slug }))
