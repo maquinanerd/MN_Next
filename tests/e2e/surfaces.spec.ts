@@ -393,6 +393,31 @@ test.describe('legacy URLs', () => {
     await everyTime(request, `/${slug}`, 308, `/cinema/${slug}`);
   });
 
+  test('a WordPress permalink, trailing slash and all, reaches its article in one hop', async ({ request }) => {
+    const slug = 'pirates-of-the-caribbean-avanca-com-negociacoes-para-johnny-depp';
+    await everyTime(request, `/${slug}/`, 308, `/cinema/${slug}`);
+    await everyTime(request, '/page/1/', 308, '/');
+    const renamed = await request.get('/filmes/', { maxRedirects: 0 });
+    expect(renamed.status()).toBe(301);
+    expect(new URL(renamed.headers()['location'] ?? '', 'http://x').pathname).toBe('/cinema');
+  });
+
+  test('any other address with a trailing slash goes to the one without it, query kept', async ({ request }) => {
+    for (const [from, to] of [
+      ['/cinema/', '/cinema'],
+      ['/tag/marvel/?page=2', '/tag/marvel?page=2'],
+      [
+        '/cinema/pirates-of-the-caribbean-avanca-com-negociacoes-para-johnny-depp/',
+        '/cinema/pirates-of-the-caribbean-avanca-com-negociacoes-para-johnny-depp',
+      ],
+    ] as const) {
+      const res = await request.get(from, { maxRedirects: 0 });
+      expect(res.status(), from).toBe(308);
+      const location = new URL(res.headers()['location'] ?? '', 'http://x');
+      expect(location.pathname + location.search, from).toBe(to);
+    }
+  });
+
   test('a bare offer slug redirects to /ofertas, every time', async ({ request }) => {
     await everyTime(request, '/controle-xbox-edicao-especial-tem-queda-de-preco-na-amazon', 308, OFFER);
   });
@@ -433,11 +458,18 @@ test.describe('legacy URLs', () => {
     expect((await request.get('/tag/capa-em-tela-cheia')).status()).toBe(404);
   });
 
-  test('reserved tags never enter the sitemap', async ({ request }) => {
-    const xml = await (await request.get('/sitemap/tags.xml')).text();
-    expect(xml).toContain('/tag/marvel');
+  test('the tag sitemap submits no reserved tag and no page that says noindex', async ({ request, page }) => {
+    const res = await request.get('/sitemap/tags.xml');
+    expect(res.status()).toBe(200);
+    const xml = await res.text();
+    expect(xml).toContain('<urlset');
     expect(xml).not.toContain('/tag/capa-em-tela-cheia');
     expect(xml).not.toMatch(/\/tag\/oferta</);
+    // Marvel holds four fixture stories, one short of an indexable archive: the page says
+    // noindex, so the sitemap must not submit it (lib/content/tags.ts).
+    await page.goto('/tag/marvel');
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/);
+    expect(xml).not.toContain('/tag/marvel<');
   });
 
   test('an article asked for under another editoria is sent on to its own', async ({ request }) => {

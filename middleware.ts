@@ -30,10 +30,14 @@ export function middleware(request: NextRequest): NextResponse {
 }
 
 function route(request: NextRequest): NextResponse {
-  const { pathname, search } = request.nextUrl;
+  const { search } = request.nextUrl;
+  // Next's own trailing-slash redirect is off (`skipTrailingSlashRedirect`): with it, a
+  // WordPress permalink — which always ended in `/` — took two hops to its article, the
+  // slash first and the article after. Every answer below is given for the bare path.
+  const pathname = withoutTrailingSlash(request.nextUrl.pathname);
 
   const match = legacyRedirect(pathname, request.nextUrl.searchParams);
-  if (!match) return uncachedAnswers(request);
+  if (!match) return uncachedAnswers(request, pathname);
 
   if (match.status === 410) {
     return new NextResponse('Esta página foi removida permanentemente.', {
@@ -42,12 +46,8 @@ function route(request: NextRequest): NextResponse {
     });
   }
 
-  const url = request.nextUrl.clone();
-  url.pathname = match.to;
   // The query string is preserved unless the rule replaced it (e.g. `?p=123`).
-  url.search = match.dropQuery ? '' : search;
-
-  return NextResponse.redirect(url, match.status);
+  return NextResponse.redirect(at(request, match.to, match.dropQuery ? '' : search), match.status);
 }
 
 /**
@@ -60,25 +60,38 @@ function route(request: NextRequest): NextResponse {
  * is rewritten — the address stays the old one — to `/legado/[slug]`, which renders on
  * request and redirects with its destination.
  */
-function uncachedAnswers(request: NextRequest): NextResponse {
-  const { pathname, search } = request.nextUrl;
+function uncachedAnswers(request: NextRequest, pathname: string): NextResponse {
+  const { search } = request.nextUrl;
 
   const listing = firstPageRedirect(pathname);
-  if (listing) {
-    const url = request.nextUrl.clone();
-    url.pathname = listing;
-    url.search = search;
-    return NextResponse.redirect(url, 308);
-  }
+  if (listing) return NextResponse.redirect(at(request, listing, search), 308);
 
   const permalink = legacyPermalinkCandidate(pathname);
-  if (permalink) {
-    const url = request.nextUrl.clone();
-    url.pathname = `/legado/${permalink}`;
-    return NextResponse.rewrite(url);
-  }
+  if (permalink) return NextResponse.rewrite(at(request, `/legado/${permalink}`, search));
+
+  // Anything else asked for with a trailing slash goes to the address without it, as
+  // Next would have sent it: one URL per page.
+  if (pathname !== request.nextUrl.pathname) return NextResponse.redirect(at(request, pathname, search), 308);
 
   return NextResponse.next();
+}
+
+/**
+ * An address on this site, built as a plain `URL`. A clone of `request.nextUrl` remembers
+ * that the request ended in a slash and puts it back on whatever path it is given, so a
+ * redirect from `/filmes/` would land on `/cinema/` — itself one more redirect.
+ */
+function at(request: NextRequest, pathname: string, search: string): URL {
+  const url = new URL(request.url);
+  url.pathname = pathname;
+  url.search = search;
+  return url;
+}
+
+/** `/a/b/` → `/a/b`; the root stays `/`. */
+function withoutTrailingSlash(pathname: string): string {
+  if (pathname.length <= 1) return pathname;
+  return pathname.replace(/\/+$/, '') || '/';
 }
 
 /**

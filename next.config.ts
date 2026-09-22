@@ -76,6 +76,9 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // The middleware strips the trailing slash itself, so that a WordPress permalink (which
+  // always ended in one) reaches its article in a single redirect instead of two.
+  skipTrailingSlashRedirect: true,
   /*
    * Standalone output is what the container image runs (Dockerfile): a self-contained
    * `server.js` with only the traced dependencies. It is opt-in through `NEXT_OUTPUT`
