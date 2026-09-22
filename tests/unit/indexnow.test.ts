@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { INDEXNOW_KEY, announce } from '../../lib/indexnow';
+import { INDEXNOW_KEY, announce, worthAnnouncing } from '../../lib/indexnow';
 
 const SITE = 'https://www.maquinanerd.com.br';
 
@@ -58,5 +58,23 @@ describe('announce — IndexNow', () => {
       throw new TypeError('fetch failed');
     }) as typeof fetch;
     expect(await announce(['/cinema/x'], { appEnv: 'production', siteUrl: SITE, fetchImpl: broken })).toBe('failed');
+  });
+});
+
+describe('worthAnnouncing — only fresh news is pinged', () => {
+  const now = Date.parse('2026-09-22T15:00:00Z');
+
+  it('pings a story published or updated within 48 hours', () => {
+    expect(worthAnnouncing('article.published', '2026-09-22T14:59:00Z', now)).toBe(true);
+    expect(worthAnnouncing('article.updated', '2026-09-20T16:00:00Z', now)).toBe(true);
+  });
+
+  it('never pings the archive an import session rewrites, nor a scheduled story', () => {
+    // An import delivers article.published for a post from 2025.
+    expect(worthAnnouncing('article.published', '2025-08-19T15:04:54Z', now)).toBe(false);
+    expect(worthAnnouncing('article.updated', '2026-09-20T14:00:00Z', now)).toBe(false);
+    expect(worthAnnouncing('article.scheduled', '2026-09-22T14:59:00Z', now)).toBe(false);
+    expect(worthAnnouncing('article.published', '2026-09-23T15:00:00Z', now)).toBe(false);
+    expect(worthAnnouncing('article.published', 'não é data', now)).toBe(false);
   });
 });

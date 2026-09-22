@@ -14,6 +14,25 @@ export const INDEXNOW_KEY = '19c2fbc7303545bff929e721735ba76b';
 const ENDPOINT = 'https://api.indexnow.org/indexnow';
 const TIMEOUT_MS = 5_000;
 
+/** How recent a publication must be to be announced. */
+export const FRESH_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * Whether a delivery is worth a ping: a publication or an update of a story published in
+ * the last 48 hours — news, which is what IndexNow is for.
+ *
+ * Decided from the signed payload alone, before any CMS read. Kal El also delivers
+ * `article.published` and `article.updated` for every article an import session writes —
+ * tens of thousands of stories years old — and pinging those would flood the engines and
+ * spend the service token's request budget the whole site shares. A correction to an old
+ * story is left to the crawlers.
+ */
+export function worthAnnouncing(event: string, publishedAt: string, now: number = Date.now()): boolean {
+  if (event !== 'article.published' && event !== 'article.updated') return false;
+  const at = Date.parse(publishedAt);
+  return Number.isFinite(at) && at <= now + 60_000 && now - at <= FRESH_MS;
+}
+
 export interface IndexNowDeps {
   fetchImpl?: typeof fetch;
   /** `APP_ENV`: only production pings. A staging URL must never be announced. */

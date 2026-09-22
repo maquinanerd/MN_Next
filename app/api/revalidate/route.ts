@@ -16,7 +16,7 @@ import { MemoryNonceStore, verifyWebhook } from '@mn/content/security/webhook';
 import type { KalElArticlePublishedPayload } from '@mn/content/kalel/dto';
 
 import { optional, repo } from '../../../lib/content';
-import { announce } from '../../../lib/indexnow';
+import { announce, worthAnnouncing } from '../../../lib/indexnow';
 import { correlationId, logger } from '../../../lib/logger';
 import { seoContext } from '../../../lib/seo-context';
 
@@ -106,11 +106,11 @@ export async function POST(request: Request): Promise<Response> {
 
   for (const tag of tags) revalidateTag(tag);
 
-  // Bing and the other IndexNow engines hear of a published or changed article now, not at
-  // their next crawl. After the response, so the ping never delays or fails the delivery;
-  // the article's canonical path comes from the CMS, as its own page reads it.
+  // Bing and the other IndexNow engines hear of a fresh story now, not at their next crawl
+  // (`worthAnnouncing`: never the archive an import rewrites). After the response, so the
+  // ping never delays or fails the delivery; the canonical path comes from the CMS.
   const slug = payload.slug && isValidSlug(payload.slug) ? payload.slug : null;
-  if (slug && verdict.event !== 'article.scheduled') {
+  if (slug && worthAnnouncing(verdict.event, payload.publishedAt)) {
     after(async () => {
       const article = await optional(repo().getArticleBySlug(slug), 'indexnow-article');
       const path = article ? articlePath(article) : null;
