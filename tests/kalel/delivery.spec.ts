@@ -178,6 +178,29 @@ test.describe('media comes back through the authenticated proxy', () => {
     expect(JSON.stringify(res.headers())).not.toContain('ke_st.');
   });
 
+  test('an old WordPress image URL is sent on to the same picture', async ({ request }) => {
+    const picture = CORPUS_MEDIA[3];
+    expect(picture?.filename).toBe('capa-3.jpg');
+    const target = `/media/${String(picture?.id)}`;
+    // The original, a size WordPress cut from it, the WebP a plugin wrote next to it.
+    // `capa-3` is also the start of capa-30…capa-39: only the exact name counts.
+    for (const file of ['capa-3.jpg', 'capa-3-300x169.jpg', 'capa-3.jpg.webp']) {
+      const res = await request.get(`/wp-content/uploads/2025/07/${file}`, { maxRedirects: 0 });
+      expect(res.status(), file).toBe(301);
+      expect(res.headers()['location'], file).toBe(target);
+    }
+    const image = await request.get('/wp-content/uploads/2025/07/capa-3-300x169.jpg');
+    expect(image.status()).toBe(200);
+    expect(image.headers()['content-type']).toContain('image/');
+  });
+
+  test('an old upload that is not in the library, or not an image, is a 404', async ({ request }) => {
+    for (const file of ['nunca-existiu.jpg', 'capa-3.pdf', 'capa-3.jpg/extra']) {
+      const res = await request.get(`/wp-content/uploads/2025/07/${file}`, { maxRedirects: 0 });
+      expect(res.status(), file).toBe(404);
+    }
+  });
+
   test('an unknown media id is a 404, not a 500', async ({ request }) => {
     // Exactly 404. Accepting 502 as well would let a broken media provider pass as if it
     // had correctly reported a missing image.
