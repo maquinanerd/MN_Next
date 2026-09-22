@@ -1,4 +1,6 @@
 import { createHmac } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { expect, test, type APIRequestContext } from '@playwright/test';
 
 /**
@@ -495,6 +497,23 @@ test.describe('legacy URLs', () => {
     const res = await page.goto('/isto-nao-e-nada-disso');
     expect(res?.status()).toBe(404);
     await expect(page.getByRole('link', { name: 'Ir para a home' })).toBeVisible();
+  });
+
+  test('an old WordPress image URL is sent on through the committed table', async ({ request }) => {
+    // The production table (data/legacy-media.tsv.gz), read the way the server reads it: its
+    // first line, and a name outside ASCII, percent-encoded as a browser sends it.
+    const lines = gunzipSync(readFileSync('data/legacy-media.tsv.gz')).toString('utf8').split('\n').filter(Boolean);
+    const accented = lines.find((l) => [...l].some((ch) => ch.charCodeAt(0) > 127));
+    for (const line of [lines[0], accented]) {
+      expect(line).toBeTruthy();
+      const tab = (line ?? '').lastIndexOf('\t');
+      const path = (line ?? '').slice(0, tab);
+      const id = (line ?? '').slice(tab + 1);
+      const url = `/wp-content/uploads/${path.split('/').map(encodeURIComponent).join('/')}`;
+      const res = await request.get(url, { maxRedirects: 0 });
+      expect(res.status(), path).toBe(301);
+      expect(res.headers()['location'], path).toBe(`/media/${id}`);
+    }
   });
 
   test('a WordPress endpoint that is gone answers 410', async ({ request }) => {

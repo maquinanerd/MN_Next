@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { originalOf, uploadKeys } from '../../lib/legacy-media';
 import { parseMediaTable } from '../../lib/legacy-media-table';
+import { mediaTableFrom } from '../../scripts/wp/build-media-redirects';
+import { Counter } from '../../scripts/wp/cli';
 
 describe('uploadKeys — the table keys an old upload URL may have', () => {
   it('tries the path as asked, then the original a size was cut from, month folder kept', () => {
@@ -65,5 +67,56 @@ describe('parseMediaTable', () => {
       ['2025/07/capa.jpg', '0000000d-0003-4000-8000-000000000003'],
       ['2025/08/cena de ação.jpg', '0000000d-0004-4000-8000-000000000004'],
     ]);
+  });
+});
+
+describe('mediaTableFrom — the table media-redirects:build writes', () => {
+  const ID = (n: number): string => `0000000d-000${n}-4000-8000-00000000000${n}`;
+  const mappings = { 'wpMedia:1': ID(1), 'wpMedia:2': ID(2), 'wpMedia:3': ID(3), 'wpMedia:9': 'not-a-uuid' };
+
+  it('maps each imported attachment by its exact path, month folder included', () => {
+    const table = mediaTableFrom(
+      [
+        { id: 1, file: '2025/07/image-1.png' },
+        { id: 2, file: '2025/08/image-1.png' },
+      ],
+      mappings,
+      new Counter(['attachments', 'mapped', 'notImported', 'originals', 'unsafe']),
+    );
+    expect(table.get('2025/07/image-1.png')).toBe(ID(1));
+    expect(table.get('2025/08/image-1.png')).toBe(ID(2));
+  });
+
+  it('gives a -scaled upload its original name too, unless an attachment of its own holds it', () => {
+    const counts = new Counter(['attachments', 'mapped', 'notImported', 'originals', 'unsafe']);
+    const table = mediaTableFrom(
+      [
+        { id: 1, file: '2025/07/poster-scaled.jpg' },
+        { id: 2, file: '2025/07/capa-scaled.jpg' },
+        { id: 3, file: '2025/07/capa.jpg' },
+      ],
+      mappings,
+      counts,
+    );
+    expect(table.get('2025/07/poster.jpg')).toBe(ID(1));
+    expect(table.get('2025/07/capa.jpg')).toBe(ID(3));
+    expect(counts.toJSON()).toMatchObject({ mapped: 3, originals: 1 });
+  });
+
+  it('leaves out what was not imported, and any path that is not plain', () => {
+    const counts = new Counter(['attachments', 'mapped', 'notImported', 'originals', 'unsafe']);
+    const table = mediaTableFrom(
+      [
+        { id: 7, file: '2025/07/sem-mapeamento.jpg' },
+        { id: 9, file: '2025/07/id-invalido.jpg' },
+        { id: 1, file: '../../etc/passwd' },
+        { id: 2, file: '2025/07/com\ttab.jpg' },
+        { id: 3, file: '' },
+      ],
+      mappings,
+      counts,
+    );
+    expect(table.size).toBe(0);
+    expect(counts.toJSON()).toMatchObject({ notImported: 2, unsafe: 3 });
   });
 });

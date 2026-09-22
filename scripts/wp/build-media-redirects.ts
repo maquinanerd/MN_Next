@@ -40,6 +40,46 @@ const FLAGS = [
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+/**
+ * The table, from the attachments (id and `_wp_attached_file`) and the import's mappings.
+ *
+ * Each imported attachment claims its own path. A `-scaled` or `-rotated` one also claims
+ * its original's — the name WordPress cut the sizes under — but only when no attachment of
+ * its own holds that path; between two such claims, the first in the dump keeps it.
+ */
+export function mediaTableFrom(
+  attachments: Iterable<{ id: number; file: string }>,
+  mappings: Readonly<Record<string, string>>,
+  counts: Counter,
+): Map<string, string> {
+  const table = new Map<string, string>();
+  const originals: [string, string][] = [];
+  for (const { id: wpId, file } of attachments) {
+    counts.inc('attachments');
+    const id = mappings[mappingKey('media', wpId)];
+    if (!id || !UUID.test(id)) {
+      counts.inc('notImported');
+      continue;
+    }
+    // A path is a key only if it is plain: no traversal, no control characters.
+    if (!file || file.includes('..') || file.startsWith('/') || /[\t\n\r\0]/.test(file)) {
+      counts.inc('unsafe');
+      continue;
+    }
+    table.set(file, id);
+    counts.inc('mapped');
+    const original = originalOf(file);
+    if (original !== file) originals.push([original, id]);
+  }
+  for (const [path, id] of originals) {
+    if (!table.has(path)) {
+      table.set(path, id);
+      counts.inc('originals');
+    }
+  }
+  return table;
+}
+
 async function main(): Promise<void> {
   const { values } = parseArgs(process.argv.slice(2), FLAGS);
   if (values.help) {
@@ -63,37 +103,11 @@ async function main(): Promise<void> {
   const mappings = state.mappings ?? {};
 
   const archive = WordPressArchive.fromEnv({ ...(values.dump ? { dumpPath: String(values.dump) } : {}) });
-  const table = new Map<string, string>();
-  const originals: [string, string][] = [];
-
+  const attachments: { id: number; file: string }[] = [];
   for await (const batch of archive.media()) {
-    for (const asset of batch) {
-      summary.counts.inc('attachments');
-      const id = mappings[mappingKey('media', asset.id)];
-      if (!id || !UUID.test(id)) {
-        summary.counts.inc('notImported');
-        continue;
-      }
-      const file = asset.media_details?.file ?? '';
-      // A path is a key only if it is plain: no traversal, no control characters.
-      if (!file || file.includes('..') || file.startsWith('/') || /[\t\n\r\0]/.test(file)) {
-        summary.counts.inc('unsafe');
-        continue;
-      }
-      table.set(file, id);
-      summary.counts.inc('mapped');
-      // The sizes WordPress cut are named after the original, not after its `-scaled` copy.
-      const original = originalOf(file);
-      if (original !== file) originals.push([original, id]);
-    }
+    for (const asset of batch) attachments.push({ id: asset.id, file: asset.media_details?.file ?? '' });
   }
-  // An original's name is only claimed when no attachment of its own already holds it.
-  for (const [path, id] of originals) {
-    if (!table.has(path)) {
-      table.set(path, id);
-      summary.counts.inc('originals');
-    }
-  }
+  const table = mediaTableFrom(attachments, mappings, summary.counts);
 
   const lines = [...table.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([p, id]) => `${p}\t${id}`);
   const body = gzipSync(Buffer.from(`${lines.join('\n')}\n`, 'utf8'), { level: 9 });

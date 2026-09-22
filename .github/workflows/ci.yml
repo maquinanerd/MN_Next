@@ -149,13 +149,18 @@ jobs:
       - name: Sends an old WordPress image URL on
         run: |
           set -euo pipefail
-          entry=$(gunzip -c data/legacy-media.tsv.gz | head -1)
-          path=${entry%%$'\t'*}
-          id=${entry##*$'\t'}
-          encoded=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$path")
-          location=$(curl -s -o /dev/null -w '%{redirect_url}' "http://127.0.0.1:3000/wp-content/uploads/$encoded")
-          echo "$path -> $location"
-          test "$location" = "http://127.0.0.1:3000/media/$id"
+          # Decompressed whole first: `gunzip | head` dies of SIGPIPE under pipefail.
+          gunzip -c data/legacy-media.tsv.gz > "$RUNNER_TEMP/legacy-media.tsv"
+          check() {
+            local path=${1%%$'\t'*} id=${1##*$'\t'} encoded location
+            encoded=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$path")
+            location=$(curl -s -o /dev/null -w '%{redirect_url}' "http://127.0.0.1:3000/wp-content/uploads/$encoded")
+            echo "$path -> $location"
+            test "$location" = "http://127.0.0.1:3000/media/$id"
+          }
+          check "$(sed -n 1p "$RUNNER_TEMP/legacy-media.tsv")"
+          # And a name outside ASCII, percent-encoded on the wire and decoded by Next.
+          check "$(LC_ALL=C grep -m1 -P '[^\x00-\x7F]' "$RUNNER_TEMP/legacy-media.tsv")"
       - if: failure()
         run: docker logs portal || true
 
