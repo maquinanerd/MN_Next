@@ -1018,28 +1018,40 @@ pedido terminava em barra e a recoloca: `/filmes/` iria para `/cinema/`, mais um
 ### 7.22 Imagens antigas, IndexNow e um teste que gravava o estado real (2026-09-22)
 
 **Imagens antigas (T11).** Toda imagem do WordPress morava em `/wp-content/uploads/…`, e
-esses endereços continuam no Google Imagens, em páginas de outros sites e em links antigos. A
-importação guardou cada imagem com o nome do arquivo original. A rota
-`app/wp-content/uploads/[...path]` deduz do endereço os nomes possíveis
-(`lib/legacy-media.ts`):
+esses endereços continuam no Google Imagens, em páginas de outros sites e em links antigos.
+`pnpm media-redirects:build` cruza o dump (o caminho real de cada anexo,
+`_wp_attached_file`) com o estado da sessão de importação (`wpMedia:<id>` → id no Kal El) e
+grava `data/legacy-media.tsv.gz`: 76.018 caminhos, 2,6 MB comprimidos. São 73.128 anexos e
+2.901 originais por trás de um `-scaled`; 41 anexos não foram importados.
 
-- o próprio nome pedido;
+A rota `app/wp-content/uploads/[...path]` tenta, pela ordem (`lib/legacy-media.ts`):
+
+- o caminho pedido;
 - o original de onde saiu um tamanho (`-300x169`);
-- o original por trás de `-scaled` ou `-rotated`;
-- o arquivo sem o `.webp` que um plugin acrescentou.
+- o original por trás de `-scaled` ou `-rotated`.
 
-Em seguida faz uma busca por nome no Kal El (`q`) e responde 301 para `/media/{id}`. O nome
-é aplicado na ordem de probabilidade e só vale se exatamente uma imagem o tiver. Duas imagens
-com o mesmo nome, enviadas em meses diferentes, dão 404, nunca uma foto que pode ser a
-errada. O redirecionamento fica uma semana em cache na Cloudflare, e o 404 fica uma hora.
+Antes disso, tira o `.webp` que um plugin acrescentou. Se achar, responde 301 para
+`/media/{id}`; se não, 404. Não há chamada ao CMS: a tabela é lida uma vez e fica em memória.
+O redirecionamento fica uma semana em cache na Cloudflare, e o 404, uma hora. Numa amostra de 20
+entradas, os 20 ids existem em produção.
 
-Descartado: um mapa gerado no build a partir do dump. Seriam 73 mil entradas, uns 5 MB de
-JSON no repositório e na imagem, para acertar também o caso ambíguo, que é raro.
+**Primeira versão, descartada na revisão:** buscar a imagem pelo nome no Kal El (`q`). A
+biblioteca também guarda 21 mil fotos copiadas de outros sites com o nome original, e o editor
+do WordPress repete `image-1.png` todo mês. A busca mandaria endereços antigos para a foto de
+outro site, sem paginação e com `_` virando curinga no `ilike`. A pasta do mês, que só a
+tabela conhece, é o que separa duas `image-1.png`.
 
-**IndexNow.** Depois de responder a uma entrega do webhook de publicação (`article.published`
-ou `article.updated`), o portal lê o endereço canônico da matéria no CMS e avisa o IndexNow
-(Bing, Yandex, Seznam, Naver):
+**Depois da segunda sessão:** gerar a tabela de novo com o estado dela
+(`--import-state artifacts/migration/producao/state.json`) e commitar.
 
+**IndexNow.** Depois de responder a uma entrega do webhook de publicação, o portal lê o
+endereço canônico da matéria no CMS e avisa o IndexNow (Bing, Yandex, Seznam, Naver):
+
+- só para uma matéria publicada nas últimas 48 horas (`worthAnnouncing`), decidido pelo
+  `publishedAt` assinado, antes de qualquer leitura. O Kal El também entrega
+  `article.published` e `article.updated` para cada matéria que uma sessão de importação
+  grava, dezenas de milhares de matérias antigas, e avisar essas inundaria os buscadores e
+  gastaria o limite de requisições do token que o site inteiro divide;
 - só em produção, e com 5 s de prazo;
 - uma falha vai para o log e nunca derruba a entrega (`after()` do Next);
 - a chave é pública por definição: está em `lib/indexnow.ts` e é servida em

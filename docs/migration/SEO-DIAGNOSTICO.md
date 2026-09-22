@@ -215,7 +215,7 @@ fontes primárias. O Máquina Nerd publica, em volume, a tradução resumida do 
 | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | Endereços antigos com destino (T1) e capas liberadas no `robots.txt` (T2)                                      | **feito** (PR #8, no ar; o cache da Cloudflare não precisou de limpeza) |
 | Voltar a publicar no Kal El (T3), mas **não** no ritmo de antes                                                | decisão do dono                                                         |
-| Tirar do Search Console os sitemaps do WordPress (`post-sitemap.xml`, `page-sitemap.xml`, `sitemap_index.xml`) | operacional                                                             |
+| Tirar do Search Console os sitemaps do WordPress (`post-sitemap.xml`, `page-sitemap.xml`, `sitemap_index.xml`) | **feito** em 2026-09-22                                                 |
 | Terminar a segunda sessão de importação (3 matérias, 17 tags, 235 nomes com `&amp;`)                           | aguardando o comando do dono                                            |
 
 ### P1 — próximas semanas, no código
