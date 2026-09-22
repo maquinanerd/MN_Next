@@ -349,6 +349,39 @@ test.describe('search', () => {
 });
 
 test.describe('discovery surfaces', () => {
+  test('the IndexNow key is served where the engines look for it', async ({ request }) => {
+    const res = await request.get('/19c2fbc7303545bff929e721735ba76b.txt');
+    expect(res.status()).toBe(200);
+    expect((await res.text()).trim()).toBe('19c2fbc7303545bff929e721735ba76b');
+  });
+
+  test('a signed publication is acknowledged, with the IndexNow ping scheduled after the response', async ({
+    request,
+  }) => {
+    // The secret `playwright.config.ts` hands the server. Outside production the ping is
+    // skipped; what this proves is that scheduling it inside a real request works.
+    const body = JSON.stringify({
+      articleId: '7d3f0c2a-5b1e-4c8d-9a6f-2e4b1c0d9f8a',
+      slug: 'o-misterio-de-scarlett-johansson-a-estrela-perdida-da-marvel',
+      publishedAt: '2026-09-22T12:00:00.000Z',
+      version: 2,
+    });
+    const signature = `sha256=${createHmac('sha256', 'playwright-webhook-secret-000000000000').update(body).digest('hex')}`;
+    const res = await request.post('/api/revalidate', {
+      data: body,
+      headers: {
+        'content-type': 'application/json',
+        'x-kal-el-signature': signature,
+        'x-kal-el-event': 'article.updated',
+        'x-kal-el-idempotency': `e2e-${Date.now()}-${Math.random()}`,
+      },
+    });
+    expect(res.status()).toBe(200);
+    expect((await res.json()).data.revalidated).toBe(true);
+    // And the server is still answering once the scheduled work has run.
+    expect((await request.get('/api/health')).status()).toBe(200);
+  });
+
   test('robots.txt closes a deployment that is not the real site', async ({ request }) => {
     const body = await (await request.get('/robots.txt')).text();
     expect(body).toContain('Disallow: /');
