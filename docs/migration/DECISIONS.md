@@ -951,10 +951,19 @@ A revisão independente do diff (o Codex não roda nesta máquina, §7.12) mudou
 - **A rota de recorte custa pouco por pedido e roda pouco de cada vez.**
   - Query string vira 301 para o endereço limpo: a Cloudflare usa a query na chave do cache,
     e cada `?x=n` seria um recorte novo.
-  - No máximo 2 recortes simultâneos e 32 na fila; acima disso, 503 com `Retry-After`.
-  - O original é lido até 25 MB e decodificado até 40 MP.
-  - `failOn: 'truncated'`, para que um JPEG antigo que termina antes da hora e abre em
-    qualquer navegador não quebre o recorte.
+  - No máximo 2 recortes simultâneos e 32 na fila; acima disso, 503 com `Retry-After`. Quem
+    desiste enquanto espera sai da fila sem gastar leitura no CMS.
+  - O download do original tem 10 s. Um CMS travado devolve o lugar na fila em vez de
+    segurá-lo pelos ~100 s que a Cloudflare espera.
+  - O original é lido até 25 MB e decodificado até 40 MP (`MAX_SOURCE_PIXELS`). O mesmo limite
+    decide se a URL do recorte é publicada; acima dele, a página usa o original.
+  - `failOn: 'none'`. A segunda revisão provou que `'truncated'` ainda recusa um JPEG que
+    termina antes da hora, comum no acervo antigo e aberto por qualquer navegador. Quem protege
+    o decodificador são os limites de bytes e pixels.
+  - Nenhum ajuste global do sharp (`concurrency`, `cache`): ele vale para o processo inteiro e
+    deixaria o `next/image` mais lento.
+- **O sitemap de tags lê os hubs de 4 em 4.** Um hub que o CMS não responde fica de fora e vai
+  para o log; o arquivo sai com cache de um minuto, em vez de um 500.
 - **A versão está no nome do arquivo** (`-v1`). O recorte é imutável por um ano em todas as
   camadas; mudar tamanho, qualidade ou estratégia exige trocar `RENDITION_VERSION`.
 - **As janelas de importação valem só para o acervo** (`externalKey` `wp:post:*`). Matéria

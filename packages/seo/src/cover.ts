@@ -58,13 +58,29 @@ const MEDIA_PATH = /^\/media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[
  */
 const MIN_SOURCE_WIDTH = 600;
 
-/** One crop of a cover, or null when the cover is not a CMS image or is too small for one. */
-export function coverVariant(
-  image: Pick<Image, 'url' | 'width'>,
-  variant: CoverVariant,
-): { url: string; width: number; height: number } | null {
+/**
+ * Above this the route refuses to decode the original (a decompression bomb stops there),
+ * so no rendition is published for it and the original is used instead. 40 megapixels is
+ * past any cover the archive holds — WordPress scaled uploads to 2560 px — though not past
+ * a 48 MP phone photo uploaded as it came.
+ */
+export const MAX_SOURCE_PIXELS = 40_000_000;
+
+/** The CMS id of an image the route can draw from, or null. */
+function renderableId(image: Pick<Image, 'url' | 'width' | 'height'>): string | null {
   const id = MEDIA_PATH.exec(image.url)?.[1];
   if (!id || image.width < MIN_SOURCE_WIDTH) return null;
+  if (image.height > 0 && image.width * image.height > MAX_SOURCE_PIXELS) return null;
+  return id;
+}
+
+/** One crop of a cover, or null when the cover is not a CMS image the route can draw from. */
+export function coverVariant(
+  image: Pick<Image, 'url' | 'width' | 'height'>,
+  variant: CoverVariant,
+): { url: string; width: number; height: number } | null {
+  const id = renderableId(image);
+  if (!id) return null;
   return { url: `/media/${id}/${renditionFile(variant)}`, ...COVER_VARIANTS[variant] };
 }
 
@@ -76,8 +92,8 @@ export function coverVariant(
 export function socialVariant(
   image: Pick<Image, 'url' | 'width' | 'height'>,
 ): { url: string; width: number; height: number } | null {
-  const id = MEDIA_PATH.exec(image.url)?.[1];
-  if (!id || image.width < MIN_SOURCE_WIDTH || !(image.height > 0)) return null;
+  const id = renderableId(image);
+  if (!id || !(image.height > 0)) return null;
   const width = Math.min(SOCIAL_WIDTH, image.width);
   return {
     url: `/media/${id}/${renditionFile('social')}`,

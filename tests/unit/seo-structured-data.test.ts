@@ -37,17 +37,25 @@ function article(overrides: Partial<Article> = {}): Article {
 
 describe('the cover Google and the social networks get', () => {
   it('crops a CMS cover in the three ratios Google asks for, 1200 px wide, as JPEG', () => {
-    expect(coverVariant({ url: `/media/${MEDIA_ID}`, width: 3200 }, '16x9')).toEqual({
+    expect(coverVariant({ url: `/media/${MEDIA_ID}`, width: 3200, height: 1800 }, '16x9')).toEqual({
       url: `/media/${MEDIA_ID}/16x9-v1.jpg`,
       width: 1200,
       height: 675,
     });
-    expect(coverVariant({ url: `/media/${MEDIA_ID}`, width: 3200 }, '1x1')?.height).toBe(1200);
+    expect(coverVariant({ url: `/media/${MEDIA_ID}`, width: 3200, height: 1800 }, '1x1')?.height).toBe(1200);
   });
 
   it('leaves alone a cover that is not a CMS image, or is too small to crop', () => {
-    expect(coverVariant({ url: '/brand/og-default.jpg', width: 1200 }, '16x9')).toBeNull();
-    expect(coverVariant({ url: `/media/${MEDIA_ID}`, width: 400 }, '16x9')).toBeNull();
+    expect(coverVariant({ url: '/brand/og-default.jpg', width: 1200, height: 630 }, '16x9')).toBeNull();
+    expect(coverVariant({ url: `/media/${MEDIA_ID}`, width: 400, height: 225 }, '16x9')).toBeNull();
+  });
+
+  it('publishes no rendition of an original the route would refuse to decode', () => {
+    // 8000 × 6000 is a 48 MP phone photo: past the route's limit, so the original is used.
+    expect(coverVariant({ url: `/media/${MEDIA_ID}`, width: 8000, height: 6000 }, '16x9')).toBeNull();
+    expect(socialVariant({ url: `/media/${MEDIA_ID}`, width: 8000, height: 6000 })).toBeNull();
+    const huge = article({ cover: { url: `/media/${MEDIA_ID}`, width: 8000, height: 6000, alt: 'Foto' } });
+    expect(articleNode(ctx, huge)['image']).toMatchObject({ url: `https://www.maquinanerd.com.br/media/${MEDIA_ID}` });
   });
 
   it('declares the three crops as the Article image', () => {

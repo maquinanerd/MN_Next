@@ -1,9 +1,15 @@
 import { NextResponse } from 'next/server';
-import sharp from 'sharp';
-import { COVER_VARIANTS, SOCIAL_WIDTH, parseRenditionFile, type Rendition } from '@mn/seo';
+import { parseRenditionFile } from '@mn/seo';
 
 import { correlationId, logger } from '../../../../lib/logger';
 import { IMMUTABLE, mediaSource } from '../../../../lib/media-proxy';
+import {
+  DOWNLOAD_TIMEOUT_MS,
+  MAX_INPUT_BYTES,
+  createQueue,
+  readCapped,
+  renderRendition,
+} from '../../../../lib/renditions';
 
 /**
  * One rendition of a CMS image as a JPEG: a crop of a cover — `16x9-v1.jpg`, `4x3-v1.jpg`,
@@ -18,84 +24,15 @@ import { IMMUTABLE, mediaSource } from '../../../../lib/media-proxy';
  * Rendered on request — a route handler that reads the request is dynamic — and then cached
  * for a year by the CDN and the browser: the URL names the source by id and the rendering by
  * version, and neither ever changes under it. Every miss costs a download and a decode, so
- * the route bounds what one can cost and how many run at once, and refuses the query strings
- * that would turn one cached URL into as many misses as someone cares to ask for.
+ * the route bounds what one can cost, how long its download may hold a slot and how many run
+ * at once, and refuses the query strings that would turn one cached URL into as many misses
+ * as someone cares to ask for (lib/renditions.ts).
  */
 
 export const runtime = 'nodejs';
 
-/** A decompression bomb stops here, before it reaches memory. 40 megapixels is past any photo. */
-const MAX_INPUT_PIXELS = 40_000_000;
-/** And an original this large is not a photo either; it is not read past this. */
-const MAX_INPUT_BYTES = 25 * 1024 * 1024;
-/** Renditions drawn at the same time; the rest wait their turn. */
-const MAX_CONCURRENT = 2;
-/** Past this many waiting, a request is told to come back rather than queued. */
-const MAX_WAITING = 32;
-
-// One libvips thread per image and no operation cache: a crop is drawn once and then served
-// by the CDN, and the portal shares its machine with the CMS.
-sharp.concurrency(1);
-sharp.cache(false);
-
-let running = 0;
-const waiting: (() => void)[] = [];
-
-/** Runs `work` when a slot is free; null when the queue is already full. */
-async function inTurn<T>(work: () => Promise<T>): Promise<T | null> {
-  if (running >= MAX_CONCURRENT) {
-    if (waiting.length >= MAX_WAITING) return null;
-    // The slot is handed over by the one that frees it, so `running` never overshoots.
-    await new Promise<void>((resolve) => waiting.push(resolve));
-  } else {
-    running += 1;
-  }
-  try {
-    return await work();
-  } finally {
-    const next = waiting.shift();
-    if (next) next();
-    else running -= 1;
-  }
-}
-
-/** The body, read up to `max` bytes; null past it. */
-async function readCapped(body: ReadableStream<Uint8Array>, max: number): Promise<Buffer | null> {
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > max) {
-      await reader.cancel();
-      return null;
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks, total);
-}
-
-function render(input: Buffer, rendition: Rendition): Promise<Buffer> {
-  // `truncated`, not the default `warning`: a JPEG from the old archive often ends early and
-  // still opens everywhere, and a crop must not be the one place it fails.
-  const image = sharp(input, { limitInputPixels: MAX_INPUT_PIXELS, failOn: 'truncated' }).rotate();
-  const sized =
-    rendition === 'social'
-      ? image.resize(SOCIAL_WIDTH, undefined, { fit: 'inside', withoutEnlargement: true })
-      : image.resize(COVER_VARIANTS[rendition].width, COVER_VARIANTS[rendition].height, {
-          fit: 'cover',
-          position: sharp.strategy.attention,
-        });
-  return (
-    sized
-      // A transparent PNG has no background of its own, and JPEG has no transparency.
-      .flatten({ background: '#ffffff' })
-      .jpeg({ quality: 82, mozjpeg: true })
-      .toBuffer()
-  );
-}
+/** Two drawn at a time, thirty-two waiting; past that a request is told to come back. */
+const queue = createQueue(2, 32);
 
 export async function GET(
   request: Request,
@@ -111,8 +48,11 @@ export async function GET(
   const url = new URL(request.url);
   if (url.search) return new NextResponse(null, { status: 301, headers: { location: url.pathname } });
 
-  const drawn = await inTurn(async (): Promise<Response> => {
-    const source = await mediaSource(id, request.signal, cid);
+  const drawn = await queue.run(async (): Promise<Response> => {
+    // A CMS that stops answering gives the slot back instead of holding it for as long as
+    // the reader waits.
+    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS)]);
+    const source = await mediaSource(id, signal, cid);
     if (source instanceof NextResponse) return source;
 
     const declared = Number(source.upstream.headers.get('content-length') ?? '0');
@@ -133,7 +73,7 @@ export async function GET(
 
     let jpeg: Buffer;
     try {
-      jpeg = await render(input, rendition);
+      jpeg = await renderRendition(input, rendition);
     } catch (err) {
       logger.warn('media.variant-failed', { correlationId: cid, mediaId: id, variant: rendition, error: String(err) });
       return new NextResponse('Unprocessable image', { status: 422 });
@@ -149,10 +89,9 @@ export async function GET(
         'content-security-policy': "default-src 'none'; sandbox",
       },
     });
-  });
+  }, request.signal);
 
-  if (!drawn) {
-    return new NextResponse('Busy', { status: 503, headers: { 'retry-after': '5', 'cache-control': 'no-store' } });
-  }
-  return drawn;
+  if (drawn) return drawn;
+  if (request.signal.aborted) return new NextResponse(null, { status: 499 });
+  return new NextResponse('Busy', { status: 503, headers: { 'retry-after': '5', 'cache-control': 'no-store' } });
 }

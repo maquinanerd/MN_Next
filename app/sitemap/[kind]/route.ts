@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import type { SitemapKind } from '@mn/content';
 import { urlSet } from '@mn/seo';
 
-import { repo } from '../../../lib/content';
+import { discoveryCacheControl, repo } from '../../../lib/content';
 import { indexableHubTags } from '../../../lib/content/tags';
 import { seoContext } from '../../../lib/seo-context';
 
@@ -35,13 +35,9 @@ export async function GET(_request: Request, ctx: { params: Promise<{ kind: stri
   if (!parsed || parsed.page < 1) notFound();
 
   if (parsed.kind === 'tags') {
-    const hubs = await indexableHubTags();
-    return xml(
-      urlSet(
-        seoContext(),
-        hubs.map((slug) => ({ path: `/tag/${slug}` })),
-      ),
-    );
+    const { slugs, degraded } = await indexableHubTags();
+    const entries = slugs.map((slug) => ({ path: `/tag/${slug}` }));
+    return xml(urlSet(seoContext(), entries), degraded);
   }
 
   const page = await repo().listSitemap(parsed.kind, String(parsed.page));
@@ -51,11 +47,12 @@ export async function GET(_request: Request, ctx: { params: Promise<{ kind: stri
   return xml(urlSet(seoContext(), page.entries));
 }
 
-function xml(body: string): Response {
+/** Cached an hour; a minute while degraded, so the next read repairs it (`discovery`). */
+function xml(body: string, degraded = false): Response {
   return new Response(body, {
     headers: {
       'content-type': 'application/xml; charset=utf-8',
-      'cache-control': 'public, s-maxage=3600, stale-while-revalidate=7200',
+      'cache-control': discoveryCacheControl(degraded, 3600),
     },
   });
 }
