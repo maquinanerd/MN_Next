@@ -120,7 +120,14 @@ export function AuthorRow({
                 </span>
               ))}
             </span>
-          ) : null}
+          ) : (
+            // An article saved in the CMS without an author is signed by the newsroom, as its
+            // structured data is: never a story nobody answers for.
+            <span className="text-14 font-extrabold tracking-[-0.02em]">
+              {por ? 'Por ' : ''}
+              <Link href="/sobre">Redação Máquina Nerd</Link>
+            </span>
+          )}
           <Dates materia={materia} inline />
         </span>
       </div>

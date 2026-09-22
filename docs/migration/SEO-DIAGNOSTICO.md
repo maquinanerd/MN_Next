@@ -54,6 +54,7 @@ reavaliado quando o conjunto muda, e isso costuma aparecer em core updates segui
 | 16/09/2026         | virada para o portal novo no Kal El                                               |
 | 17/09/2026         | importação do acervo (40.907 matérias)                                            |
 | 16 a 21/09/2026    | nenhuma matéria nova publicada; sitemap de notícias vazio                         |
+| 21/09/2026         | site fora do ar das 19:56 às 23:45 UTC (503), falha do Docker num deploy (§3.3)   |
 
 ---
 
@@ -125,26 +126,34 @@ publicados duas vezes com título e corpo idênticos (DECISIONS §7.16 e §7.18)
 
 Problemas técnicos encontrados em produção:
 
-| #   | Problema                                                                                   | Efeito                                                                                                                 | Situação              |
-| --- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| T1  | Endereço antigo (`/{slug}`) respondia 308 sem `Location` ou 404 em cache (DECISIONS §7.19) | as 41.316 URLs indexadas do WordPress não levavam a lugar nenhum; 0 de 40 na amostra chegavam à matéria                | **corrigido** (PR #8) |
-| T2  | `robots.txt` bloqueava `/media/`                                                           | o Google não podia buscar nenhuma capa: sem card grande no Discover, sem Google Imagens, imagem do Article inacessível | **corrigido** (PR #8) |
-| T3  | Nenhuma matéria publicada desde 16/09                                                      | sitemap de notícias vazio (erro no Search Console); sem frescor para Notícias e Discover                               | depende da redação    |
-| T4  | Capa enviada em AVIF sai AVIF no `og:image`                                                | Facebook e WhatsApp não mostram AVIF: link compartilhado sem imagem                                                    | a corrigir (P1)       |
-| T5  | Dados estruturados com uma imagem só, no tamanho original (até 3200×1800)                  | o Google recomenda 16:9, 4:3 e 1:1, com pelo menos 1200 px de largura                                                  | a corrigir (P1)       |
-| T6  | `author: []` em matéria criada no Kal El sem autor                                         | Article sem autor; nenhuma assinatura visível                                                                          | a corrigir (P1)       |
-| T7  | `dateModified` de 40.907 matérias = data da importação                                     | parece atualização em massa, o "frescor artificial" que as diretrizes desaconselham                                    | a corrigir (P1)       |
-| T8  | 37.150 tags indexáveis e no sitemap, a maioria com uma ou duas matérias                    | páginas finas em volume; dilui rastreamento e a avaliação do site                                                      | a corrigir (P1)       |
-| T9  | `lastmod` do índice de sitemaps e das tags = hora da geração                               | o Google para de confiar no `lastmod` do site inteiro quando ele não é verdadeiro                                      | a corrigir (P1)       |
-| T10 | Nenhuma página de política editorial, correções, expediente ou metodologia de crítica      | sinais de confiança (E-E-A-T) ausentes                                                                                 | conteúdo do dono (P1) |
-| T11 | Imagens antigas (`/wp-content/uploads/…`) respondem 404                                    | perde Google Imagens e as imagens embutidas em outros sites                                                            | a corrigir (P2)       |
-| T12 | Sem `<link rel="alternate">` do RSS no `<head>`; datas sem `<time datetime>`               | descoberta e leitura de data mais frágeis                                                                              | a corrigir (P2)       |
-| T13 | Endereço antigo com barra final faz dois saltos (`/slug/` → `/slug` → `/cinema/slug`)      | o Google segue, mas o ideal é um salto                                                                                 | melhoria (P2)         |
+| #   | Problema                                                                                   | Efeito                                                                                                                 | Situação                                              |
+| --- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| T1  | Endereço antigo (`/{slug}`) respondia 308 sem `Location` ou 404 em cache (DECISIONS §7.19) | as 41.316 URLs indexadas do WordPress não levavam a lugar nenhum; 0 de 40 na amostra chegavam à matéria                | **corrigido** (PR #8)                                 |
+| T2  | `robots.txt` bloqueava `/media/`                                                           | o Google não podia buscar nenhuma capa: sem card grande no Discover, sem Google Imagens, imagem do Article inacessível | **corrigido** (PR #8)                                 |
+| T3  | Nenhuma matéria publicada desde 16/09                                                      | sitemap de notícias vazio (erro no Search Console); sem frescor para Notícias e Discover                               | depende da redação                                    |
+| T4  | Capa enviada em AVIF sai AVIF no `og:image`                                                | Facebook e WhatsApp não mostram AVIF: link compartilhado sem imagem                                                    | **corrigido** (PR #10)                                |
+| T5  | Dados estruturados com uma imagem só, no tamanho original (até 3200×1800)                  | o Google recomenda 16:9, 4:3 e 1:1, com pelo menos 1200 px de largura                                                  | **corrigido** (PR #10)                                |
+| T6  | `author: []` em matéria criada no Kal El sem autor                                         | Article sem autor; nenhuma assinatura visível                                                                          | **corrigido** (PR #10): assina "Redação Máquina Nerd" |
+| T7  | `dateModified` de 40.907 matérias = data da importação                                     | parece atualização em massa, o "frescor artificial" que as diretrizes desaconselham                                    | **corrigido** (PR #10)                                |
+| T8  | 37.150 tags indexáveis e no sitemap, a maioria com uma ou duas matérias                    | páginas finas em volume; dilui rastreamento e a avaliação do site                                                      | **corrigido** (PR #10)                                |
+| T9  | `lastmod` do índice de sitemaps e das tags = hora da geração                               | o Google para de confiar no `lastmod` do site inteiro quando ele não é verdadeiro                                      | **corrigido** (PR #10)                                |
+| T10 | Nenhuma página de política editorial, correções, expediente ou metodologia de crítica      | sinais de confiança (E-E-A-T) ausentes                                                                                 | conteúdo do dono (P1)                                 |
+| T11 | Imagens antigas (`/wp-content/uploads/…`) respondem 404                                    | perde Google Imagens e as imagens embutidas em outros sites                                                            | a corrigir (P2)                                       |
+| T12 | Sem `<link rel="alternate">` do RSS no `<head>`; datas sem `<time datetime>`               | descoberta e leitura de data mais frágeis                                                                              | RSS **corrigido** (PR #10); `<time>` a corrigir (P2)  |
+| T13 | Endereço antigo com barra final faz dois saltos (`/slug/` → `/slug` → `/cinema/slug`)      | o Google segue, mas o ideal é um salto                                                                                 | melhoria (P2)                                         |
 
 O que está certo e fica como está: `lang="pt-BR"`, título e descrição por página, canonical,
 `max-image-preview:large`, Open Graph e Twitter Card, `NewsMediaOrganization`, `WebSite`,
 `NewsArticle` com `BreadcrumbList`, sitemap de notícias implementado, RSS, 404 real, busca
 interna `noindex`, HTTPS com HSTS, paginação de editoria com canonical próprio.
+
+Em 2026-09-21 o site ficou fora do ar das 19:56 às 23:45 UTC: no deploy do PR #9 o Docker travou
+ao remover o contêiner antigo, e o rollback do Coolify, que remonta a imagem a partir do commit,
+falhou pelo limite de requisições do Kal El. O portal respondeu 503 o tempo todo — o código certo
+para indisponibilidade temporária, que o Google trata como passageira quando dura horas, não dias.
+Na primeira meia hora depois da volta, parte das requisições pela Cloudflare levou de 7 a 60
+segundos, com a origem respondendo em menos de 1 s quando chamada direto; normalizou sozinho.
+Conferido depois disso: 40 de 40 endereços antigos da amostra chegam à matéria, em dois saltos.
 
 ---
 

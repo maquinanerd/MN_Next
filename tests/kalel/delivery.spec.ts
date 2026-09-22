@@ -108,6 +108,24 @@ test.describe('pages render from the CMS', () => {
     const res = await page.goto('/isto-nao-e-nada-disso');
     expect(res?.status()).toBe(404);
   });
+
+  test('an article with no author is signed by the newsroom, on the page and in the JSON-LD', async ({ page }) => {
+    const unsigned = CORPUS_ARTICLES[8];
+    expect(unsigned?.authors).toEqual([]);
+    // Corpus article i sits in desk i % 7: article 8 is in Séries e TV.
+    const res = await page.goto('/' + 'series-e-tv/' + String(unsigned?.slug));
+    expect(res?.status()).toBe(200);
+    // The rail signs it on a desktop, the row under the title on a phone; one of them shows.
+    const byline = page.getByRole('link', { name: 'Redação Máquina Nerd' });
+    await expect(byline).toBeVisible();
+    await expect(byline).toHaveAttribute('href', '/sobre');
+
+    const graph = JSON.parse(
+      (await page.locator('script[type="application/ld+json"]').first().textContent()) ?? '{}',
+    ) as { '@graph': { '@type': string; author?: unknown }[] };
+    const node = graph['@graph'].find((n) => n['@type'] === 'NewsArticle' || n['@type'] === 'Article');
+    expect(node?.author).toEqual([{ '@id': expect.stringMatching(/\/#organization$/) }]);
+  });
 });
 
 test.describe('the page layout comes from the reserved tags', () => {

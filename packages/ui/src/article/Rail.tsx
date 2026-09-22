@@ -109,6 +109,14 @@ export function AuthorRail({ materia, nav }: { materia: Materia; nav: NestaEdito
       {materia.autores.map((a) => (
         <AuthorBlock key={a.slug} autor={a} />
       ))}
+      {materia.autores.length === 0 ? (
+        // Signed by the newsroom, as the byline under the title is on a phone.
+        <div className="mb-14">
+          <Link href="/sobre" className="text-14 font-extrabold tracking-[-0.02em]">
+            Redação Máquina Nerd
+          </Link>
+        </div>
+      ) : null}
       <div className="mb-20 border-b border-line pb-20 text-11 leading-[1.6] text-byline">
         <Dates materia={materia} />
       </div>
