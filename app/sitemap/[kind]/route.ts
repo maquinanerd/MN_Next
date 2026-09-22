@@ -2,15 +2,18 @@ import { notFound } from 'next/navigation';
 import type { SitemapKind } from '@mn/content';
 import { urlSet } from '@mn/seo';
 
-import { repo } from '../../../lib/content';
+import { discoveryCacheControl, repo } from '../../../lib/content';
+import { indexableHubTags } from '../../../lib/content/tags';
 import { seoContext } from '../../../lib/seo-context';
 
 /**
  * Child sitemaps, named by the index at `/sitemap.xml`.
  *
  * Article files carry their page number in the filename (`articles-1.xml`,
- * `articles-2.xml`, …) so the index can enumerate them. Taxonomy files are single files
- * — there are hundreds of categories and tags, not tens of thousands.
+ * `articles-2.xml`, …) so the index can enumerate them. Taxonomy files are single files.
+ * The tag file lists the editorias' subject hubs only, and only those indexable
+ * (`indexableHubTags`): the archive brought 37.150 tags, most on one or two stories, and a
+ * tag page under the threshold is `noindex` — it must not be submitted as well.
  */
 export const revalidate = 3600;
 
@@ -31,14 +34,25 @@ export async function GET(_request: Request, ctx: { params: Promise<{ kind: stri
   const parsed = parseKind(raw);
   if (!parsed || parsed.page < 1) notFound();
 
+  if (parsed.kind === 'tags') {
+    const { slugs, degraded } = await indexableHubTags();
+    const entries = slugs.map((slug) => ({ path: `/tag/${slug}` }));
+    return xml(urlSet(seoContext(), entries), degraded);
+  }
+
   const page = await repo().listSitemap(parsed.kind, String(parsed.page));
   // A page past the end is a 404, not an empty file a crawler would keep re-fetching.
   if (parsed.kind === 'articles' && page.entries.length === 0 && parsed.page > 1) notFound();
 
-  return new Response(urlSet(seoContext(), page.entries), {
+  return xml(urlSet(seoContext(), page.entries));
+}
+
+/** Cached an hour; a minute while degraded, so the next read repairs it (`discovery`). */
+function xml(body: string, degraded = false): Response {
+  return new Response(body, {
     headers: {
       'content-type': 'application/xml; charset=utf-8',
-      'cache-control': 'public, s-maxage=3600, stale-while-revalidate=7200',
+      'cache-control': discoveryCacheControl(degraded, 3600),
     },
   });
 }

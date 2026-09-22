@@ -58,11 +58,12 @@ export function rssFeed(ctx: SeoContext, items: ArticleSummary[]): string {
 }
 
 export function sitemapIndex(ctx: SeoContext, paths: string[]): string {
-  const now = new Date().toISOString();
+  // No `lastmod`: the index does not read its children, and stamping each one with the
+  // time of the request is the inaccurate lastmod Google learns to ignore site-wide.
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-    ...paths.map((p) => `  <sitemap><loc>${escapeHtml(absolute(ctx, p))}</loc><lastmod>${now}</lastmod></sitemap>`),
+    ...paths.map((p) => `  <sitemap><loc>${escapeHtml(absolute(ctx, p))}</loc></sitemap>`),
     '</sitemapindex>',
   ].join('\n');
 }
@@ -73,7 +74,7 @@ export function urlSet(ctx: SeoContext, entries: SitemapEntry[]): string {
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
     ...entries.map(
       (e) =>
-        `  <url><loc>${escapeHtml(absolute(ctx, e.path))}</loc><lastmod>${xmlDate(e.lastModified)}</lastmod></url>`,
+        `  <url><loc>${escapeHtml(absolute(ctx, e.path))}</loc>${e.lastModified ? `<lastmod>${xmlDate(e.lastModified)}</lastmod>` : ''}</url>`,
     ),
     '</urlset>',
   ].join('\n');

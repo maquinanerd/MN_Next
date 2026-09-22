@@ -155,22 +155,23 @@ export class FixtureContentRepository implements ContentRepository {
     return Math.max(1, Math.ceil(this.published().length / SITEMAP_PAGE_SIZE));
   }
 
+  /**
+   * The same contract as the CMS repository: a taxonomy page carries no `lastmod` — nothing
+   * records when its listing last changed — and an article's is its last editorial change.
+   */
   async listSitemap(kind: SitemapKind, cursor?: string): Promise<SitemapPage> {
-    const stamp = FIXTURE_NOW_ISO;
     if (kind === 'categories') {
-      return { entries: fixtureCategories.map((c) => ({ path: `/${c.slug}`, lastModified: stamp })), nextCursor: null };
+      return { entries: fixtureCategories.map((c) => ({ path: `/${c.slug}` })), nextCursor: null };
     }
     if (kind === 'tags') {
       return {
-        entries: fixtureTags
-          .filter((x) => !isReservedTag(x.slug))
-          .map((x) => ({ path: `/tag/${x.slug}`, lastModified: stamp })),
+        entries: fixtureTags.filter((x) => !isReservedTag(x.slug)).map((x) => ({ path: `/tag/${x.slug}` })),
         nextCursor: null,
       };
     }
     if (kind === 'authors') {
       return {
-        entries: fixtureAuthors.map((a) => ({ path: `/autor/${a.slug}`, lastModified: stamp })),
+        entries: fixtureAuthors.map((a) => ({ path: `/autor/${a.slug}` })),
         nextCursor: null,
       };
     }
@@ -180,7 +181,7 @@ export class FixtureContentRepository implements ContentRepository {
         if (!path) return null;
         return {
           path,
-          lastModified: a.updatedAt,
+          lastModified: a.editedAt ?? a.publishedAt ?? a.updatedAt,
           title: a.title,
           ...(a.publishedAt ? { publishedAt: a.publishedAt } : {}),
         };

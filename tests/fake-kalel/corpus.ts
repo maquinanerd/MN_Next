@@ -244,7 +244,8 @@ function articleAt(i: number): Row {
     version: 1 + (i % 4),
     externalKey: `wp:post:${1000 + i}`,
     featuredMediaId: mediaId,
-    authors: [uuid(0xa0, i % AUTHOR_NAMES.length)],
+    // Article 8 has no author, as a story saved in the CMS without one does.
+    authors: i === 8 ? [] : [uuid(0xa0, i % AUTHOR_NAMES.length)],
     categories: [uuid(0xc0, desk)],
     tags: articleTags,
     entities: i === 7 ? [uuid(0xe0, 0)] : [],

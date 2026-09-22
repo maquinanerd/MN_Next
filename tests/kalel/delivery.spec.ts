@@ -108,6 +108,24 @@ test.describe('pages render from the CMS', () => {
     const res = await page.goto('/isto-nao-e-nada-disso');
     expect(res?.status()).toBe(404);
   });
+
+  test('an article with no author is signed by the newsroom, on the page and in the JSON-LD', async ({ page }) => {
+    const unsigned = CORPUS_ARTICLES[8];
+    expect(unsigned?.authors).toEqual([]);
+    // Corpus article i sits in desk i % 7: article 8 is in Séries e TV.
+    const res = await page.goto('/' + 'series-e-tv/' + String(unsigned?.slug));
+    expect(res?.status()).toBe(200);
+    // The rail signs it on a desktop, the row under the title on a phone; one of them shows.
+    const byline = page.getByRole('link', { name: 'Redação Máquina Nerd' });
+    await expect(byline).toBeVisible();
+    await expect(byline).toHaveAttribute('href', '/sobre');
+
+    const graph = JSON.parse(
+      (await page.locator('script[type="application/ld+json"]').first().textContent()) ?? '{}',
+    ) as { '@graph': { '@type': string; author?: unknown }[] };
+    const node = graph['@graph'].find((n) => n['@type'] === 'NewsArticle' || n['@type'] === 'Article');
+    expect(node?.author).toEqual([{ '@id': expect.stringMatching(/\/#organization$/) }]);
+  });
 });
 
 test.describe('the page layout comes from the reserved tags', () => {
@@ -167,6 +185,48 @@ test.describe('media comes back through the authenticated proxy', () => {
     expect(res.status()).toBe(404);
   });
 
+  /*
+   * The crops the Article image and the og:image point at (packages/seo/src/cover.ts): a
+   * 1200 px JPEG in the ratio the name says, whatever the original's format and size.
+   */
+  test('a cover crop is a 1200 px JPEG in its ratio, cached for good', async ({ request }) => {
+    const id = String(CORPUS_MEDIA[0]?.id);
+    for (const [variant, width, height] of [
+      ['16x9', 1200, 675],
+      ['4x3', 1200, 900],
+      ['1x1', 1200, 1200],
+    ] as const) {
+      const res = await request.get(`/media/${id}/${variant}-v1.jpg`);
+      expect(res.status(), variant).toBe(200);
+      expect(res.headers()['content-type'], variant).toBe('image/jpeg');
+      expect(res.headers()['cache-control'], variant).toContain('immutable');
+      expect(jpegSize(await res.body()), variant).toEqual({ width, height });
+    }
+  });
+
+  test('a share image keeps its proportions and is never enlarged', async ({ request }) => {
+    // The corpus original is one pixel: re-encoded, not blown up to 1200.
+    const res = await request.get(`/media/${String(CORPUS_MEDIA[0]?.id)}/social-v1.jpg`);
+    expect(res.status()).toBe(200);
+    expect(res.headers()['content-type']).toBe('image/jpeg');
+    expect(jpegSize(await res.body())).toEqual({ width: 1, height: 1 });
+  });
+
+  test('a rendition the site does not make is a 404, an old version included', async ({ request }) => {
+    const id = String(CORPUS_MEDIA[0]?.id);
+    for (const name of ['2x1-v1.jpg', '16x9-v1.png', '16x9.jpg', '16x9-v0.jpg', 'social.jpg']) {
+      expect((await request.get(`/media/${id}/${name}`)).status(), name).toBe(404);
+    }
+  });
+
+  test('a query string on a rendition is sent back to the plain URL, before any work', async ({ request }) => {
+    // The CDN keys its cache on the query string: each new one would be a fresh crop.
+    const path = `/media/${String(CORPUS_MEDIA[0]?.id)}/16x9-v1.jpg`;
+    const res = await request.get(`${path}?x=1`, { maxRedirects: 0 });
+    expect(res.status()).toBe(301);
+    expect(res.headers()['location']).toBe(path);
+  });
+
   test('a cover from beyond the first offset page still resolves', async ({ request }) => {
     // The index is walked 200 rows at a time. If the walk stopped after one page, every
     // image past that point would silently lose its cover — the exact failure a previous
@@ -180,6 +240,15 @@ test.describe('media comes back through the authenticated proxy', () => {
 });
 
 test.describe('discovery surfaces enumerate the real corpus', () => {
+  test('the tag sitemap lists the subject hubs with enough stories, and no other tag', async ({ request }) => {
+    const res = await request.get('/sitemap/tags.xml');
+    expect(res.status()).toBe(200);
+    const listed = [...(await res.text()).matchAll(/<loc>[^<]*\/tag\/([^<]+)<\/loc>/g)].map((m) => m[1]).sort();
+    // Marvel and Netflix are hubs under Cinema and Séries e TV, on 35 and 47 corpus stories;
+    // `trailer` and `longform` exist in the CMS but are not hubs.
+    expect(listed).toEqual(['marvel', 'netflix']);
+  });
+
   test('the sitemap index names its children and they resolve', async ({ request }) => {
     const index = await request.get('/sitemap.xml');
     expect(index.status()).toBe(200);
@@ -305,3 +374,18 @@ test.describe('preview opens the draft, and only the draft', () => {
     expect(cookies.map((h) => h.value).some((v) => v.startsWith('mn-preview-grant='))).toBe(false);
   });
 });
+
+/** Width and height from a JPEG's frame header (SOF0–SOF3), read without a decoder. */
+function jpegSize(bytes: Buffer): { width: number; height: number } | null {
+  let at = 2;
+  while (at + 9 < bytes.length) {
+    if (bytes[at] !== 0xff) return null;
+    const marker = bytes[at + 1] ?? 0;
+    const length = bytes.readUInt16BE(at + 2);
+    if (marker >= 0xc0 && marker <= 0xc3) {
+      return { height: bytes.readUInt16BE(at + 5), width: bytes.readUInt16BE(at + 7) };
+    }
+    at += 2 + length;
+  }
+  return null;
+}

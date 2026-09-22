@@ -7,12 +7,16 @@ import { JsonLd, breadcrumbNode, buildGraph, listingMetadata, noindexMetadata } 
 import { Header } from '../../../components/Chrome';
 import { FeedSection } from '../../../components/Feed';
 import { agora, listView, parsePageQuery, repo } from '../../../lib/content';
+import { MIN_INDEXABLE_TAG, tagArticleCount } from '../../../lib/content/tags';
 import { seoContext } from '../../../lib/seo-context';
 
 /**
  * Tag archive — where an editoria's subject filters lead ("Marvel", "Streaming"). Page 1
  * is an indexable topic hub; deeper pages are `noindex, follow`, thin slices that would
  * dilute the hub. Reserved tags (layout switches) have no public archive.
+ *
+ * A tag with fewer than `MIN_INDEXABLE_TAG` articles is `noindex, follow` too
+ * (lib/content/tags.ts), by the same count the tag sitemap uses.
  */
 export const revalidate = 300;
 
@@ -46,6 +50,7 @@ export async function generateMetadata({
     title: result.tag.name,
     description: `Todas as matérias do Máquina Nerd sobre ${result.tag.name}.`,
     path: `/tag/${slug}`,
+    noindex: tagArticleCount(result) < MIN_INDEXABLE_TAG,
   });
 }
 

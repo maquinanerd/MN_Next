@@ -16,6 +16,7 @@ import type {
   Tag,
 } from '../domain/types';
 import { EMBED_PROVIDERS } from '../domain/types';
+import { lastWriteWasImport } from '../dates';
 import { resolveLayout } from '../paths';
 import { readingMinutes, slugify } from '../slug';
 import { safeHref } from '../sanitize';
@@ -390,11 +391,20 @@ function excerptFrom(dto: KalElArticleSummary): string {
  * at import time, years after its publication, and its `updatedAt` is that same moment.
  * Measured against `publishedAt` alone, every one of them would read "Atualizado em" the
  * day of the migration.
+ *
+ * And a later import session is not an edit either: the second one rewrites every article
+ * days after it was created, which the first condition alone would read as 40.907 edits.
+ * For an article the import wrote, a write inside an import window is the import
+ * (`lastWriteWasImport`); a story the newsroom published in Kal El keeps every edit.
  */
-export function editedAt(dto: Pick<KalElArticleSummary, 'publishedAt' | 'createdAt' | 'updatedAt'>): string | null {
+export function editedAt(
+  dto: Pick<KalElArticleSummary, 'publishedAt' | 'createdAt' | 'updatedAt' | 'externalKey'>,
+): string | null {
   const updated = Date.parse(dto.updatedAt);
   const baseline = Math.max(dto.publishedAt ? Date.parse(dto.publishedAt) : 0, Date.parse(dto.createdAt));
-  return Number.isFinite(updated) && updated - baseline > EDIT_GRACE_MS ? dto.updatedAt : null;
+  if (!Number.isFinite(updated) || updated - baseline <= EDIT_GRACE_MS) return null;
+  if (lastWriteWasImport(dto)) return null;
+  return dto.updatedAt;
 }
 
 /**

@@ -18,6 +18,7 @@ import type {
   SitemapPage,
   Tag as DomainTag,
 } from '../domain/types';
+import { editorialUpdatedAt } from '../dates';
 import { ContentError } from '../errors';
 import { logger } from '../logger';
 import { LAYOUT_TAGS, articlePath, isReservedTag, resolveLayout } from '../paths';
@@ -123,6 +124,8 @@ interface IndexEntry {
   updatedAt: string;
   publishedAt: string | null;
   title: string;
+  /** `wp:post:{id}` for an article the import wrote: its import writes are not edits. */
+  externalKey: string | null;
 }
 
 interface ListResult {
@@ -182,19 +185,16 @@ async function inBatches<T, R>(items: readonly T[], limit: number, work: (item: 
 export interface KalElRepositoryOptions {
   transport?: KalElTransport;
   mediaUrl?: (mediaId: string) => string;
-  now?: () => Date;
 }
 
 export class KalElContentRepository implements ContentRepository {
   readonly source = 'kalel' as const;
   private readonly transport: KalElTransport;
   private readonly mediaUrl: (mediaId: string) => string;
-  private readonly now: () => Date;
 
   constructor(opts: KalElRepositoryOptions = {}) {
     this.transport = opts.transport ?? KalElTransport.fromEnv();
     this.mediaUrl = opts.mediaUrl ?? defaultMediaUrl;
-    this.now = opts.now ?? (() => new Date());
   }
 
   // ---------------------------------------------------------------- taxonomy
@@ -741,26 +741,24 @@ export class KalElContentRepository implements ContentRepository {
 
   /** One sitemap file; for articles, `cursor` is the 1-based page number. */
   async listSitemap(kind: SitemapKind, cursor?: string): Promise<SitemapPage> {
-    const stamp = this.now().toISOString();
-
     if (kind === 'categories') {
       return {
-        entries: (await this.fetchCategories()).map((c) => ({ path: `/${c.slug}`, lastModified: stamp })),
+        // No `lastmod`: none of these knows when its listing last changed, and a stamp of
+        // "now" on every fetch is the inaccurate lastmod Google learns to ignore site-wide.
+        entries: (await this.fetchCategories()).map((c) => ({ path: `/${c.slug}` })),
         nextCursor: null,
       };
     }
     if (kind === 'tags') {
       return {
         // Reserved tags are switches, not archives: `/tag/oferta` is a 404 by design.
-        entries: (await this.allTags())
-          .filter((t) => !isReservedTag(t.slug))
-          .map((t) => ({ path: `/tag/${t.slug}`, lastModified: stamp })),
+        entries: (await this.allTags()).filter((t) => !isReservedTag(t.slug)).map((t) => ({ path: `/tag/${t.slug}` })),
         nextCursor: null,
       };
     }
     if (kind === 'authors') {
       return {
-        entries: (await this.fetchAuthorRows()).map((a) => ({ path: `/autor/${a.slug}`, lastModified: stamp })),
+        entries: (await this.fetchAuthorRows()).map((a) => ({ path: `/autor/${a.slug}` })),
         nextCursor: null,
       };
     }
@@ -791,7 +789,8 @@ export class KalElContentRepository implements ContentRepository {
         if (!path) return null;
         return {
           path,
-          lastModified: entry.updatedAt,
+          // The last editorial change, not the last import: see `editorialUpdatedAt`.
+          lastModified: editorialUpdatedAt(entry),
           title: entry.title,
           ...(entry.publishedAt ? { publishedAt: entry.publishedAt } : {}),
         };
@@ -923,5 +922,6 @@ function indexEntry(item: KalElArticleSummary): IndexEntry | null {
     updatedAt: item.updatedAt,
     publishedAt: item.publishedAt,
     title: item.title,
+    externalKey: item.externalKey,
   };
 }

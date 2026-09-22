@@ -203,7 +203,11 @@ export type SitemapKind = 'articles' | 'categories' | 'tags' | 'authors' | 'news
 
 export interface SitemapEntry {
   path: string;
-  lastModified: ISODate;
+  /**
+   * When the page last changed, if anyone knows. Absent rather than invented: a `lastmod`
+   * that is only the time of the request teaches Google to ignore the field site-wide.
+   */
+  lastModified?: ISODate;
   /** Present only for `news` entries. */
   title?: string;
   publishedAt?: ISODate;

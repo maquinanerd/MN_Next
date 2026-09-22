@@ -58,19 +58,27 @@ export function Lead({ children }: { children: React.ReactNode }) {
 }
 
 /** "Publicado em …" and, only when it differs, "Atualizado em …" (docs/04). */
+/**
+ * The dates as `<time datetime>`: the text is for the reader, the attribute for whatever
+ * reads the page — a crawler, a reader mode — without parsing Portuguese.
+ */
 export function Dates({ materia, inline = false }: { materia: Materia; inline?: boolean }) {
+  const publicado = <time dateTime={materia.publicadoEm}>{dataLonga(materia.publicadoEm)}</time>;
+  const atualizado = materia.atualizadoEm ? (
+    <time dateTime={materia.atualizadoEm}>{dataHora(materia.atualizadoEm)}</time>
+  ) : null;
   if (inline) {
     return (
       <span className="text-11 text-byline">
-        Publicado em {dataLonga(materia.publicadoEm)}
-        {materia.atualizadoEm ? ` · atualizado em ${dataHora(materia.atualizadoEm)}` : ''}
+        Publicado em {publicado}
+        {atualizado ? <> · atualizado em {atualizado}</> : null}
       </span>
     );
   }
   return (
     <>
-      <div>Publicado em {dataLonga(materia.publicadoEm)}</div>
-      {materia.atualizadoEm ? <div className="text-muted">Atualizado em {dataHora(materia.atualizadoEm)}</div> : null}
+      <div>Publicado em {publicado}</div>
+      {atualizado ? <div className="text-muted">Atualizado em {atualizado}</div> : null}
     </>
   );
 }
@@ -120,7 +128,14 @@ export function AuthorRow({
                 </span>
               ))}
             </span>
-          ) : null}
+          ) : (
+            // An article saved in the CMS without an author is signed by the newsroom, as its
+            // structured data is: never a story nobody answers for.
+            <span className="text-14 font-extrabold tracking-[-0.02em]">
+              {por ? 'Por ' : ''}
+              <Link href="/sobre">Redação Máquina Nerd</Link>
+            </span>
+          )}
           <Dates materia={materia} inline />
         </span>
       </div>
