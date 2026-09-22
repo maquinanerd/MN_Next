@@ -195,6 +195,20 @@ test.describe('article — standard', () => {
     expect(types.some((t: string) => t === 'Article' || t === 'NewsArticle')).toBe(true);
   });
 
+  test('the publication date is machine-readable, and the same one the JSON-LD gives', async ({ page }) => {
+    await page.goto(STANDARD);
+    const graph = JSON.parse((await page.locator('script[type="application/ld+json"]').first().textContent()) ?? '{}');
+    const node = graph['@graph'].find(
+      (n: { '@type': string }) => n['@type'] === 'NewsArticle' || n['@type'] === 'Article',
+    );
+    const stamps = await page
+      .locator('time[datetime]')
+      .evaluateAll((els) => els.map((el) => el.getAttribute('datetime')));
+    expect(stamps.length).toBeGreaterThan(0);
+    for (const stamp of stamps) expect(Number.isNaN(Date.parse(stamp ?? ''))).toBe(false);
+    expect(stamps.map((s) => Date.parse(s ?? ''))).toContain(Date.parse(node.datePublished));
+  });
+
   test('"Mais como este" comes after the first paragraph', async ({ page }) => {
     await page.goto(STANDARD);
     const tags = await page.locator('article > *').evaluateAll((els) => els.map((el) => el.tagName.toLowerCase()));

@@ -243,8 +243,9 @@ fontes primárias. O Máquina Nerd publica, em volume, a tradução resumida do 
    rebaixou o site.
 4. **Hubs de assunto** para as franquias que já trazem busca (The Boys, GTA 6, The Pitt, Outlander,
    Marvel/DCU): página própria com contexto e as matérias ligadas a ela.
-5. Imagens antigas redirecionadas (T11), `<time datetime>` (T12) e IndexNow para o Bing. O RSS no
-   `<head>` (T12) e o salto único para o endereço antigo com barra (T13) já foram feitos (PR #10).
+5. Imagens antigas redirecionadas (T11) e IndexNow para o Bing. O RSS no
+   `<head>` e o `<time datetime>` (T12) e o salto único para o endereço antigo com barra (T13) já
+   foram feitos (PR #10).
 
 ### O que não fazer
 
