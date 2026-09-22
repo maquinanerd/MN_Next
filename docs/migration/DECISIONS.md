@@ -1014,3 +1014,42 @@ versão sem ela, como o Next fazia.
 
 As URLs de destino são montadas com `URL`, não com `request.nextUrl.clone()`. O clone lembra que o
 pedido terminava em barra e a recoloca: `/filmes/` iria para `/cinema/`, mais um salto.
+
+### 7.22 Imagens antigas, IndexNow e um teste que gravava o estado real (2026-09-22)
+
+**Imagens antigas (T11).** Toda imagem do WordPress morava em `/wp-content/uploads/…`, e
+esses endereços continuam no Google Imagens, em páginas de outros sites e em links antigos. A
+importação guardou cada imagem com o nome do arquivo original. A rota
+`app/wp-content/uploads/[...path]` deduz do endereço os nomes possíveis
+(`lib/legacy-media.ts`):
+
+- o próprio nome pedido;
+- o original de onde saiu um tamanho (`-300x169`);
+- o original por trás de `-scaled` ou `-rotated`;
+- o arquivo sem o `.webp` que um plugin acrescentou.
+
+Em seguida faz uma busca por nome no Kal El (`q`) e responde 301 para `/media/{id}`. O nome
+é aplicado na ordem de probabilidade e só vale se exatamente uma imagem o tiver. Duas imagens
+com o mesmo nome, enviadas em meses diferentes, dão 404, nunca uma foto que pode ser a
+errada. O redirecionamento fica uma semana em cache na Cloudflare, e o 404 fica uma hora.
+
+Descartado: um mapa gerado no build a partir do dump. Seriam 73 mil entradas, uns 5 MB de
+JSON no repositório e na imagem, para acertar também o caso ambíguo, que é raro.
+
+**IndexNow.** Depois de responder a uma entrega do webhook de publicação (`article.published`
+ou `article.updated`), o portal lê o endereço canônico da matéria no CMS e avisa o IndexNow
+(Bing, Yandex, Seznam, Naver):
+
+- só em produção, e com 5 s de prazo;
+- uma falha vai para o log e nunca derruba a entrega (`after()` do Next);
+- a chave é pública por definição: está em `lib/indexnow.ts` e é servida em
+  `/{chave}.txt`, a partir de `public/`, com um teste garantindo que as duas são iguais.
+
+O Google não participa do IndexNow; para ele continuam o sitemap e o sitemap de notícias.
+
+**Um teste gravava o estado real da importação.** Dois casos de
+`tests/integration/wp-import-end-to-end.test.ts` rodavam o importador sem `--state`, e ele
+gravava o arquivo padrão, `artifacts/migration/state.json`. Numa rodada local de 2026-09-22 isso
+aconteceu, com um estado vazio. A segunda sessão usa `artifacts/migration/producao/state.json`,
+então não teria sido afetada, mas o defeito existia. Agora cada caso grava numa pasta
+temporária própria.

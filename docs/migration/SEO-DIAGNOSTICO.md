@@ -138,7 +138,7 @@ Problemas técnicos encontrados em produção:
 | T8  | 37.150 tags indexáveis e no sitemap, a maioria com uma ou duas matérias                    | páginas finas em volume; dilui rastreamento e a avaliação do site                                                      | **corrigido** (PR #10)                                |
 | T9  | `lastmod` do índice de sitemaps e das tags = hora da geração                               | o Google para de confiar no `lastmod` do site inteiro quando ele não é verdadeiro                                      | **corrigido** (PR #10)                                |
 | T10 | Nenhuma página de política editorial, correções, expediente ou metodologia de crítica      | sinais de confiança (E-E-A-T) ausentes                                                                                 | conteúdo do dono (P1)                                 |
-| T11 | Imagens antigas (`/wp-content/uploads/…`) respondem 404                                    | perde Google Imagens e as imagens embutidas em outros sites                                                            | a corrigir (P2)                                       |
+| T11 | Imagens antigas (`/wp-content/uploads/…`) respondem 404                                    | perde Google Imagens e as imagens embutidas em outros sites                                                            | **corrigido** (PR #11)                                |
 | T12 | Sem `<link rel="alternate">` do RSS no `<head>`; datas sem `<time datetime>`               | descoberta e leitura de data mais frágeis                                                                              | **corrigido** (PR #10)                                |
 | T13 | Endereço antigo com barra final faz dois saltos (`/slug/` → `/slug` → `/cinema/slug`)      | o Google segue, mas o ideal é um salto                                                                                 | **corrigido** (PR #10)                                |
 
@@ -243,9 +243,8 @@ fontes primárias. O Máquina Nerd publica, em volume, a tradução resumida do 
    rebaixou o site.
 4. **Hubs de assunto** para as franquias que já trazem busca (The Boys, GTA 6, The Pitt, Outlander,
    Marvel/DCU): página própria com contexto e as matérias ligadas a ela.
-5. Imagens antigas redirecionadas (T11) e IndexNow para o Bing. O RSS no
-   `<head>` e o `<time datetime>` (T12) e o salto único para o endereço antigo com barra (T13) já
-   foram feitos (PR #10).
+5. Feito: RSS no `<head>` e `<time datetime>` (T12) e o salto único para o endereço antigo com barra
+   (T13), no PR #10; imagens antigas redirecionadas (T11) e IndexNow para o Bing, no PR #11.
 
 ### O que não fazer
 
