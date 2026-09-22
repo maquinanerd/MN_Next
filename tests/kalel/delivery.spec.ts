@@ -178,6 +178,43 @@ test.describe('media comes back through the authenticated proxy', () => {
     expect(JSON.stringify(res.headers())).not.toContain('ke_st.');
   });
 
+  /*
+   * Old image URLs, against tests/fake-kalel/legacy-media.tsv — this corpus's table, with
+   * the same file name in two months, as the archive has (`image-1.png` every month).
+   */
+  test('an old WordPress image URL is sent on to the same picture', async ({ request }) => {
+    const media = (n: number): string => `/media/${String(CORPUS_MEDIA[n]?.id)}`;
+    for (const [path, target] of [
+      // The original, a size cut from it, the WebP a plugin wrote next to it.
+      ['2025/07/capa-3.jpg', media(3)],
+      ['2025/07/capa-3-300x169.jpg', media(3)],
+      ['2025/07/capa-3.jpg.webp', media(3)],
+      // The same name a year earlier is another picture.
+      ['2024/01/capa-3.jpg', media(5)],
+      // A size WordPress cut from the original behind a -scaled upload.
+      ['2025/07/capa-4-1024x576.jpg', media(4)],
+    ] as const) {
+      const res = await request.get(`/wp-content/uploads/${path}`, { maxRedirects: 0 });
+      expect(res.status(), path).toBe(301);
+      expect(res.headers()['location'], path).toBe(target);
+    }
+    const image = await request.get('/wp-content/uploads/2025/07/capa-3-300x169.jpg');
+    expect(image.status()).toBe(200);
+    expect(image.headers()['content-type']).toContain('image/');
+  });
+
+  test('an old upload the table does not hold, or not an image, is a 404', async ({ request }) => {
+    for (const path of [
+      '2025/07/nunca-existiu.jpg',
+      '2023/05/capa-3.jpg',
+      '2025/07/capa-3.pdf',
+      '2025/07/capa-3.jpg/extra',
+    ]) {
+      const res = await request.get(`/wp-content/uploads/${path}`, { maxRedirects: 0 });
+      expect(res.status(), path).toBe(404);
+    }
+  });
+
   test('an unknown media id is a 404, not a 500', async ({ request }) => {
     // Exactly 404. Accepting 502 as well would let a broken media provider pass as if it
     // had correctly reported a missing image.

@@ -46,6 +46,8 @@ function appEnv(cmsPort: number, siteUrl: string): Record<string, string> {
     // canonicals and robots; this one asserts the content path instead.
     NEXT_PUBLIC_SITE_URL: siteUrl,
     LOG_LEVEL: 'warn',
+    // The old-image table of this corpus, not production's (lib/legacy-media-table.ts).
+    LEGACY_MEDIA_TABLE: 'tests/fake-kalel/legacy-media.tsv',
   };
 }
 

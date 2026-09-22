@@ -89,6 +89,10 @@ const nextConfig: NextConfig = {
   // The repository root, stated: inferred from lockfiles it picks a parent checkout when
   // this one is a nested worktree, and the standalone trace then misses files.
   outputFileTracingRoot: process.cwd(),
+  // Read from disk at run time, so the trace cannot see it (lib/legacy-media-table.ts). The
+  // key is a glob over route paths: `[...path]` would read as a character class and match
+  // nothing, and the table would silently stay out of the standalone build.
+  outputFileTracingIncludes: { '/wp-content/uploads/**': ['./data/legacy-media.tsv.gz'] },
   transpilePackages: ['@mn/ui', '@mn/content', '@mn/seo', '@mn/tokens'],
   // Lint is its own gate (`pnpm lint`); running it twice only slows the build.
   eslint: { ignoreDuringBuilds: true },

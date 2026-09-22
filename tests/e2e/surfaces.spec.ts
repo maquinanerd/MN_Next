@@ -1,4 +1,6 @@
 import { createHmac } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { expect, test, type APIRequestContext } from '@playwright/test';
 
 /**
@@ -349,6 +351,39 @@ test.describe('search', () => {
 });
 
 test.describe('discovery surfaces', () => {
+  test('the IndexNow key is served where the engines look for it', async ({ request }) => {
+    const res = await request.get('/19c2fbc7303545bff929e721735ba76b.txt');
+    expect(res.status()).toBe(200);
+    expect((await res.text()).trim()).toBe('19c2fbc7303545bff929e721735ba76b');
+  });
+
+  test('a signed publication is acknowledged, with the IndexNow ping scheduled after the response', async ({
+    request,
+  }) => {
+    // The secret `playwright.config.ts` hands the server. Outside production the ping is
+    // skipped; what this proves is that scheduling it inside a real request works.
+    const body = JSON.stringify({
+      articleId: '7d3f0c2a-5b1e-4c8d-9a6f-2e4b1c0d9f8a',
+      slug: 'o-misterio-de-scarlett-johansson-a-estrela-perdida-da-marvel',
+      publishedAt: '2026-09-22T12:00:00.000Z',
+      version: 2,
+    });
+    const signature = `sha256=${createHmac('sha256', 'playwright-webhook-secret-000000000000').update(body).digest('hex')}`;
+    const res = await request.post('/api/revalidate', {
+      data: body,
+      headers: {
+        'content-type': 'application/json',
+        'x-kal-el-signature': signature,
+        'x-kal-el-event': 'article.updated',
+        'x-kal-el-idempotency': `e2e-${Date.now()}-${Math.random()}`,
+      },
+    });
+    expect(res.status()).toBe(200);
+    expect((await res.json()).data.revalidated).toBe(true);
+    // And the server is still answering once the scheduled work has run.
+    expect((await request.get('/api/health')).status()).toBe(200);
+  });
+
   test('robots.txt closes a deployment that is not the real site', async ({ request }) => {
     const body = await (await request.get('/robots.txt')).text();
     expect(body).toContain('Disallow: /');
@@ -462,6 +497,23 @@ test.describe('legacy URLs', () => {
     const res = await page.goto('/isto-nao-e-nada-disso');
     expect(res?.status()).toBe(404);
     await expect(page.getByRole('link', { name: 'Ir para a home' })).toBeVisible();
+  });
+
+  test('an old WordPress image URL is sent on through the committed table', async ({ request }) => {
+    // The production table (data/legacy-media.tsv.gz), read the way the server reads it: its
+    // first line, and a name outside ASCII, percent-encoded as a browser sends it.
+    const lines = gunzipSync(readFileSync('data/legacy-media.tsv.gz')).toString('utf8').split('\n').filter(Boolean);
+    const accented = lines.find((l) => [...l].some((ch) => ch.charCodeAt(0) > 127));
+    for (const line of [lines[0], accented]) {
+      expect(line).toBeTruthy();
+      const tab = (line ?? '').lastIndexOf('\t');
+      const path = (line ?? '').slice(0, tab);
+      const id = (line ?? '').slice(tab + 1);
+      const url = `/wp-content/uploads/${path.split('/').map(encodeURIComponent).join('/')}`;
+      const res = await request.get(url, { maxRedirects: 0 });
+      expect(res.status(), path).toBe(301);
+      expect(res.headers()['location'], path).toBe(`/media/${id}`);
+    }
   });
 
   test('a WordPress endpoint that is gone answers 410', async ({ request }) => {

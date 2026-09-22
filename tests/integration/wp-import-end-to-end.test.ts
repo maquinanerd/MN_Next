@@ -289,7 +289,21 @@ describe('wp:import against a live pair of stand-ins', () => {
     async () => {
       const { stdout, stderr } = await run(
         'node',
-        ['--import', 'tsx', 'scripts/wp/import.ts', '--rate', '0', '--limit', '2', '--out', workdir],
+        // Its own state file: without `--state` the importer writes the default one,
+        // artifacts/migration/state.json — the file a real session reads.
+        [
+          '--import',
+          'tsx',
+          'scripts/wp/import.ts',
+          '--rate',
+          '0',
+          '--limit',
+          '2',
+          '--out',
+          workdir,
+          '--state',
+          path.join(workdir, 'secret-check-state.json'),
+        ],
         { env: env(), cwd: process.cwd(), maxBuffer: 20 * 1024 * 1024 },
       );
       for (const stream of [stdout, stderr]) {
@@ -302,10 +316,30 @@ describe('wp:import against a live pair of stand-ins', () => {
 });
 
 describe('the local-rehearsal flag cannot reach a real network', () => {
+  let scratch = '';
+  beforeAll(async () => {
+    scratch = await mkdtemp(path.join(tmpdir(), 'mn-rehearsal-'));
+  });
+  afterAll(async () => {
+    await rm(scratch, { recursive: true, force: true });
+  });
+
   const cli = async (env: Record<string, string>): Promise<string> => {
     const { stdout, stderr } = await runOrCapture(
       'node',
-      ['--import', 'tsx', 'scripts/wp/import.ts', '--apply', '--allow-private-assets', '--limit', '1'],
+      [
+        '--import',
+        'tsx',
+        'scripts/wp/import.ts',
+        '--apply',
+        '--allow-private-assets',
+        '--limit',
+        '1',
+        '--out',
+        scratch,
+        '--state',
+        path.join(scratch, 'state.json'),
+      ],
       { env: { ...process.env, ...env }, cwd: process.cwd(), maxBuffer: 8 * 1024 * 1024 },
     );
     return stdout + stderr;
