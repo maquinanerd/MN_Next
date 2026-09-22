@@ -1,5 +1,5 @@
 import 'server-only';
-import type { ArticleSummary, Page } from '@mn/content';
+import { isContentError, type ArticleSummary, type Page } from '@mn/content';
 
 import { logger } from '../logger';
 import { hubTagSlugs } from './editorias';
@@ -31,6 +31,8 @@ const HUB_READS = 4;
  *
  * A hub the CMS fails to answer for is left out and logged, and the result says `degraded`
  * so the file is cached briefly: one flaky read must not turn the whole sitemap into a 500.
+ * Only an outage, as in `discovery()`: a contract violation or a bug of our own is thrown,
+ * because an empty file served with a 200 would hide it.
  */
 export async function indexableHubTags(): Promise<{ slugs: string[]; degraded: boolean }> {
   const hubs = [...hubTagSlugs()];
@@ -41,6 +43,7 @@ export async function indexableHubTags(): Promise<{ slugs: string[]; degraded: b
     const settled = await Promise.allSettled(batch.map((slug) => repo().getTag(slug, 1)));
     settled.forEach((result, j) => {
       if (result.status === 'rejected') {
+        if (!isContentError(result.reason) || result.reason.kind !== 'unavailable') throw result.reason;
         degraded = true;
         logger.warn('sitemap.hub-failed', { tag: batch[j] ?? '', error: String(result.reason) });
         return;

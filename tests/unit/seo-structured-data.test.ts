@@ -48,6 +48,8 @@ describe('the cover Google and the social networks get', () => {
   it('leaves alone a cover that is not a CMS image, or is too small to crop', () => {
     expect(coverVariant({ url: '/brand/og-default.jpg', width: 1200, height: 630 }, '16x9')).toBeNull();
     expect(coverVariant({ url: `/media/${MEDIA_ID}`, width: 400, height: 225 }, '16x9')).toBeNull();
+    // A size the CMS never recorded cannot be checked against the decode limit.
+    expect(coverVariant({ url: `/media/${MEDIA_ID}`, width: 3200, height: 0 }, '16x9')).toBeNull();
   });
 
   it('publishes no rendition of an original the route would refuse to decode', () => {

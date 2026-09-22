@@ -69,8 +69,9 @@ export const MAX_SOURCE_PIXELS = 40_000_000;
 /** The CMS id of an image the route can draw from, or null. */
 function renderableId(image: Pick<Image, 'url' | 'width' | 'height'>): string | null {
   const id = MEDIA_PATH.exec(image.url)?.[1];
-  if (!id || image.width < MIN_SOURCE_WIDTH) return null;
-  if (image.height > 0 && image.width * image.height > MAX_SOURCE_PIXELS) return null;
+  // An unknown height cannot be checked against the limit, nor its crop sized honestly.
+  if (!id || image.width < MIN_SOURCE_WIDTH || !(image.height > 0)) return null;
+  if (image.width * image.height > MAX_SOURCE_PIXELS) return null;
   return id;
 }
 
@@ -93,7 +94,7 @@ export function socialVariant(
   image: Pick<Image, 'url' | 'width' | 'height'>,
 ): { url: string; width: number; height: number } | null {
   const id = renderableId(image);
-  if (!id || !(image.height > 0)) return null;
+  if (!id) return null;
   const width = Math.min(SOCIAL_WIDTH, image.width);
   return {
     url: `/media/${id}/${renditionFile('social')}`,

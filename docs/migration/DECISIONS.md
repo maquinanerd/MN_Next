@@ -963,7 +963,15 @@ A revisão independente do diff (o Codex não roda nesta máquina, §7.12) mudou
   - Nenhum ajuste global do sharp (`concurrency`, `cache`): ele vale para o processo inteiro e
     deixaria o `next/image` mais lento.
 - **O sitemap de tags lê os hubs de 4 em 4.** Um hub que o CMS não responde fica de fora e vai
-  para o log; o arquivo sai com cache de um minuto, em vez de um 500.
+  para o log; o arquivo sai com cache de um minuto, em vez de um 500. Só indisponibilidade
+  degrada: contrato divergente ou erro nosso continua lançando, como em `discovery()`.
+
+Ficaram, por serem de baixo impacto: quem desiste enquanto espera continua ocupando lugar na
+fila até a vez dele (sai sem trabalho, mas conta para o limite de 32); e os 10 s do download
+incluem a leitura dos metadados da mídia. Um original com menos de 40 MP mas mais de 25 MB — um
+PNG enorme — ainda ganha URL de recorte e recebe 422, porque o CMS não informa o tamanho em
+bytes ao portal.
+
 - **A versão está no nome do arquivo** (`-v1`). O recorte é imutável por um ano em todas as
   camadas; mudar tamanho, qualidade ou estratégia exige trocar `RENDITION_VERSION`.
 - **As janelas de importação valem só para o acervo** (`externalKey` `wp:post:*`). Matéria
