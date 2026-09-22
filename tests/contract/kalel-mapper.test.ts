@@ -242,6 +242,8 @@ describe('mapArticle', () => {
 });
 
 describe('editedAt — "Atualizado em" only for a real edit', () => {
+  const WP = 'wp:post:48213';
+
   it('is null for an article imported years after it was published', () => {
     // Imported: created and last written at import time, published in 2019.
     expect(
@@ -249,6 +251,7 @@ describe('editedAt — "Atualizado em" only for a real edit', () => {
         publishedAt: '2019-03-01T10:00:00Z',
         createdAt: '2026-09-01T12:00:00Z',
         updatedAt: '2026-09-01T12:00:03Z',
+        externalKey: WP,
       }),
     ).toBeNull();
   });
@@ -259,6 +262,7 @@ describe('editedAt — "Atualizado em" only for a real edit', () => {
         publishedAt: '2026-09-10T10:00:00Z',
         createdAt: '2026-09-10T09:00:00Z',
         updatedAt: '2026-09-10T10:02:00Z',
+        externalKey: null,
       }),
     ).toBeNull();
   });
@@ -269,6 +273,7 @@ describe('editedAt — "Atualizado em" only for a real edit', () => {
         publishedAt: '2026-09-10T10:00:00Z',
         createdAt: '2026-09-10T09:00:00Z',
         updatedAt: '2026-09-11T08:30:00Z',
+        externalKey: null,
       }),
     ).toBe('2026-09-11T08:30:00Z');
   });
@@ -279,6 +284,7 @@ describe('editedAt — "Atualizado em" only for a real edit', () => {
         publishedAt: '2019-03-01T10:00:00Z',
         createdAt: '2026-09-01T12:00:00Z',
         updatedAt: '2026-09-05T15:00:00Z',
+        externalKey: WP,
       }),
     ).toBe('2026-09-05T15:00:00Z');
   });
@@ -291,16 +297,30 @@ describe('editedAt — "Atualizado em" only for a real edit', () => {
         publishedAt: '2026-08-19T15:04:54Z',
         createdAt: '2026-09-17T21:45:07Z',
         updatedAt: '2026-09-21T22:10:00Z',
+        externalKey: WP,
       }),
     ).toBeNull();
   });
 
-  it('still counts an edit to a story the newsroom published during an import window', () => {
+  it('is null for a post WordPress published on the day of the first session, rewritten by the second', () => {
     expect(
       editedAt({
-        publishedAt: '2026-09-22T09:00:00Z',
-        createdAt: '2026-09-22T08:50:00Z',
+        publishedAt: '2026-09-16T14:00:00Z',
+        createdAt: '2026-09-17T21:45:07Z',
+        updatedAt: '2026-09-22T03:00:00Z',
+        externalKey: WP,
+      }),
+    ).toBeNull();
+  });
+
+  it('counts every edit to a story the newsroom published in Kal El, windows or not', () => {
+    // Published before the second window opened, corrected inside it.
+    expect(
+      editedAt({
+        publishedAt: '2026-09-19T09:00:00Z',
+        createdAt: '2026-09-19T08:50:00Z',
         updatedAt: '2026-09-23T11:00:00Z',
+        externalKey: null,
       }),
     ).toBe('2026-09-23T11:00:00Z');
   });
@@ -310,9 +330,10 @@ describe('editedAt — "Atualizado em" only for a real edit', () => {
       editedAt({
         publishedAt: '2026-08-19T15:04:54Z',
         createdAt: '2026-09-17T21:45:07Z',
-        updatedAt: '2026-10-02T14:00:00Z',
+        updatedAt: '2026-11-02T14:00:00Z',
+        externalKey: WP,
       }),
-    ).toBe('2026-10-02T14:00:00Z');
+    ).toBe('2026-11-02T14:00:00Z');
   });
 });
 

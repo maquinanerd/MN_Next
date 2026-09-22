@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import { editorialUpdatedAt, fixtureArticles, type Article } from '@mn/content';
-import { articleMetadata, articleNode, coverVariant, sitemapIndex, urlSet, type SeoContext } from '@mn/seo';
+import {
+  articleMetadata,
+  articleNode,
+  coverVariant,
+  parseRenditionFile,
+  sitemapIndex,
+  socialVariant,
+  urlSet,
+  type SeoContext,
+} from '@mn/seo';
 
 /**
  * What the SEO diagnosis of 2026-09-21 found in the structured data and the metadata, and
@@ -29,7 +38,7 @@ function article(overrides: Partial<Article> = {}): Article {
 describe('the cover Google and the social networks get', () => {
   it('crops a CMS cover in the three ratios Google asks for, 1200 px wide, as JPEG', () => {
     expect(coverVariant({ url: `/media/${MEDIA_ID}`, width: 3200 }, '16x9')).toEqual({
-      url: `/media/${MEDIA_ID}/16x9.jpg`,
+      url: `/media/${MEDIA_ID}/16x9-v1.jpg`,
       width: 1200,
       height: 675,
     });
@@ -44,9 +53,9 @@ describe('the cover Google and the social networks get', () => {
   it('declares the three crops as the Article image', () => {
     const images = articleNode(ctx, article())['image'] as { url: string; width: number; height: number }[];
     expect(images.map((i) => i.url)).toEqual([
-      `https://www.maquinanerd.com.br/media/${MEDIA_ID}/16x9.jpg`,
-      `https://www.maquinanerd.com.br/media/${MEDIA_ID}/4x3.jpg`,
-      `https://www.maquinanerd.com.br/media/${MEDIA_ID}/1x1.jpg`,
+      `https://www.maquinanerd.com.br/media/${MEDIA_ID}/16x9-v1.jpg`,
+      `https://www.maquinanerd.com.br/media/${MEDIA_ID}/4x3-v1.jpg`,
+      `https://www.maquinanerd.com.br/media/${MEDIA_ID}/1x1-v1.jpg`,
     ]);
     for (const image of images) expect(image.width).toBeGreaterThanOrEqual(1200);
   });
@@ -57,8 +66,53 @@ describe('the cover Google and the social networks get', () => {
       url: string;
       type?: string;
     }[];
-    expect(images[0]?.url).toBe(`https://www.maquinanerd.com.br/media/${MEDIA_ID}/16x9.jpg`);
+    expect(images[0]?.url).toBe(`https://www.maquinanerd.com.br/media/${MEDIA_ID}/16x9-v1.jpg`);
     expect(images[0]?.type).toBe('image/jpeg');
+  });
+});
+
+describe('the renditions the media route draws', () => {
+  it('are named with their version, and nothing else is one', () => {
+    expect(parseRenditionFile('16x9-v1.jpg')).toBe('16x9');
+    expect(parseRenditionFile('social-v1.jpg')).toBe('social');
+    // An old version, an unversioned name, another format or ratio: not drawn.
+    for (const name of [
+      '16x9.jpg',
+      '16x9-v0.jpg',
+      '16x9-v1.png',
+      '2x1-v1.jpg',
+      'constructor-v1.jpg',
+      '../16x9-v1.jpg',
+    ]) {
+      expect(parseRenditionFile(name), name).toBeNull();
+    }
+  });
+
+  it('keep a share image in its own proportions, at most 1200 px wide', () => {
+    expect(socialVariant({ url: `/media/${MEDIA_ID}`, width: 2400, height: 1260 })).toEqual({
+      url: `/media/${MEDIA_ID}/social-v1.jpg`,
+      width: 1200,
+      height: 630,
+    });
+    expect(socialVariant({ url: `/media/${MEDIA_ID}`, width: 800, height: 600 })).toMatchObject({
+      width: 800,
+      height: 600,
+    });
+    expect(socialVariant({ url: `/media/${MEDIA_ID}`, width: 400, height: 300 })).toBeNull();
+  });
+
+  it('share the image the newsroom made for sharing uncropped, and the cover as its 16:9 crop', () => {
+    const base = article();
+    const social = { url: '/media/5e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a6b', width: 1200, height: 630, alt: 'Arte' };
+    const picked = articleMetadata(ctx, { ...base, seo: { ...base.seo, ogImage: social } }).openGraph?.images as {
+      url: string;
+      height?: number;
+    }[];
+    expect(picked[0]).toMatchObject({ url: `https://www.maquinanerd.com.br${social.url}/social-v1.jpg`, height: 630 });
+
+    const cover = articleMetadata(ctx, { ...base, seo: { ...base.seo, ogImage: base.cover ?? undefined } }).openGraph
+      ?.images as { url: string }[];
+    expect(cover[0]?.url).toBe(`https://www.maquinanerd.com.br/media/${MEDIA_ID}/16x9-v1.jpg`);
   });
 });
 
@@ -97,16 +151,13 @@ describe('when the article changed', () => {
   });
 
   it('gives the sitemap the same answer for an article rewritten by an import session', () => {
-    expect(editorialUpdatedAt({ publishedAt: '2026-08-19T15:04:54Z', updatedAt: '2026-09-17T21:45:07Z' })).toBe(
-      '2026-08-19T15:04:54Z',
-    );
-    expect(editorialUpdatedAt({ publishedAt: '2026-08-19T15:04:54Z', updatedAt: '2026-10-02T14:00:00Z' })).toBe(
-      '2026-10-02T14:00:00Z',
-    );
-    // A story the newsroom published inside a window keeps its own edits.
-    expect(editorialUpdatedAt({ publishedAt: '2026-09-22T09:00:00Z', updatedAt: '2026-09-23T11:00:00Z' })).toBe(
-      '2026-09-23T11:00:00Z',
-    );
+    const imported = { publishedAt: '2026-08-19T15:04:54Z', externalKey: 'wp:post:48213' };
+    expect(editorialUpdatedAt({ ...imported, updatedAt: '2026-09-17T21:45:07Z' })).toBe('2026-08-19T15:04:54Z');
+    expect(editorialUpdatedAt({ ...imported, updatedAt: '2026-11-02T14:00:00Z' })).toBe('2026-11-02T14:00:00Z');
+    // A story the newsroom published in Kal El keeps its own edits, inside a window or not.
+    expect(
+      editorialUpdatedAt({ publishedAt: '2026-09-19T09:00:00Z', updatedAt: '2026-09-23T11:00:00Z', externalKey: null }),
+    ).toBe('2026-09-23T11:00:00Z');
   });
 });
 

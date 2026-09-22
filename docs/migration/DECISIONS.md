@@ -923,3 +923,77 @@ ir para o ar.
 Os testes de ponta a ponta agora pedem cada endereço **três vezes** e exigem o destino em todas.
 
 **Depois do deploy:** limpar o cache da Cloudflare, que guardou os 404 e os 308 sem destino.
+
+Conferido depois: a Cloudflare não guardou nada disso. As páginas saem com `s-maxage=60` e os
+redirecionamentos do `/legado` com `no-store` (`cf-cache-status: BYPASS`), então nada velho
+sobrevive mais de um minuto na borda, e a limpeza manual do cache não foi necessária.
+
+### 7.20 SEO P1 e o que a revisão dele mudou (2026-09-21)
+
+O diagnóstico de SEO ([SEO-DIAGNOSTICO.md](./SEO-DIAGNOSTICO.md) §3.3) apontou T4 a T9. O PR #10
+os corrige:
+
+- **Capas.** Rota `/media/{id}/{variante}-v1.jpg`: recortes 16:9, 4:3 e 1:1 com 1200 px, em
+  JPEG, pela região mais saliente (`sharp`, `attention`). O `NewsArticle` declara os três; o
+  `og:image` é o 16:9. A imagem social escolhida pela redação sai como `social-v1.jpg`: JPEG nas
+  proporções dela, sem corte, porque foi composta para o card.
+- **Autor.** Matéria sem autor assina "Redação Máquina Nerd" na página e tem a organização
+  como `author` no JSON-LD; autor com redes ganha `sameAs`.
+- **Datas.** `dateModified`, `article:modified_time` e o `lastmod` do sitemap são a última
+  edição, ou a publicação. A regravação da importação não conta.
+- **Tags.** A página de tag com menos de 5 matérias é `noindex, follow`. O sitemap de tags
+  lista só os hubs das editorias que passam desse limite, pela mesma conta
+  (`lib/content/tags.ts`). Nenhuma URL é enviada e excluída ao mesmo tempo.
+- **Sitemaps.** Sem `lastmod` no índice e nas taxonomias, porque nada registra quando mudaram.
+
+A revisão independente do diff (o Codex não roda nesta máquina, §7.12) mudou, antes do merge:
+
+- **A rota de recorte custa pouco por pedido e roda pouco de cada vez.**
+  - Query string vira 301 para o endereço limpo: a Cloudflare usa a query na chave do cache,
+    e cada `?x=n` seria um recorte novo.
+  - No máximo 2 recortes simultâneos e 32 na fila; acima disso, 503 com `Retry-After`.
+  - O original é lido até 25 MB e decodificado até 40 MP.
+  - `failOn: 'truncated'`, para que um JPEG antigo que termina antes da hora e abre em
+    qualquer navegador não quebre o recorte.
+- **A versão está no nome do arquivo** (`-v1`). O recorte é imutável por um ano em todas as
+  camadas; mudar tamanho, qualidade ou estratégia exige trocar `RENDITION_VERSION`.
+- **As janelas de importação valem só para o acervo** (`externalKey` `wp:post:*`). Matéria
+  publicada no Kal El mantém todas as edições, dentro de janela ou não. Para matéria importada,
+  toda escrita dentro de uma janela é a importação, inclusive a de um post que o WordPress
+  publicou no dia da primeira sessão.
+- **A segunda janela fica aberta até 2026-10-31**, porque a segunda sessão ainda não rodou.
+  Quando ela terminar, a janela deve ser estreitada para o horário real. Se a sessão rodar
+  depois de 31/10, estender antes.
+- **A fixture segue o mesmo contrato de `lastmod`** do repositório do Kal El.
+- **A CI prova, dentro da imagem de produção (Alpine), o caso real**: decodificar um AVIF,
+  recortar com `attention` e gravar JPEG.
+
+### 7.21 A queda de 2026-09-21 e o endereço antigo em um salto
+
+**A queda.** O site ficou fora do ar das 19:56 às 23:45 UTC. Não foi o código:
+
+1. No deploy do PR #9 o build passou, mas o Docker travou ao remover o contêiner antigo
+   ("removal ... already in progress"). O portal ficou sem contêiner.
+2. O rollback do Coolify não reaproveita a imagem anterior: remonta a partir do commit. Esse
+   build falhou pelo limite de requisições do Kal El (429, ainda com 500 matérias pré-renderizadas).
+3. O novo Redeploy do mesmo commit (40 matérias pré-renderizadas) subiu normalmente.
+
+O portal respondeu 503 o tempo todo, o código certo para uma indisponibilidade passageira.
+Na primeira meia hora depois da volta, parte das requisições pela Cloudflare levou de 7 a 60 s,
+com a origem respondendo em menos de 1 s quando chamada direto; normalizou sozinho.
+
+Para a próxima vez:
+
+- um deploy que falha **no build** não derruba nada, porque o contêiner antigo continua no ar;
+- um deploy que trava **na troca de contêiner** derruba: conferir o site logo depois de cada
+  deploy e, se cair, mandar Redeploy de novo em vez de rollback;
+- rollback só serve para um commit cujo build passe hoje.
+
+**O endereço antigo em um salto.** Todo permalink do WordPress terminava em `/`. O Next tirava a
+barra com um redirecionamento próprio e só depois o middleware mandava para a matéria: dois
+saltos. Com `skipTrailingSlashRedirect`, o próprio middleware tira a barra antes de decidir
+(tabela, página 1, permalink antigo); para os demais endereços com barra, responde 308 para a
+versão sem ela, como o Next fazia.
+
+As URLs de destino são montadas com `URL`, não com `request.nextUrl.clone()`. O clone lembra que o
+pedido terminava em barra e a recoloca: `/filmes/` iria para `/cinema/`, mais um salto.

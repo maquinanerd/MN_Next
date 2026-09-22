@@ -140,7 +140,7 @@ Problemas técnicos encontrados em produção:
 | T10 | Nenhuma página de política editorial, correções, expediente ou metodologia de crítica      | sinais de confiança (E-E-A-T) ausentes                                                                                 | conteúdo do dono (P1)                                 |
 | T11 | Imagens antigas (`/wp-content/uploads/…`) respondem 404                                    | perde Google Imagens e as imagens embutidas em outros sites                                                            | a corrigir (P2)                                       |
 | T12 | Sem `<link rel="alternate">` do RSS no `<head>`; datas sem `<time datetime>`               | descoberta e leitura de data mais frágeis                                                                              | RSS **corrigido** (PR #10); `<time>` a corrigir (P2)  |
-| T13 | Endereço antigo com barra final faz dois saltos (`/slug/` → `/slug` → `/cinema/slug`)      | o Google segue, mas o ideal é um salto                                                                                 | melhoria (P2)                                         |
+| T13 | Endereço antigo com barra final faz dois saltos (`/slug/` → `/slug` → `/cinema/slug`)      | o Google segue, mas o ideal é um salto                                                                                 | **corrigido** (PR #10)                                |
 
 O que está certo e fica como está: `lang="pt-BR"`, título e descrição por página, canonical,
 `max-image-preview:large`, Open Graph e Twitter Card, `NewsMediaOrganization`, `WebSite`,
@@ -211,12 +211,12 @@ fontes primárias. O Máquina Nerd publica, em volume, a tradução resumida do 
 
 ### P0 — já
 
-| Ação                                                                                                           | Situação                                                        |
-| -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Endereços antigos com destino (T1) e capas liberadas no `robots.txt` (T2)                                      | PR #8; depois do merge, deploy e limpeza do cache da Cloudflare |
-| Voltar a publicar no Kal El (T3), mas **não** no ritmo de antes                                                | decisão do dono                                                 |
-| Tirar do Search Console os sitemaps do WordPress (`post-sitemap.xml`, `page-sitemap.xml`, `sitemap_index.xml`) | operacional                                                     |
-| Terminar a segunda sessão de importação (3 matérias, 17 tags, 235 nomes com `&amp;`)                           | aguardando o comando do dono                                    |
+| Ação                                                                                                           | Situação                                                                |
+| -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Endereços antigos com destino (T1) e capas liberadas no `robots.txt` (T2)                                      | **feito** (PR #8, no ar; o cache da Cloudflare não precisou de limpeza) |
+| Voltar a publicar no Kal El (T3), mas **não** no ritmo de antes                                                | decisão do dono                                                         |
+| Tirar do Search Console os sitemaps do WordPress (`post-sitemap.xml`, `page-sitemap.xml`, `sitemap_index.xml`) | operacional                                                             |
+| Terminar a segunda sessão de importação (3 matérias, 17 tags, 235 nomes com `&amp;`)                           | aguardando o comando do dono                                            |
 
 ### P1 — próximas semanas, no código
 
@@ -243,8 +243,8 @@ fontes primárias. O Máquina Nerd publica, em volume, a tradução resumida do 
    rebaixou o site.
 4. **Hubs de assunto** para as franquias que já trazem busca (The Boys, GTA 6, The Pitt, Outlander,
    Marvel/DCU): página própria com contexto e as matérias ligadas a ela.
-5. Imagens antigas redirecionadas (T11), RSS no `<head>` e `<time datetime>` (T12), um salto só para
-   o endereço antigo com barra (T13), IndexNow para o Bing.
+5. Imagens antigas redirecionadas (T11), `<time datetime>` (T12) e IndexNow para o Bing. O RSS no
+   `<head>` (T12) e o salto único para o endereço antigo com barra (T13) já foram feitos (PR #10).
 
 ### O que não fazer
 

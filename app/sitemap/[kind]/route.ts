@@ -3,7 +3,7 @@ import type { SitemapKind } from '@mn/content';
 import { urlSet } from '@mn/seo';
 
 import { repo } from '../../../lib/content';
-import { hubTagSlugs } from '../../../lib/content/editorias';
+import { indexableHubTags } from '../../../lib/content/tags';
 import { seoContext } from '../../../lib/seo-context';
 
 /**
@@ -11,8 +11,9 @@ import { seoContext } from '../../../lib/seo-context';
  *
  * Article files carry their page number in the filename (`articles-1.xml`,
  * `articles-2.xml`, …) so the index can enumerate them. Taxonomy files are single files.
- * The tag file lists the editorias' subject hubs only (`hubTagSlugs`): the archive brought
- * 37.150 tags, most on one or two stories.
+ * The tag file lists the editorias' subject hubs only, and only those indexable
+ * (`indexableHubTags`): the archive brought 37.150 tags, most on one or two stories, and a
+ * tag page under the threshold is `noindex` — it must not be submitted as well.
  */
 export const revalidate = 3600;
 
@@ -33,14 +34,25 @@ export async function GET(_request: Request, ctx: { params: Promise<{ kind: stri
   const parsed = parseKind(raw);
   if (!parsed || parsed.page < 1) notFound();
 
+  if (parsed.kind === 'tags') {
+    const hubs = await indexableHubTags();
+    return xml(
+      urlSet(
+        seoContext(),
+        hubs.map((slug) => ({ path: `/tag/${slug}` })),
+      ),
+    );
+  }
+
   const page = await repo().listSitemap(parsed.kind, String(parsed.page));
   // A page past the end is a 404, not an empty file a crawler would keep re-fetching.
   if (parsed.kind === 'articles' && page.entries.length === 0 && parsed.page > 1) notFound();
 
-  const hubs = parsed.kind === 'tags' ? hubTagSlugs() : null;
-  const entries = hubs ? page.entries.filter((e) => hubs.has(e.path.slice('/tag/'.length))) : page.entries;
+  return xml(urlSet(seoContext(), page.entries));
+}
 
-  return new Response(urlSet(seoContext(), entries), {
+function xml(body: string): Response {
+  return new Response(body, {
     headers: {
       'content-type': 'application/xml; charset=utf-8',
       'cache-control': 'public, s-maxage=3600, stale-while-revalidate=7200',

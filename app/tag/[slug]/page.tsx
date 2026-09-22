@@ -7,6 +7,7 @@ import { JsonLd, breadcrumbNode, buildGraph, listingMetadata, noindexMetadata } 
 import { Header } from '../../../components/Chrome';
 import { FeedSection } from '../../../components/Feed';
 import { agora, listView, parsePageQuery, repo } from '../../../lib/content';
+import { MIN_INDEXABLE_TAG, tagArticleCount } from '../../../lib/content/tags';
 import { seoContext } from '../../../lib/seo-context';
 
 /**
@@ -14,13 +15,10 @@ import { seoContext } from '../../../lib/seo-context';
  * is an indexable topic hub; deeper pages are `noindex, follow`, thin slices that would
  * dilute the hub. Reserved tags (layout switches) have no public archive.
  *
- * A tag with fewer than `MIN_INDEXABLE` articles is `noindex, follow` too: the archive
- * brought 37.150 tags, most of them on one or two articles, and a page that lists one
- * story is a thin page in the index. It stays navigable, and its links still count.
+ * A tag with fewer than `MIN_INDEXABLE_TAG` articles is `noindex, follow` too
+ * (lib/content/tags.ts), by the same count the tag sitemap uses.
  */
 export const revalidate = 300;
-
-const MIN_INDEXABLE = 5;
 
 type Params = { slug: string };
 type Search = { page?: string | string[] };
@@ -48,14 +46,11 @@ export async function generateMetadata({
       `/tag/${slug}?page=${page}`,
     );
   }
-  // Counted exactly when the CMS says how many; otherwise a first page that is the last
-  // one holds them all.
-  const articles = result.total ?? (result.hasNext ? Number.POSITIVE_INFINITY : result.items.length);
   return listingMetadata(ctx, {
     title: result.tag.name,
     description: `Todas as matérias do Máquina Nerd sobre ${result.tag.name}.`,
     path: `/tag/${slug}`,
-    noindex: articles < MIN_INDEXABLE,
+    noindex: tagArticleCount(result) < MIN_INDEXABLE_TAG,
   });
 }
 

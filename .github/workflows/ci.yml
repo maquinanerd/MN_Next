@@ -136,13 +136,14 @@ jobs:
           curl -fsS http://127.0.0.1:3000/api/health
           curl -fsS -o /dev/null http://127.0.0.1:3000/
           test "$(docker exec portal id -u)" != "0"
-      # The cover crops (/media/{id}/{variant}.jpg) need sharp's native binary for musl.
-      # The fixture has no CMS media to crop, so this encodes a JPEG with the sharp the
-      # server resolves — from /app, where the traced route looks for it.
+      # The cover crops (/media/{id}/{variant}-v1.jpg) need sharp's native binary for musl.
+      # The fixture has no CMS media to crop, so this does what the route does to an upload —
+      # decode an AVIF, crop it on the salient region, write a JPEG — with the sharp the
+      # server resolves, from /app, where the traced route looks for it.
       - name: Crops images inside the image
         run: >-
           docker exec --workdir /app portal node -e
-          "require('sharp')({create:{width:8,height:8,channels:3,background:'#ffffff'}}).jpeg({mozjpeg:true}).toBuffer().then((b)=>{if(b[0]!==0xff||b[1]!==0xd8)process.exit(1);console.log('sharp ok',b.length)})"
+          "const s=require('sharp');s({create:{width:64,height:36,channels:3,background:'#8844aa'}}).avif().toBuffer().then((a)=>s(a,{failOn:'truncated'}).resize(32,32,{fit:'cover',position:s.strategy.attention}).flatten({background:'#ffffff'}).jpeg({mozjpeg:true}).toBuffer()).then((b)=>{if(b[0]!==0xff||b[1]!==0xd8)process.exit(1);console.log('sharp ok',b.length)}).catch((e)=>{console.error(e);process.exit(1)})"
       - if: failure()
         run: docker logs portal || true
 

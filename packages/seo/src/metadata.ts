@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import type { Article, ArticleSummary, Image } from '@mn/content';
 
-import { coverVariant } from './cover';
+import { coverVariant, socialVariant } from './cover';
 import { absolute, articleUrl, type SeoContext } from './graph';
 
 /**
@@ -29,14 +29,25 @@ function feedAlternate(ctx: SeoContext) {
   return { 'application/rss+xml': `${ctx.siteUrl}/feed.xml` };
 }
 
-function ogImage(ctx: SeoContext, image: Image | null | undefined) {
+/**
+ * The share image. A cover goes out as its 16:9 JPEG crop; an image the newsroom made for
+ * sharing (`social`) as a JPEG in its own proportions, because it was composed for the card
+ * and a crop would cut into it. Never the original: an upload in AVIF left Facebook and
+ * WhatsApp with no preview at all, and an original of 3200 px is a heavy card for every share.
+ */
+function ogImage(ctx: SeoContext, image: Image | null | undefined, kind: 'cover' | 'social' = 'cover') {
   const resolved = image ?? OG_FALLBACK;
   const alt = resolved.alt || 'Máquina Nerd';
-  // The 16:9 JPEG crop, not the original: an upload in AVIF left Facebook and WhatsApp
-  // with no preview at all, and an original of 3200 px is a heavy card for every share.
-  const crop = coverVariant(resolved, '16x9');
+  const crop = kind === 'social' ? socialVariant(resolved) : coverVariant(resolved, '16x9');
   if (crop) return [{ url: absolute(ctx, crop.url), width: crop.width, height: crop.height, type: 'image/jpeg', alt }];
   return [{ url: absolute(ctx, resolved.url), width: resolved.width, height: resolved.height, alt }];
+}
+
+/** The social image the newsroom picked, when it is not simply the cover; else the cover. */
+function shareImage(ctx: SeoContext, article: Article) {
+  const picked = article.seo.ogImage;
+  if (picked && picked.url !== article.cover?.url) return ogImage(ctx, picked, 'social');
+  return ogImage(ctx, article.cover);
 }
 
 export function baseMetadata(ctx: SeoContext): Metadata {
@@ -84,7 +95,7 @@ export function articleMetadata(ctx: SeoContext, article: Article): Metadata {
       authors: article.authors.map((a) => absolute(ctx, `/autor/${a.slug}`)),
       section: article.category?.name,
       tags: article.tags.map((t) => t.name),
-      images: ogImage(ctx, article.seo.ogImage ?? article.cover),
+      images: shareImage(ctx, article),
     },
     twitter: {
       card: 'summary_large_image',

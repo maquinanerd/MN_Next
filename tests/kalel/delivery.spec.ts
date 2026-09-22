@@ -189,23 +189,42 @@ test.describe('media comes back through the authenticated proxy', () => {
    * The crops the Article image and the og:image point at (packages/seo/src/cover.ts): a
    * 1200 px JPEG in the ratio the name says, whatever the original's format and size.
    */
-  test('a cover crop is a 1200 px JPEG in its ratio', async ({ request }) => {
+  test('a cover crop is a 1200 px JPEG in its ratio, cached for good', async ({ request }) => {
     const id = String(CORPUS_MEDIA[0]?.id);
     for (const [variant, width, height] of [
       ['16x9', 1200, 675],
       ['4x3', 1200, 900],
       ['1x1', 1200, 1200],
     ] as const) {
-      const res = await request.get(`/media/${id}/${variant}.jpg`);
+      const res = await request.get(`/media/${id}/${variant}-v1.jpg`);
       expect(res.status(), variant).toBe(200);
       expect(res.headers()['content-type'], variant).toBe('image/jpeg');
+      expect(res.headers()['cache-control'], variant).toContain('immutable');
       expect(jpegSize(await res.body()), variant).toEqual({ width, height });
     }
   });
 
-  test('a crop the site does not make is a 404', async ({ request }) => {
-    expect((await request.get(`/media/${String(CORPUS_MEDIA[0]?.id)}/2x1.jpg`)).status()).toBe(404);
-    expect((await request.get(`/media/${String(CORPUS_MEDIA[0]?.id)}/16x9.png`)).status()).toBe(404);
+  test('a share image keeps its proportions and is never enlarged', async ({ request }) => {
+    // The corpus original is one pixel: re-encoded, not blown up to 1200.
+    const res = await request.get(`/media/${String(CORPUS_MEDIA[0]?.id)}/social-v1.jpg`);
+    expect(res.status()).toBe(200);
+    expect(res.headers()['content-type']).toBe('image/jpeg');
+    expect(jpegSize(await res.body())).toEqual({ width: 1, height: 1 });
+  });
+
+  test('a rendition the site does not make is a 404, an old version included', async ({ request }) => {
+    const id = String(CORPUS_MEDIA[0]?.id);
+    for (const name of ['2x1-v1.jpg', '16x9-v1.png', '16x9.jpg', '16x9-v0.jpg', 'social.jpg']) {
+      expect((await request.get(`/media/${id}/${name}`)).status(), name).toBe(404);
+    }
+  });
+
+  test('a query string on a rendition is sent back to the plain URL, before any work', async ({ request }) => {
+    // The CDN keys its cache on the query string: each new one would be a fresh crop.
+    const path = `/media/${String(CORPUS_MEDIA[0]?.id)}/16x9-v1.jpg`;
+    const res = await request.get(`${path}?x=1`, { maxRedirects: 0 });
+    expect(res.status()).toBe(301);
+    expect(res.headers()['location']).toBe(path);
   });
 
   test('a cover from beyond the first offset page still resolves', async ({ request }) => {
@@ -221,6 +240,15 @@ test.describe('media comes back through the authenticated proxy', () => {
 });
 
 test.describe('discovery surfaces enumerate the real corpus', () => {
+  test('the tag sitemap lists the subject hubs with enough stories, and no other tag', async ({ request }) => {
+    const res = await request.get('/sitemap/tags.xml');
+    expect(res.status()).toBe(200);
+    const listed = [...(await res.text()).matchAll(/<loc>[^<]*\/tag\/([^<]+)<\/loc>/g)].map((m) => m[1]).sort();
+    // Marvel and Netflix are hubs under Cinema and Séries e TV, on 35 and 47 corpus stories;
+    // `trailer` and `longform` exist in the CMS but are not hubs.
+    expect(listed).toEqual(['marvel', 'netflix']);
+  });
+
   test('the sitemap index names its children and they resolve', async ({ request }) => {
     const index = await request.get('/sitemap.xml');
     expect(index.status()).toBe(200);

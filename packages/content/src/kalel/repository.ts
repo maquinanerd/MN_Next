@@ -124,6 +124,8 @@ interface IndexEntry {
   updatedAt: string;
   publishedAt: string | null;
   title: string;
+  /** `wp:post:{id}` for an article the import wrote: its import writes are not edits. */
+  externalKey: string | null;
 }
 
 interface ListResult {
@@ -920,5 +922,6 @@ function indexEntry(item: KalElArticleSummary): IndexEntry | null {
     updatedAt: item.updatedAt,
     publishedAt: item.publishedAt,
     title: item.title,
+    externalKey: item.externalKey,
   };
 }
