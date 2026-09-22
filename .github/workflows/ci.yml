@@ -144,6 +144,18 @@ jobs:
         run: >-
           docker exec --workdir /app portal node -e
           "const s=require('sharp');s({create:{width:64,height:36,channels:3,background:'#8844aa'}}).avif().toBuffer().then((a)=>s(a,{failOn:'truncated'}).resize(32,32,{fit:'cover',position:s.strategy.attention}).flatten({background:'#ffffff'}).jpeg({mozjpeg:true}).toBuffer()).then((b)=>{if(b[0]!==0xff||b[1]!==0xd8)process.exit(1);console.log('sharp ok',b.length)}).catch((e)=>{console.error(e);process.exit(1)})"
+      # The old-image table is read from disk at run time, so only the image can prove the
+      # standalone trace carried it (outputFileTracingIncludes).
+      - name: Sends an old WordPress image URL on
+        run: |
+          set -euo pipefail
+          entry=$(gunzip -c data/legacy-media.tsv.gz | head -1)
+          path=${entry%%$'\t'*}
+          id=${entry##*$'\t'}
+          encoded=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$path")
+          location=$(curl -s -o /dev/null -w '%{redirect_url}' "http://127.0.0.1:3000/wp-content/uploads/$encoded")
+          echo "$path -> $location"
+          test "$location" = "http://127.0.0.1:3000/media/$id"
       - if: failure()
         run: docker logs portal || true
 

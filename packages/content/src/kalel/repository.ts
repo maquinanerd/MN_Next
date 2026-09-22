@@ -884,28 +884,6 @@ export class KalElContentRepository implements ContentRepository {
     }
   }
 
-  /**
-   * The media row an old upload URL refers to (`lib/legacy-media.ts`): one search for the
-   * `stem`, then the first of `names` — most likely first — that exactly one row carries.
-   * Two images under the same name, uploaded in different months, are ambiguous: null, a
-   * 404, rather than a picture that may be the wrong one.
-   */
-  async findMediaIdByFilename(stem: string, names: readonly string[]): Promise<string | null> {
-    const res = await this.transport.read(kalelMediaListSchema, {
-      path: this.transport.sitePath('/media'),
-      query: { q: stem, limit: 100 },
-      tags: [TAG.media],
-      revalidate: REVALIDATE.taxonomy,
-    });
-    for (const name of names) {
-      const wanted = name.toLowerCase();
-      const rows = res.items.filter((row) => row.filename.toLowerCase() === wanted);
-      if (rows.length === 1) return rows[0]?.id ?? null;
-      if (rows.length > 1) return null;
-    }
-    return null;
-  }
-
   /** Raw media bytes, streamed by `/media/[id]`. */
   async mediaBytes(mediaId: string, signal?: AbortSignal): Promise<Response> {
     return this.transport.readBytes(this.transport.sitePath(`/media/${mediaId}/file`), signal);

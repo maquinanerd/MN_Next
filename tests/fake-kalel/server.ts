@@ -344,14 +344,9 @@ export async function startFakeKalEl(port = 0, options: FakeKalElOptions = {}): 
         }
         const limit = Math.min(Math.max(Number(q.get('limit') ?? 60), 1), 200);
         const offset = Math.max(Number(q.get('offset') ?? 0), 0);
-        // `q` searches file names, as the API's `ilike '%q%'` does.
-        const needle = (q.get('q') ?? '').toLowerCase();
-        const pool = needle
-          ? store.media.filter((m) => String(m['filename']).toLowerCase().includes(needle))
-          : store.media;
-        const page = pool.slice(offset, offset + limit);
+        const page = store.media.slice(offset, offset + limit);
         return json(res, 200, {
-          data: kalelMediaListSchema.parse({ items: page, total: pool.length }),
+          data: kalelMediaListSchema.parse({ items: page, total: store.media.length }),
         });
       }
 
