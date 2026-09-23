@@ -138,9 +138,14 @@ a um clique.
 contra volume ruim passam a ser a pauta recusada no título e o agrupamento de eventos —
 não um limite numérico.
 
-**Continua pendente:** limpar as 22 matérias com a linha de fontes repetida e assinar as 7
-sem autor (edições no acervo já publicado, fora do que o robô refaz sozinho); exigir duas
-fontes para publicar direto; hubs por franquia.
+**O acervo foi consertado em 23/09, às 21h30 UTC.** A rotina
+`tools/limpeza/fontes_repetidas.py` do MN-Prime rodou no contêiner e devolveu "23
+matéria(s) com conserto, 23 consertada(s), 0 erro(s)" — as 22 com a linha repetida mais a
+sétima que só precisava de assinatura. Conferido no ar, uma a uma: nenhuma das 22 tem mais
+a linha no corpo, o módulo de fontes do portal continua lá, e todas estão assinadas. As 392
+importadas do WordPress não foram tocadas.
+
+**Continua pendente:** exigir duas fontes para publicar direto; hubs por franquia.
 
 ## As 22 matérias com a linha de fontes repetida
 
