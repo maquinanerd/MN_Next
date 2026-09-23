@@ -1065,3 +1065,47 @@ gravava o arquivo padrão, `artifacts/migration/state.json`. Numa rodada local d
 aconteceu, com um estado vazio. A segunda sessão usa `artifacts/migration/producao/state.json`,
 então não teria sido afetada, mas o defeito existia. Agora cada caso grava numa pasta
 temporária própria.
+
+### 7.23 AdSense nos espaços que o kit já reservava (2026-09-22)
+
+O portal foi desenhado com publicidade desde o kit: caixas de tamanho fixo, com o rótulo
+"Publicidade" e a medida escrita no meio, para que a página nunca mexesse quando um anúncio
+chegasse. Elas estavam vazias. Ligar o AdSense foi preencher essas caixas, não acrescentar
+um lugar novo.
+
+**Ambiente decide, código não.** Três variáveis públicas, lidas no build:
+`NEXT_PUBLIC_ADSENSE_CLIENT` (o id do publisher), `NEXT_PUBLIC_ADSENSE_TEST` e um
+`NEXT_PUBLIC_ADSENSE_SLOT_<FORMATO>` por tamanho. Sem o id do publisher nenhuma linha do
+Google é carregada e a caixa continua o retângulo cinza — que é o padrão do
+desenvolvimento, onde uma impressão seria tráfego inválido. Em staging, o modo de teste
+(`data-adtest="on"`) exercita o layout com criativo de teste, sem contar impressão nem
+receita. Um formato sem id fica vazio, então dá para ligar um de cada vez.
+
+**Por forma, não por tamanho fixo.** A coluna lateral mede 292 px a 1440 px de viewport, e
+a caixa é `max-width: 100%`. Um bloco fixo de 300×250 simplesmente não serviria ali —
+ficaria vazio em toda tela menor que o formato. Cada `<ins>` pede um formato responsivo
+(`rectangle`, `vertical`, `horizontal`) com `data-full-width-responsive="false"`, então o
+Google encaixa o melhor criativo que cabe na coluna e nada escapa dela no celular
+(conferido em 375 px: nenhum scroll horizontal).
+
+**Reserva com `min-height`, não `height`.** Um criativo um pouco mais alto que a medida do
+kit cresce a caixa em vez de ser cortado — cortar anúncio é violação de política. Mais
+baixo, a reserva continua exatamente como estava, e o CLS segue zero.
+
+**Consentimento.** `ConsentGate` já existia e o texto dele promete publicidade
+personalizada só com autorização. Um script inline constante, antes do carregador, declara
+`window.adsbygoogle` e liga `requestNonPersonalizedAds` enquanto não houver
+`mn-consent=accepted`; o carregador leva `data-npa-on-unknown-consent`. Recusar não tira a
+publicidade, tira a personalização — que é o que a LGPD pede e o que a barra diz.
+
+**CSP.** A política não foi afrouxada: os hosts do Google entraram nomeados em
+`script-src`, `img-src`, `frame-src` e `connect-src` (`ADSENSE_CSP`), e só num build que
+tem id de publisher. Um portal sem anúncio mantém a política estreita de antes.
+
+**`ads.txt` gerado, não estático.** `/ads.txt` responde a partir do id configurado
+(`google.com, pub-…, DIRECT, f08c47fec0942fa0`) e dá 404 num deploy sem anúncio, em vez de
+declarar um vendedor que o site não carrega.
+
+**O atributo do espaço mudou de nome.** A reserva era marcada `data-ad-slot`, que é
+justamente o atributo que o AdSense lê do `<ins>`. Dois elementos com o mesmo nome deixam
+todo seletor ambíguo — o nosso e o do Google —, então a reserva virou `data-ad-reserva`.

@@ -128,7 +128,7 @@ test.describe('home', () => {
   test('every ad slot on the page has a unique accessible name', async ({ page }) => {
     await page.goto('/');
     const names = await page
-      .locator('[data-ad-slot]')
+      .locator('[data-ad-reserva]')
       .evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')));
     expect(names.length).toBeGreaterThan(4);
     expect(new Set(names).size).toBe(names.length);
@@ -223,7 +223,7 @@ test.describe('article — standard', () => {
 
   test('the two in-article ads sit between two paragraphs', async ({ page }) => {
     await page.goto(STANDARD);
-    const neighbours = await page.locator('article [data-ad-slot]').evaluateAll((slots) =>
+    const neighbours = await page.locator('article [data-ad-reserva]').evaluateAll((slots) =>
       slots.map((slot) => {
         const box = slot.parentElement as HTMLElement;
         return [box.previousElementSibling?.tagName, box.nextElementSibling?.tagName];
@@ -320,7 +320,7 @@ test.describe('advertising reserves its space', () => {
   test('every slot has its dimensions before anything loads, and is never focusable', async ({ page }) => {
     await page.goto('/');
     const boxes = await page
-      .locator('[data-ad-slot]')
+      .locator('[data-ad-reserva]')
       .evaluateAll((els) =>
         els.map((el) => ({ h: el.getBoundingClientRect().height, focusable: el.matches('a, button, [tabindex]') })),
       );

@@ -57,6 +57,13 @@ ARG KAL_EL_PREVIEW_SECRET
 ARG TRUST_PROXY
 # The CSP and the image loader's allowlist are fixed at build time (next.config.ts).
 ARG MEDIA_ALLOWED_HOSTS
+# Publicidade: público por natureza e lido no build (next inlines NEXT_PUBLIC_*).
+ARG NEXT_PUBLIC_ADSENSE_CLIENT
+ARG NEXT_PUBLIC_ADSENSE_TEST
+ARG NEXT_PUBLIC_ADSENSE_SLOT_728X90
+ARG NEXT_PUBLIC_ADSENSE_SLOT_300X250
+ARG NEXT_PUBLIC_ADSENSE_SLOT_300X600
+ARG NEXT_PUBLIC_ADSENSE_SLOT_970X250
 ENV NEXT_OUTPUT=standalone NODE_ENV=production
 # `node --env-file`, not `. file` in a shell: a secret containing `$` or a backtick is
 # read literally instead of being expanded. Variables already in the environment (the

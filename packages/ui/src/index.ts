@@ -14,6 +14,7 @@ export { Photo, PlayBadge } from './primitives/Photo';
 export { SearchIcon, MenuIcon } from './primitives/icons';
 
 export { AdSlot } from './ads/AdSlot';
+export { ADSENSE_CSP, adsenseClient, adsenseSlot, adsenseTest } from './ads/adsense';
 export { Pagination, pageItems } from './nav/Pagination';
 
 export { HeroCard, OverlayCard, BigCard, FeatureVideoCard } from './cards/overlay';

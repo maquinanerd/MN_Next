@@ -95,7 +95,7 @@ test.describe('@a11y keyboard', () => {
     await page.goto('/');
     for (let i = 0; i < 40; i += 1) {
       await page.keyboard.press('Tab');
-      expect(await page.evaluate(() => Boolean(document.activeElement?.closest('[data-ad-slot]')))).toBe(false);
+      expect(await page.evaluate(() => Boolean(document.activeElement?.closest('[data-ad-reserva]')))).toBe(false);
     }
   });
 
