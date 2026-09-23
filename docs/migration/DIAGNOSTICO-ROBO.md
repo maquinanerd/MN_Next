@@ -121,3 +121,20 @@ a um clique.
   desde o core update de maio.
 - Não mexer nas 17 matérias importadas do WordPress que têm "Fonte:" no corpo: ali a linha
   é legítima, veio do texto original.
+
+## Correções aplicadas em 23/09/2026, com a prova em produção
+
+| O que o diagnóstico apontou | O que foi feito | Prova |
+| --- | --- | --- |
+| **42 falhas** `editoria inexistente no site: series-e-tv` | O cache de taxonomia vinha do banco local, que só conhece as editorias que o robô já usou; uma editoria que o site tem e o robô nunca usou era tratada como inexistente. Agora, antes de negar, o robô pergunta ao Kal El. (MN-Prime #5) | `https://www.maquinanerd.com.br/series-e-tv/dancing-with-the-stars-tem-empate-triplo-no-topo-e-eliminacao`, publicada às 16h14 de 23/09 |
+| **Zero links internos** | Duas metades: o `link_store` só era alimentado pelo `canonicalSlug` que a Cinerie devolve (caminho fechado no MN-Prime) e o enriquecimento estava atrás de um gate de `OUTPUT_MODE`. Cada publicação agora registra o próprio endereço público, e o acervo já publicado é semeado uma vez a partir do próprio Kal El. (MN-Prime #6 e #7) | A matéria das 17h30 linka, no corpo, para a das 16h55 |
+| **Pauta de mercado** (Mipcom, agentes de vendas, conferência de investidores) | Recusa pelo título, antes de a IA escrever, por lista editável em _Ajustes_. Sete termos configurados. | No contêiner: `EARLY_PAUTA_FORA_DO_ESCOPO` para "Jeff Zucker debate futuro da Banijay no Mipcom"; título de cultura pop passa |
+| **Matérias sem assinatura** | Autor padrão configurado no site. | Todas as matérias do feed saem com `dc:creator: Maquinista` |
+
+**Teto diário: descartado por decisão do dono.** O portal publica sem teto. As defesas
+contra volume ruim passam a ser a pauta recusada no título e o agrupamento de eventos —
+não um limite numérico.
+
+**Continua pendente:** limpar as 22 matérias com a linha de fontes repetida e assinar as 7
+sem autor (edições no acervo já publicado, fora do que o robô refaz sozinho); exigir duas
+fontes para publicar direto; hubs por franquia.
