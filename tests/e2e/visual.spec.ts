@@ -85,7 +85,10 @@ test.describe('@visual design system', () => {
     const paragraphs = await page.evaluate(() =>
       Array.from(document.querySelectorAll('article p'))
         .map((el) => getComputedStyle(el))
-        .map((s) => ({ align: s.textAlign, hyphens: s.hyphens || s.webkitHyphens })),
+        .map((s) => ({
+          align: s.textAlign,
+          hyphens: s.getPropertyValue('hyphens') || s.getPropertyValue('-webkit-hyphens'),
+        })),
     );
     expect(paragraphs.length).toBeGreaterThan(3);
     expect(paragraphs.filter((p) => p.hyphens === 'auto')).toEqual([]);
