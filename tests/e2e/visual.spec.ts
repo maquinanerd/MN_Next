@@ -78,6 +78,19 @@ test.describe('@visual design system', () => {
     expect(round).toEqual([]);
   });
 
+  test('article text is justified and never hyphenated', async ({ page }) => {
+    // `hyphens: auto` partia palavra no fim da linha ("importan-tes"), e o dicionário do
+    // navegador erra em português com frequência suficiente para atrapalhar a leitura.
+    await page.goto('/cinema/o-misterio-de-scarlett-johansson-a-estrela-perdida-da-marvel');
+    const paragraphs = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('article p'))
+        .map((el) => getComputedStyle(el))
+        .map((s) => ({ align: s.textAlign, hyphens: s.hyphens || s.webkitHyphens })),
+    );
+    expect(paragraphs.length).toBeGreaterThan(3);
+    expect(paragraphs.filter((p) => p.hyphens === 'auto')).toEqual([]);
+  });
+
   test('no shadow anywhere', async ({ page }) => {
     await page.goto('/');
     const shadows = await page.evaluate(
