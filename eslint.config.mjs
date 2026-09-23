@@ -71,9 +71,16 @@ export default tseslint.config(
      * The only places allowed to serialise a string into the DOM:
      *  - RichText renders structured nodes, never a string (kept here for the rule below);
      *  - JsonLd escapes `<`, `>` and `&` before writing the graph;
-     *  - the root layout inlines the pre-paint theme script, which is a constant.
+     *  - the root layout inlines the pre-paint theme script, which is a constant;
+     *  - `Adsense` inlines the consent flag the ad library reads at boot, also a
+     *    constant, and it has to run before the loader tag that follows it.
      */
-    files: ['packages/ui/src/primitives/RichText.tsx', 'packages/seo/src/JsonLd.tsx', 'app/layout.tsx'],
+    files: [
+      'packages/ui/src/primitives/RichText.tsx',
+      'packages/seo/src/JsonLd.tsx',
+      'app/layout.tsx',
+      'components/Adsense.tsx',
+    ],
     rules: { 'react/no-danger': 'off' },
   },
   {

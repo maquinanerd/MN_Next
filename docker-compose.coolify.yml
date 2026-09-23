@@ -39,6 +39,15 @@ services:
         - KAL_EL_PREVIEW_SECRET=${SERVICE_BASE64_64_PREVIEW}
         - TRUST_PROXY=true
         - MEDIA_ALLOWED_HOSTS=${MEDIA_ALLOWED_HOSTS:-}
+        # Publicidade. Sem NEXT_PUBLIC_ADSENSE_CLIENT o build não carrega nada do Google e
+        # o espaço reservado fica vazio; em staging, NEXT_PUBLIC_ADSENSE_TEST=true pede
+        # criativo de teste, que não conta impressão nem receita.
+        - NEXT_PUBLIC_ADSENSE_CLIENT=${NEXT_PUBLIC_ADSENSE_CLIENT:-}
+        - NEXT_PUBLIC_ADSENSE_TEST=${NEXT_PUBLIC_ADSENSE_TEST:-}
+        - NEXT_PUBLIC_ADSENSE_SLOT_728X90=${NEXT_PUBLIC_ADSENSE_SLOT_728X90:-}
+        - NEXT_PUBLIC_ADSENSE_SLOT_300X250=${NEXT_PUBLIC_ADSENSE_SLOT_300X250:-}
+        - NEXT_PUBLIC_ADSENSE_SLOT_300X600=${NEXT_PUBLIC_ADSENSE_SLOT_300X600:-}
+        - NEXT_PUBLIC_ADSENSE_SLOT_970X250=${NEXT_PUBLIC_ADSENSE_SLOT_970X250:-}
     environment:
       # Declares the public URL Coolify generates for this service, routed to port 3000.
       - SERVICE_URL_PORTAL_3000

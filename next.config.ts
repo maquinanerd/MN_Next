@@ -1,5 +1,7 @@
 import type { NextConfig } from 'next';
 
+import { ADSENSE_CSP, adsenseClient } from './packages/ui/src/ads/adsense';
+
 /**
  * Remote image hosts come from MEDIA_ALLOWED_HOSTS only. There is deliberately no
  * wildcard fallback: an open `next/image` loader is an open image proxy, and the
@@ -35,25 +37,30 @@ function allowedImageHosts(): string[] {
  *    `<JsonLd>` and the theme script — escape or are constant. See
  *    `packages/content/src/sanitize.ts`.
  *
- * When GAM is wired up its origins are added to `script-src` and `frame-src` explicitly,
- * never by relaxing the policy further.
+ * The ad stack's origins are added to `script-src`, `img-src`, `frame-src` and
+ * `connect-src` explicitly, host by host (`ADSENSE_CSP`), and only in a build that has a
+ * publisher id — never by relaxing the policy further.
  *
  * `style-src` allows inline because React writes the `style` attributes this design uses
  * for aspect ratios and ad reservations, and attribute styles have no hash equivalent.
  */
 function contentSecurityPolicy(): string {
   const imageHosts = allowedImageHosts().map((h) => `https://${h}`);
+  // Named hosts, added only by a build that actually serves ads: a portal without a
+  // publisher id keeps the tighter policy, and the list never becomes a wildcard.
+  const ads = adsenseClient() ? ADSENSE_CSP : { script: [], image: [], frame: [], connect: [] };
+  const join = (hosts: readonly string[]) => (hosts.length ? ` ${hosts.join(' ')}` : '');
 
   return [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline'",
+    `script-src 'self' 'unsafe-inline'${join(ads.script)}`,
     "style-src 'self' 'unsafe-inline'",
-    `img-src 'self' data: blob: ${imageHosts.join(' ')}`.trim(),
+    `img-src 'self' data: blob: ${imageHosts.join(' ')}`.trim() + join(ads.image),
     "font-src 'self'",
     // The RUM beacon and the newsletter post go to this origin only.
-    "connect-src 'self'",
+    `connect-src 'self'${join(ads.connect)}`,
     // Only the two players the embed facade can actually open.
-    'frame-src https://www.youtube-nocookie.com https://player.vimeo.com',
+    `frame-src https://www.youtube-nocookie.com https://player.vimeo.com${join(ads.frame)}`,
     "frame-ancestors 'self'",
     "object-src 'none'",
     "base-uri 'self'",
