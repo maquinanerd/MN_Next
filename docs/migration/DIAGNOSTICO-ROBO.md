@@ -138,3 +138,39 @@ não um limite numérico.
 **Continua pendente:** limpar as 22 matérias com a linha de fontes repetida e assinar as 7
 sem autor (edições no acervo já publicado, fora do que o robô refaz sozinho); exigir duas
 fontes para publicar direto; hubs por franquia.
+
+## As 22 matérias com a linha de fontes repetida
+
+Levantadas em 23/09/2026 varrendo o `news-sitemap.xml` (86 matérias) atrás de um parágrafo
+do corpo começando com "Fonte(s):" e **sem** a seta do módulo de fontes do portal — é essa
+a assinatura da duplicação. O bloco legítimo, com uma entrada por veículo e a seta, fica
+fora da lista.
+
+| # | Endereço | Linha repetida |
+| --- | --- | --- |
+| 1 | `/cinema/wga-encerra-processo-contra-fusao-da-paramount-e-warner-bros` | Fontes: Variety Collider |
+| 2 | `/cinema/sense-and-sensibility-ganha-nova-adaptacao-com-daisy-edgar-jones` | Fontes: ScreenRant Movieweb |
+| 3 | `/cinema/the-uprising-enfrenta-queda-historica-nas-bilheterias-dos-eua` | Fontes: ScreenRant Movieweb |
+| 4 | `/cinema/elliot-graham-editor-indicado-ao-oscar-por-milk-morre-aos-50` | Fonte: THR |
+| 5 | `/cinema/chris-pine-recebe-oferta-para-dublar-batman-em-dynamic-duo` | Fontes: Movieweb ComicBook |
+| 6 | `/cinema/heart-of-the-beast-marca-recorde-de-brad-pitt-no-rotten-tomatoes` | Fontes: ScreenRant Movieweb |
+| 7 | `/cinema/the-ministry-of-ungentlemanly-warfare-assume-lideranca-na-netflix` | Fontes: ScreenRant Movieweb |
+| 8 | `/cinema/resident-evil-ganha-sequencia-em-potencial-apos-sucesso-de-bilheteria` | Fontes: THR ScreenRant |
+| 9 | `/cinema/the-mosquito-bowl-ganha-estreia-mundial-no-afi-fest` | Fonte: THR |
+| 10 | `/cinema/santa-fe-international-film-festival-anuncia-selecao-de-2026` | — |
+| 11 | `/cinema/paper-tiger-ganha-trailer-oficial-com-adam-driver-e-johansson` | — |
+| 12 | `/cinema/animation-is-film-confirma-programacao-da-edicao-de-2026` | — |
+| 13 | `/cinema/the-beast-revela-trailer-com-samuel-l-jackson-e-joel-kinnaman` | — |
+| 14 | `/cinema/playmates-ganha-lily-rose-depp-e-bill-pullman-em-drama-da-searchlight` | — |
+| 15 | `/cinema/george-lucas-revela-que-planejava-mais-tres-filmes-de-star-wars` | — |
+| 16 | `/cinema/resident-evil-estreia-no-topo-da-bilheteria-com-us-108-milhoes` | — |
+| 17 | `/cinema/sony-pictures-adquire-direitos-de-the-surgeon-para-diversos-paises` | — |
+| 18 | `/cinema/robert-eggers-dirige-nova-adaptacao-de-romeo-and-juliet` | — |
+| 19 | `/cinema/robert-pattinson-confirma-mudanca-radical-em-the-batman-part-ii` | — |
+| 20 | `/cinema/man-of-tomorrow-revela-novos-detalhes-sobre-o-passado-de-lex-luthor` | — |
+| 21 | `/series-e-tv/netflix-renova-crew-girl-para-a-segunda-temporada` | — |
+| 22 | `/series-e-tv/peter-krause-retorna-a-tv-em-line-of-fire-apos-saida-de-9-1-1` | — |
+
+A correção é apagar esse parágrafo no CMS; o módulo de fontes do portal continua
+mostrando os veículos. **Nenhuma matéria nova nasce assim** desde que o bloco de crédito
+deixou de ser colado no corpo no MN-Prime — o documento do Kal El já traz as fontes.
