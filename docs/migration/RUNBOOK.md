@@ -527,6 +527,39 @@ naquele servidor (`docker history`). Quem o vê é quem tem acesso ao Docker do 
 grupo que já o lê no ambiente do container em execução. Lembre que é um token com escopos
 `*.manage` de taxonomia e SEO (seção 1.1): se o host mudar de mãos, revogue e emita outro.
 
+### 4.5.2 Deploy sem tirar o site do ar
+
+> **Ainda não aplicado.** É o caminho, com o que ele custa; a troca é no painel e o
+> primeiro deploy depois dela precisa de alguém olhando.
+
+Com o build pack **Docker Compose**, o Coolify recria o contêiner: o site fica fora do ar
+durante a troca. A atualização em rolagem ("zero downtime") existe no build pack
+**Dockerfile** — sobe o contêiner novo, espera o healthcheck passar, só então move o proxy
+e drena o antigo. Um build que falha deixa o contêiner atual no ar, em vez de derrubá-lo
+antes de tentar.
+
+O que muda, no recurso do portal:
+
+1. Build pack **Dockerfile**, arquivo `/Dockerfile`, porta **3000**. Nada publicado no
+   host: quem roteia continua sendo o Traefik.
+2. As variáveis já estão em _Environment Variables_ — é de lá que o compose as lia. Com o
+   Dockerfile o Coolify as injeta como `ARG` em todas as etapas e como ambiente no
+   contêiner, que é o que o build precisa (`NEXT_PUBLIC_SITE_URL`, `KAL_EL_*`, os
+   `NEXT_PUBLIC_ADSENSE_*`). Confira `NEXT_PUBLIC_SITE_URL`: ele entra no build.
+3. O `HEALTHCHECK` do `Dockerfile` (linha 90) já é o mesmo `/api/health` do compose, então
+   a rolagem tem em que se apoiar. O `stop_grace_period: 20s` do compose vira opção do
+   recurso; sem ele vale o padrão do Docker, 10s.
+4. Ligar **Rolling update**.
+
+O que a rolagem implica, contra o que a seção 3 diz sobre uma instância só: por alguns
+segundos existem duas. O cache ISR e os nonces do webhook vivem no contêiner, então as duas
+não os compartilham. Na prática isso é inofensivo — o Traefik manda cada requisição para um
+dos dois, revalidar a mesma tag duas vezes dá no mesmo, e o contêiner novo nasce com cache
+frio de qualquer jeito, como já nasce hoje. O que se ganha é não ter janela de 502.
+
+`docker-compose.coolify.yml` fica no repositório como a descrição completa do ambiente (e
+para quem subir outro portal por compose), mas deixa de ser o que este recurso executa.
+
 ## 5. Virada
 
 > Feita em 2026-09-16, fora desta ordem: o WordPress já estava fora do ar, e o owner decidiu
