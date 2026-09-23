@@ -46,8 +46,15 @@ export function Inline({ trechos, comercial = false }: { trechos: Trecho[]; come
   );
 }
 
-const PARAGRAPH =
-  'm-0 text-16 leading-[1.65] text-ink-2 tab:text-17 tab:leading-[1.6] tab:text-justify tab:hyphens-auto';
+/*
+ * Justificado, sem hifenizacao.
+ *
+ * `hyphens: auto` partia palavra no fim da linha ("timo-neira", "importan-tes"), e o
+ * dicionario do navegador erra em portugues com frequencia suficiente para atrapalhar a
+ * leitura. Sem ele o navegador distribui o espaco entre as palavras, que e o defeito
+ * menor: um rio de espaco numa linha e mais facil de ler do que uma palavra cortada.
+ */
+const PARAGRAPH = 'm-0 text-16 leading-[1.65] text-ink-2 tab:text-17 tab:leading-[1.6] tab:text-justify';
 
 /** After a wide figure the prototypes open a new section under a rule. */
 const SECTION = 'mt-40 border-t border-line pt-32';
