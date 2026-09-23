@@ -119,8 +119,11 @@ a um clique.
   consolidação.
 - Não aumentar o volume para "compensar" — é o caminho contrário ao que o Google premia
   desde o core update de maio.
-- Não mexer nas 17 matérias importadas do WordPress que têm "Fonte:" no corpo: ali a linha
-  é legítima, veio do texto original.
+- Não mexer nas **392** matérias importadas do WordPress que têm "Fonte:" no corpo: ali a
+  linha é legítima, veio do texto original. (O diagnóstico dizia 17; a varredura completa
+  do acervo no Kal El, em 23/09, mostrou 392. O que separa umas das outras é o nó `source`:
+  as 22 do robô têm a linha **e** os nós, e é essa coexistência que faz a repetição; as 392
+  importadas têm só a linha, que é a única atribuição que elas carregam.)
 
 ## Correções aplicadas em 23/09/2026, com a prova em produção
 
