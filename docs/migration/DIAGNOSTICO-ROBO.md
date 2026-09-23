@@ -174,3 +174,20 @@ fora da lista.
 A correção é apagar esse parágrafo no CMS; o módulo de fontes do portal continua
 mostrando os veículos. **Nenhuma matéria nova nasce assim** desde que o bloco de crédito
 deixou de ser colado no corpo no MN-Prime — o documento do Kal El já traz as fontes.
+
+## As 7 matérias sem assinatura
+
+Mesma varredura, procurando o link do autor na página. São as primeiras da série,
+publicadas antes de o autor padrão ser configurado no site; as seis primeiras também
+estão na lista acima.
+
+1. `/cinema/sony-pictures-adquire-direitos-de-the-surgeon-para-diversos-paises`
+2. `/cinema/robert-eggers-dirige-nova-adaptacao-de-romeo-and-juliet`
+3. `/cinema/robert-pattinson-confirma-mudanca-radical-em-the-batman-part-ii`
+4. `/cinema/man-of-tomorrow-revela-novos-detalhes-sobre-o-passado-de-lex-luthor`
+5. `/series-e-tv/netflix-renova-crew-girl-para-a-segunda-temporada`
+6. `/series-e-tv/peter-krause-retorna-a-tv-em-line-of-fire-apos-saida-de-9-1-1`
+7. `/cinema/digger-divide-critica-com-atuacao-de-tom-cruise-em-novo-filme`
+
+Basta atribuir o Maquinista como autor no CMS. **Toda matéria nova já sai assinada** —
+as do feed de 23/09 trazem `dc:creator: Maquinista`.
