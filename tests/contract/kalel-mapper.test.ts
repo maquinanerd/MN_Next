@@ -15,7 +15,8 @@ import {
   resolveTemplate,
   type MapperContext,
 } from '../../packages/content/src/kalel/mapper';
-import { kalelArticleSchema } from '../../packages/content/src/kalel/dto';
+import { kalelArticleSchema, type KalElDocumentNode } from '../../packages/content/src/kalel/dto';
+import { toBlocos } from '../../lib/content/map';
 import { AFFILIATE_TAG, ARTICLE, AUTHOR, CATEGORY, ENTITY_BRAND, HOSTILE_ARTICLE, MEDIA, TAG } from './kalel-fixtures';
 
 /**
@@ -130,6 +131,58 @@ describe('mapDocument', () => {
   it('counts words so reading time is derived, not typed', () => {
     const { wordCount } = mapDocument(ARTICLE.document.nodes, { media: ctx.media });
     expect(wordCount).toBeGreaterThan(10);
+  });
+
+  describe('a paragraph that is only a YouTube URL', () => {
+    const paragraph = (text: string): KalElDocumentNode =>
+      ({ type: 'paragraph', content: [{ type: 'text', text, marks: [] }] }) as unknown as KalElDocumentNode;
+    const map = (...nodes: KalElDocumentNode[]) => mapDocument(nodes, { media: ctx.media });
+
+    it('becomes the video, not a bare link in the text (clayface-...-dcu-2)', () => {
+      const { blocks, wordCount } = map(
+        paragraph('Clayface estreia em 2026.'),
+        paragraph('https://www.youtube.com/watch?v=KCR-rz0YfD4'),
+        paragraph('A trama acompanha Matt Hagen.'),
+      );
+      expect(blocks.map((b) => b.type)).toEqual(['paragraph', 'embed', 'paragraph']);
+      expect(blocks[1]).toEqual({
+        type: 'embed',
+        provider: 'youtube',
+        url: 'https://www.youtube.com/watch?v=KCR-rz0YfD4',
+      });
+      expect(wordCount).toBe(9);
+      const [video] = toBlocos([blocks[1]!], 'Clayface');
+      expect(video).toMatchObject({ tipo: 'video', provedor: 'youtube', id: 'KCR-rz0YfD4' });
+    });
+
+    it.each([
+      ' https://youtu.be/dQw4w9WgXcQ ',
+      'https://m.youtube.com/watch?v=dQw4w9WgXcQ&t=10',
+      'https://www.youtube.com/shorts/dQw4w9WgXcQ',
+      'https://www.youtube.com/embed/dQw4w9WgXcQ',
+    ])('recognises %s', (url) => {
+      const { blocks } = map(paragraph(url));
+      expect(blocks.map((b) => b.type)).toEqual(['embed']);
+    });
+
+    it('also when the URL carries a link mark to itself', () => {
+      const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+      const linked = {
+        type: 'paragraph',
+        content: [{ type: 'text', text: url, marks: [{ type: 'link', attrs: { href: url } }] }],
+      } as unknown as KalElDocumentNode;
+      expect(map(linked).blocks.map((b) => b.type)).toEqual(['embed']);
+    });
+
+    it.each([
+      'Veja o trailer em https://www.youtube.com/watch?v=dQw4w9WgXcQ agora.',
+      'https://www.youtube.com/watch?v=curto',
+      'https://www.youtube.com/@maquinanerd',
+      'https://evil.example/watch?v=dQw4w9WgXcQ',
+      'javascript:alert(1)//youtube.com/watch?v=dQw4w9WgXcQ',
+    ])('keeps %s as text', (text) => {
+      expect(map(paragraph(text)).blocks.map((b) => b.type)).toEqual(['paragraph']);
+    });
   });
 
   describe('hostile input', () => {
