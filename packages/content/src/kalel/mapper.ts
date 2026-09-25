@@ -169,6 +169,42 @@ function headingId(text: string, index: number): string {
   return base.length > 0 ? base : `secao-${index + 1}`;
 }
 
+const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
+
+/**
+ * The URL when a paragraph is nothing but a YouTube video link, else `null`.
+ *
+ * The robot (MN-Prime) writes every video as `<p>https://www.youtube.com/watch?v=ID</p>` —
+ * WordPress's oEmbed convention, where a URL on its own line became the player. Until its
+ * Kal El converter learned to emit an `embed` node, those articles were stored with the URL
+ * as paragraph text and rendered as a bare link. Kal El documents are create-only for the
+ * robot, so the stored articles are fixed here, at read time. A sentence that mentions a
+ * video, a channel URL or a malformed id stays a paragraph.
+ */
+function bareYouTubeVideoUrl(content: RichText): string | null {
+  const text = inlineToText(content).trim();
+  if (!/^https?:\/\/\S+$/.test(text)) return null;
+  const url = safeHref(text);
+  if (!url) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  const host = parsed.hostname.replace(/^(?:www|m)\./, '');
+  let id: string | null = null;
+  if (host === 'youtu.be') {
+    id = parsed.pathname.split('/')[1] ?? null;
+  } else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+    id =
+      parsed.pathname === '/watch'
+        ? parsed.searchParams.get('v')
+        : (/^\/(?:embed|shorts)\/([^/]+)/.exec(parsed.pathname)?.[1] ?? null);
+  }
+  return id !== null && YOUTUBE_VIDEO_ID.test(id) ? url : null;
+}
+
 function normaliseEmbedProvider(provider: string, url: string): EmbedProvider | null {
   const p = provider.toLowerCase();
   const known = EMBED_PROVIDERS.find((e) => e === p);
@@ -213,6 +249,11 @@ export function mapDocument(
     switch (node.type) {
       case 'paragraph': {
         const content = mapInline(node.content as KalElInline[]);
+        const video = bareYouTubeVideoUrl(content);
+        if (video) {
+          blocks.push({ type: 'embed', provider: 'youtube', url: video });
+          return;
+        }
         countWords(inlineToText(content));
         // An empty paragraph is layout noise from an importer, not content.
         if (inlineToText(content).trim() === '') return;

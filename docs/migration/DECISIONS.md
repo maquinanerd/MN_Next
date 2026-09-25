@@ -1109,3 +1109,23 @@ declarar um vendedor que o site não carrega.
 **O atributo do espaço mudou de nome.** A reserva era marcada `data-ad-slot`, que é
 justamente o atributo que o AdSense lê do `<ins>`. Dois elementos com o mesmo nome deixam
 todo seletor ambíguo — o nosso e o do Google —, então a reserva virou `data-ad-reserva`.
+
+### 7.24 Vídeo do robô publicado como URL no texto (2026-09-25)
+
+`/cinema/clayface-ganha-trailer-final-e-confirma-tom-de-horror-no-dcu-2` mostrava
+`https://www.youtube.com/watch?v=KCR-rz0YfD4` como parágrafo, no lugar do player.
+
+**Causa, no robô (MN-Prime).** O pipeline entrega todo vídeo como
+`<p>https://www.youtube.com/watch?v=ID</p>` — a convenção do oEmbed do WordPress, que fazia
+o player a partir de uma URL numa linha própria. O conversor do Kal El só reconhecia a URL
+dentro de uma `<figure>`, e a própria normalização do pipeline desfaz essa `<figure>`. O
+documento chegava ao Kal El com a URL como texto. Corrigido lá (`app/kalel/document.py`,
+`_bare_video_paragraph`).
+
+**Por que também aqui.** O robô grava o `document` só na criação e nunca o reenvia, então as
+matérias que já saíram continuariam com a URL. `mapDocument` passa a tratar um parágrafo que
+é **só** a URL de um vídeo do YouTube (`watch?v=`, `youtu.be/`, `/embed/`, `/shorts/`, id de
+11 caracteres) como `embed` — a mesma regra que o importador do WordPress já aplica ao
+auto-embed (`scripts/wp/transform.ts`). Frase que menciona um vídeo, URL de canal e id
+malformado continuam parágrafo. Nenhum dado é reescrito no Kal El: a correção vale na
+leitura, e a matéria antiga passa a mostrar o player assim que o cache dela vence.
