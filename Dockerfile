@@ -84,6 +84,10 @@ COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
 USER nextjs
+# The optimized-image cache, owned by the server's user before anything is mounted on it:
+# a new named volume copies the ownership of the directory it covers, and one created by
+# the mount alone would belong to root and refuse every write (docker-compose.coolify.yml).
+RUN mkdir -p .next/cache/images
 EXPOSE 3000
 # Liveness only: readiness (`?ready=1`) also checks Kal El, and a CMS blip must not get
 # this container killed and restarted into the same blip.

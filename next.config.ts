@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import type { NextConfig } from 'next';
 
 import { ADSENSE_CSP, adsenseClient } from './packages/ui/src/ads/adsense';
@@ -101,6 +103,14 @@ const nextConfig: NextConfig = {
   // nothing, and the table would silently stay out of the standalone build.
   outputFileTracingIncludes: { '/wp-content/uploads/**': ['./data/legacy-media.tsv.gz'] },
   transpilePackages: ['@mn/ui', '@mn/content', '@mn/seo', '@mn/tokens'],
+  /*
+   * ISR and the data cache stay in memory at run time (next-cache-handler.mjs): on disk
+   * they grew the container by hundreds of thousands of files and broke every deploy from
+   * 25/09/2026 on. 256 MB of LRU instead of Next's 50 MB, because memory is now the only
+   * place a rendered page lives until the next deploy.
+   */
+  cacheHandler: path.join(process.cwd(), 'next-cache-handler.mjs'),
+  cacheMaxMemorySize: 256 * 1024 * 1024,
   // Lint is its own gate (`pnpm lint`); running it twice only slows the build.
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: false },
