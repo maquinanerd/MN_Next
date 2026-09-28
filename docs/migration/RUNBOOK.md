@@ -560,6 +560,35 @@ frio de qualquer jeito, como já nasce hoje. O que se ganha é não ter janela d
 `docker-compose.coolify.yml` fica no repositório como a descrição completa do ambiente (e
 para quem subir outro portal por compose), mas deixa de ser o que este recurso executa.
 
+### 4.5.3 Nada de cache dentro do contêiner
+
+De 25/09 a 28/09/2026 **todo** deploy do portal falhou no mesmo ponto, com o build
+concluído: `removal of container … is already in progress`. O Next gravava cada página
+renderizada (`.next/server/app`) e cada `fetch` ao Kal El (`.next/cache/fetch-cache`)
+dentro da camada gravável do contêiner — 1.388 arquivos de fetch e 114 de página nos dois
+primeiros minutos de um contêiner novo; 18.011 e 1.221 aos 17 minutos, perto de 1.100
+arquivos por minuto. Depois de alguns dias eram milhões de arquivos, o Docker não terminava
+de apagar o contêiner antigo nos 60 s que o Coolify espera, e a recriação do serviço
+falhava. Em 28/09 isso deixou o site em 503 por três horas, com o contêiner novo criado e
+nunca iniciado.
+
+Desde então:
+
+- páginas e fetches ficam **em memória** em execução (`next-cache-handler.mjs`, LRU de
+  256 MB em `cacheMaxMemorySize`); o build continua gravando o que pré-renderiza;
+- a única gravação em disco é a das imagens otimizadas, no volume `portal-image-cache`
+  (`/app/.next/cache/images`), que atravessa o deploy.
+
+Para conferir depois de um deploy, no terminal do servidor no Coolify:
+
+```sh
+C=$(docker ps -q --filter name=portal-xys58xzntjzf3xd5ar5snoq5)
+docker exec "$C" sh -c 'find .next/cache .next/server/app -type f -newer server.js ! -path "*/cache/images/*" | wc -l'
+```
+
+Tem de dar `0`. Se um deploy voltar a falhar com `removal … in progress` e o site cair, o
+contêiner novo costuma estar em `Created`: um novo deploy pelo painel o recria e sobe.
+
 ## 5. Virada
 
 > Feita em 2026-09-16, fora desta ordem: o WordPress já estava fora do ar, e o owner decidiu

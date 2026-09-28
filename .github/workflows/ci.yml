@@ -136,6 +136,30 @@ jobs:
           curl -fsS http://127.0.0.1:3000/api/health
           curl -fsS -o /dev/null http://127.0.0.1:3000/
           test "$(docker exec portal id -u)" != "0"
+      # Pages and fetches stay in memory (next-cache-handler.mjs); the only run-time disk
+      # writes are optimized images, into a directory the volume on Coolify covers. A
+      # container that fills its own writable layer cannot be removed inside Coolify's
+      # deploy window — every deploy from 25/09/2026 on failed that way.
+      - name: Keeps the cache out of the container's writable layer
+        run: |
+          set -euo pipefail
+          handler=$(docker exec --workdir /app portal node -p "require('./.next/required-server-files.json').config.cacheHandler")
+          echo "cacheHandler: $handler"
+          docker exec --workdir /app/.next portal test -f "$handler"
+          test "$(docker exec --workdir /app portal stat -c %U .next/cache/images)" = "nextjs"
+          curl -fsS -o /dev/null "http://127.0.0.1:3000/_next/image?url=%2Fbrand%2Fmn-logo-on-light.png&w=256&q=75"
+          test "$(docker exec --workdir /app portal find .next/cache/images -type f | wc -l)" != "0"
+          # A page regenerated at run time: the home revalidates every 60 s, so after 65 s the
+          # next request is served stale and rebuilt in the background — the moment Next's
+          # default handler writes .html/.rsc/.meta under .next/server/app.
+          docker exec portal touch /tmp/before-regeneration
+          sleep 65
+          curl -fsS -D - -o /dev/null http://127.0.0.1:3000/ | grep -i '^x-nextjs-cache: STALE'
+          sleep 5
+          curl -fsS -o /dev/null http://127.0.0.1:3000/
+          written=$(docker exec --workdir /app portal sh -c 'find .next/server/app .next/cache -type f -newer /tmp/before-regeneration ! -path ".next/cache/images/*"')
+          echo "written at run time: ${written:-none}"
+          test -z "$written"
       # The cover crops (/media/{id}/{variant}-v1.jpg) need sharp's native binary for musl.
       # The fixture has no CMS media to crop, so this does what the route does to an upload —
       # decode an AVIF, crop it on the salient region, write a JPEG — with the sharp the
