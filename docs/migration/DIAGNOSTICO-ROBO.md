@@ -1,5 +1,7 @@
 # Diagnóstico das matérias publicadas pelo robô
 
+> Atualizado em 28/09/2026: ver [DIAGNOSTICO-2026-09-28.md](DIAGNOSTICO-2026-09-28.md).
+
 Corpus: as 76 matérias que o `news-sitemap.xml` trazia em 23/09/2026 às 12h40 UTC, lidas
 do HTML servido ao leitor, mais o registro de publicações do MN-Prime (cerca de 95
 publicadas e 42 falhas entre 22/09 23h08 e 23/09 12h14). Tudo abaixo é medido, não
