@@ -128,6 +128,35 @@ describe('KalElTransport.read', () => {
     ).rejects.toBeInstanceOf(ContentError);
   }, 10_000);
 
+  it('times out even when the fetch ignores the signal, as Next does while revalidating', async () => {
+    // Next re-issues a stale tagged fetch in the background WITHOUT the caller's signal
+    // (patch-fetch: "don't pass through signal when revalidating"). From 29/09/2026 the
+    // home hung on exactly this for two days: a request nobody could abort.
+    const fetchImpl = vi.fn(() => new Promise<Response>(() => {}));
+    const started = Date.now();
+    const error = await transport(fetchImpl as unknown as typeof fetch)
+      .read(kalelArticleListSchema, { path: '/stuck' })
+      .catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(ContentError);
+    expect((error as ContentError).message).toContain('timed out after 200ms');
+    // Two attempts of 200 ms and a short jitter between them — not a hung render.
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  }, 10_000);
+
+  it('times out when the headers arrive but the body never finishes', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(new ReadableStream({ start() {} }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    await expect(
+      transport(fetchImpl as unknown as typeof fetch).read(kalelArticleListSchema, { path: '/half' }),
+    ).rejects.toMatchObject({ kind: 'unavailable' });
+  }, 10_000);
+
   it('marks search reads as no-store rather than tagging them', async () => {
     const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       expect((init as { cache?: string }).cache).toBe('no-store');

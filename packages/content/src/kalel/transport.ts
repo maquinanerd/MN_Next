@@ -86,6 +86,43 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * `work`, or an AbortError as soon as `signal` aborts — whichever comes first.
+ *
+ * The AbortSignal handed to `fetch` is not enough on its own. When Next regenerates an
+ * ISR page in the background it re-issues a stale tagged fetch WITHOUT the caller's
+ * signal (`next/dist/server/lib/patch-fetch.js`: "don't pass through signal when
+ * revalidating"), so the timeout never reaches the request. From 29/09/2026 ~20:30 UTC
+ * the home kept serving a stale render for two days: its background regeneration hung
+ * on a Kal El call nobody could abort, Next will not start a second one for the same
+ * page while the first is pending, and pages with no cached copy hung for every visitor.
+ * Racing the promise against the signal bounds the READ even when the request itself
+ * cannot be cancelled; the orphaned socket is left to undici's own timeouts.
+ */
+export function withDeadline<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    work.catch(() => {});
+    return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      work.catch(() => {});
+      reject(new DOMException('The operation was aborted', 'AbortError'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (err: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(err);
+      },
+    );
+  });
+}
+
 /** Transport events that are alerts rather than dependency blips (RUNBOOK §2). */
 const ALERT_EVENTS: ReadonlySet<string> = new Set(['kalel.contract.violation', 'kalel.read.rate-limited']);
 
@@ -156,25 +193,29 @@ export class KalElTransport {
       const isLastAttempt = attempt === 1 || req.retry === false;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+      // Every await on the network below goes through the deadline: see `withDeadline`.
+      const bounded = <V>(work: Promise<V>) => withDeadline(work, controller.signal);
       try {
-        const res = await this.fetchImpl(url, {
-          method: 'GET',
-          headers: {
-            authorization: `Bearer ${this.token}`,
-            accept: 'application/json',
-            'x-correlation-id': correlationId,
-          },
-          signal: controller.signal,
-          // `no-store` for search/preview; otherwise a tagged, time-bounded entry.
-          ...(req.noStore
-            ? { cache: 'no-store' as const }
-            : {
-                next: {
-                  tags: req.tags ?? [],
-                  ...(req.revalidate === undefined ? {} : { revalidate: req.revalidate }),
-                },
-              }),
-        });
+        const res = await bounded(
+          this.fetchImpl(url, {
+            method: 'GET',
+            headers: {
+              authorization: `Bearer ${this.token}`,
+              accept: 'application/json',
+              'x-correlation-id': correlationId,
+            },
+            signal: controller.signal,
+            // `no-store` for search/preview; otherwise a tagged, time-bounded entry.
+            ...(req.noStore
+              ? { cache: 'no-store' as const }
+              : {
+                  next: {
+                    tags: req.tags ?? [],
+                    ...(req.revalidate === undefined ? {} : { revalidate: req.revalidate }),
+                  },
+                }),
+          }),
+        );
 
         if (res.status === 404) throw ContentError.notFound(req.path, correlationId);
         if (res.status === 401 || res.status === 403) {
@@ -184,7 +225,7 @@ export class KalElTransport {
           });
         }
         if (res.status === 429) {
-          const detail = await this.errorDetail(res);
+          const detail = await bounded(this.errorDetail(res));
           const asked = retryAfterMs(res.headers.get('retry-after'));
           const err = ContentError.unavailable(`Kal El GET ${req.path} was rate limited`, {
             correlationId,
@@ -209,7 +250,7 @@ export class KalElTransport {
           throw err;
         }
         if (!res.ok) {
-          const detail = await this.errorDetail(res);
+          const detail = await bounded(this.errorDetail(res));
           const err = ContentError.unavailable(`Kal El GET ${req.path} failed with ${res.status}`, {
             correlationId,
             status: res.status,
@@ -224,7 +265,7 @@ export class KalElTransport {
           throw err;
         }
 
-        const json: unknown = await res.json();
+        const json: unknown = await bounded(res.json());
         const parsed = envelope.safeParse(json);
         if (!parsed.success) {
           const detail = parsed.error.issues
