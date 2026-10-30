@@ -19,3 +19,5 @@ tests/e2e/__screenshots__
 # Fixture photographs: only the fixture provider and its demo sponsored cards use them, and
 # no deployment that serves readers may run that provider (packages/content/src/env.ts).
 public/fixtures
+# Front-end standalone do kit OpaPreço: não faz parte da imagem do portal.
+frontend

@@ -26,6 +26,8 @@ export default tseslint.config(
       'test-results/**',
       'public/**',
       'next-env.d.ts',
+      // Front-end standalone do kit OpaPreço: projeto próprio, com lint e build próprios.
+      'frontend/**',
     ],
   },
   js.configs.recommended,
