@@ -63,10 +63,10 @@ de sinais sem cookie) aumentaria os números, mas exige mudar o texto da barra e
 
 **Configurações do painel que merecem atenção:**
 
-1. **Retenção de dados de eventos em 2 meses** (padrão do Google). Explorações e relatórios
-   personalizados não enxergam nada além disso. O recomendado para um portal é **14 meses**
-   (Administrador → Coleta e modificação de dados → Retenção de dados). Não alterei sem a sua
-   confirmação.
+1. **Retenção de dados de eventos estava em 2 meses** (padrão do Google): explorações e
+   relatórios personalizados não enxergavam nada além disso. **Passou para 14 meses em
+   2026-10-30**, com o OK do dono (Administrador → Coleta e modificação de dados → Retenção de
+   dados). A mudança vale dali para frente.
 2. **O histórico de agosto e setembro tem tráfego de robô.** Nos últimos 90 dias, os países com
    mais "usuários" são Singapura (5,6 mil) e China (1,7 mil), à frente do Brasil (3,4 mil), e o
    canal "Direct" tem 10 mil sessões contra 3,2 mil do orgânico. Esse padrão é o de robôs que o
@@ -244,14 +244,14 @@ que não ficam em cache (§4.3) e dos redirecionamentos de entrada (§4.4).
 
 ### 4.4 Médio — redirecionamentos
 
-| Caso                                | Antes                               | Agora                                            |
-| ----------------------------------- | ----------------------------------- | ------------------------------------------------ |
-| `http://www.maquinanerd.com.br/`    | **302** para o https                | igual — é do Traefik/Cloudflare, não do app (§5) |
-| `http://maquinanerd.com.br/<post>/` | 302 → 301 → 308 → 200 (3 saltos)    | igual (§5)                                       |
-| `/category/filmes/`                 | `/filmes` → `/cinema` (2 saltos)    | `/cinema` em 1 salto                             |
-| `/<post>/amp/`                      | `/<post>/amp` → **404**             | matéria em 1 salto                               |
-| `/sitemap/categories.xml`           | listava `/filmes` e `/series` (301) | só endereços finais                              |
-| `/?p=<id>`                          | 301 para a home (soft 404)          | igual — falta o mapa de ids (§5)                 |
+| Caso                                | Antes                               | Agora                                         |
+| ----------------------------------- | ----------------------------------- | --------------------------------------------- |
+| `http://www.maquinanerd.com.br/`    | **302** para o https                | **301** na borda da Cloudflare (§5)           |
+| `http://maquinanerd.com.br/<post>/` | 302 → 301 → 308 → 200 (3 saltos)    | 301 → 301 → 308 → 200: todos permanentes (§5) |
+| `/category/filmes/`                 | `/filmes` → `/cinema` (2 saltos)    | `/cinema` em 1 salto                          |
+| `/<post>/amp/`                      | `/<post>/amp` → **404**             | matéria em 1 salto                            |
+| `/sitemap/categories.xml`           | listava `/filmes` e `/series` (301) | só endereços finais                           |
+| `/?p=<id>`                          | 301 para a home (soft 404)          | igual — falta o mapa de ids (§5)              |
 
 O que está certo: 10 de 10 permalinks do WordPress chegam à matéria certa (9 em um salto);
 `/feed/`, `/author/x/`, `/tag/x/`, `/page/2/`, `/category/games/` e `/wp-content/uploads/…`
@@ -306,20 +306,20 @@ existe é correto; os do tema poderiam ser 410.
 
 ## 5. Plano de ação
 
-| #   | Prioridade | O quê                                                                                              | Onde               | Estado        |
-| --- | ---------- | -------------------------------------------------------------------------------------------------- | ------------------ | ------------- |
-| 1   | P0         | Destravar e blindar a fila das capas                                                               | código             | **neste PR**  |
-| 2   | P0         | Google Analytics 4 atrás do consentimento                                                          | código + Coolify   | **neste PR**  |
-| 3   | P0         | Sitemap só com URLs finais; `/category/` e `/amp/` em um salto; descrição nunca vazia              | código             | **neste PR**  |
-| 4   | P1         | "Sempre usar HTTPS" na Cloudflare: `http://` vira 301 na borda, sem o 302 e sem a cadeia           | painel Cloudflare  | aguarda OK    |
-| 5   | P1         | Retenção de eventos do GA4 de 2 para 14 meses                                                      | painel GA4         | aguarda OK    |
-| 6   | P1         | Medir de onde vem o CLS (logs de `/api/vitals` por template) e reservar a altura real dos anúncios | código             | próximo passo |
-| 7   | P1         | Cache para `/tag/*`, `/autor/*`, `/page/N` e sitemaps de matérias (TTFB 1–6 s)                     | código             | próximo passo |
-| 8   | P2         | Matérias de estreia com "onde e quando assistir" no título e no primeiro parágrafo (§3.2)          | redação / MN-Prime | recomendação  |
-| 9   | P2         | Título de SEO até ~60 caracteres (o campo `seoTitle` do Kal El já existe)                          | MN-Prime           | recomendação  |
-| 10  | P2         | `?p=<id>` para a matéria certa, pelo id do WordPress que o Kal El guarda                           | código             | backlog       |
-| 11  | P2         | 410 para as páginas-demo do tema; 301 de maiúsculas para minúsculas; 404 com o layout do site      | código             | backlog       |
-| 12  | P2         | Descrições das editorias escritas pela redação                                                     | código / redação   | backlog       |
+| #   | Prioridade | O quê                                                                                              | Onde               | Estado          |
+| --- | ---------- | -------------------------------------------------------------------------------------------------- | ------------------ | --------------- |
+| 1   | P0         | Destravar e blindar a fila das capas                                                               | código             | **neste PR**    |
+| 2   | P0         | Google Analytics 4 atrás do consentimento                                                          | código + Coolify   | **neste PR**    |
+| 3   | P0         | Sitemap só com URLs finais; `/category/` e `/amp/` em um salto; descrição nunca vazia              | código             | **neste PR**    |
+| 4   | P1         | "Sempre usar HTTPS" na Cloudflare: `http://` vira 301 na borda, sem o 302                          | painel Cloudflare  | **feito 30/10** |
+| 5   | P1         | Retenção de eventos do GA4 de 2 para 14 meses                                                      | painel GA4         | **feito 30/10** |
+| 6   | P1         | Medir de onde vem o CLS (logs de `/api/vitals` por template) e reservar a altura real dos anúncios | código             | próximo passo   |
+| 7   | P1         | Cache para `/tag/*`, `/autor/*`, `/page/N` e sitemaps de matérias (TTFB 1–6 s)                     | código             | próximo passo   |
+| 8   | P2         | Matérias de estreia com "onde e quando assistir" no título e no primeiro parágrafo (§3.2)          | redação / MN-Prime | recomendação    |
+| 9   | P2         | Título de SEO até ~60 caracteres (o campo `seoTitle` do Kal El já existe)                          | MN-Prime           | recomendação    |
+| 10  | P2         | `?p=<id>` para a matéria certa, pelo id do WordPress que o Kal El guarda                           | código             | backlog         |
+| 11  | P2         | 410 para as páginas-demo do tema; 301 de maiúsculas para minúsculas; 404 com o layout do site      | código             | backlog         |
+| 12  | P2         | Descrições das editorias escritas pela redação                                                     | código / redação   | backlog         |
 
 **O que acompanhar a partir do deploy:** cliques semanais no Search Console (a referência é
 657); a primeira impressão no Discover; o relatório de Core Web Vitals; no GA4, a proporção
@@ -339,4 +339,20 @@ de visitas orgânicas sobre o total e as páginas de entrada.
   custa nada e nenhuma rota do site novo vive nesse formato.
 - **Página renderizada com JavaScript**: a varredura leu o HTML do servidor; a amostra foi de
   algumas dezenas de URLs, não das 43 mil.
-- **Número real de visitas**: o GA4 só começa a contar depois do deploy, e só quem aceitar.
+- **Número real de visitas**: o GA4 só conta quem aceita os cookies. A coleta foi confirmada
+  no ar depois do deploy de 30/10 (18:38 UTC): o tempo real mostrou um leitor de São Paulo em
+  uma matéria de _The Boys_, com `first_visit`, `page_view` e `session_start`.
+
+---
+
+## 7. Depois do deploy (2026-10-30)
+
+| Verificação                              | Resultado                                                                                                       |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Capas `16x9`, `4x3`, `1x1` de 8 matérias | 24 de 24 em 200 (antes, 503)                                                                                    |
+| `/api/health?ready=1`                    | `ok`                                                                                                            |
+| Id do GA4 no bundle e host na CSP        | presentes                                                                                                       |
+| `/sitemap/categories.xml`                | sem `/filmes` e `/series`                                                                                       |
+| `/category/filmes/` e `/<post>/amp/`     | um salto cada, até o destino final                                                                              |
+| `http://www.maquinanerd.com.br/`         | 301 da Cloudflare para o https; https responde 200, sem loop                                                    |
+| `http://maquinanerd.com.br/<post>/`      | ainda 3 saltos, todos permanentes; uma regra de redirecionamento da raiz para o `www` na Cloudflare levaria a 1 |
