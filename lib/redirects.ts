@@ -124,6 +124,12 @@ export const RENAMED_DESK_REDIRECTS: Record<string, string> = {
 
 const RENAMED_DESK = /^\/(filmes|series|noticias|reviews)(\/.+)$/;
 
+/** `/filmes` → `/cinema`: a renamed desk's own address; any other path unchanged. */
+function renamedDeskRoot(path: string): string {
+  const desk = /^\/([a-z0-9-]+)$/.exec(path)?.[1];
+  return desk && Object.hasOwn(RENAMED_DESK_REDIRECTS, desk) ? (RENAMED_DESK_REDIRECTS[desk] ?? path) : path;
+}
+
 function renamedDesk(path: string): string | null {
   const match = RENAMED_DESK.exec(path);
   if (!match?.[1] || !match[2]) return null;
@@ -153,7 +159,8 @@ export function legacyRedirect(pathname: string, searchParams: URLSearchParams):
     const match = rule.test.exec(path);
     if (!match) continue;
     if (rule.status === 410) return { to: '/', status: 410 };
-    const to = safeInternalPath(rule.to.replace('$1', match[1] ?? ''));
+    // `/category/filmes` goes straight to `/cinema`, not through `/filmes` first.
+    const to = safeInternalPath(renamedDeskRoot(rule.to.replace('$1', match[1] ?? '')));
     if (to) return { to, status: 301 };
   }
 
@@ -178,6 +185,12 @@ export function legacyRedirect(pathname: string, searchParams: URLSearchParams):
 const SINGLE_SEGMENT = /^\/([^/.]+)$/;
 
 /**
+ * The AMP copy of a WordPress post, `/{slug}/amp/`. Links to it outlive the plugin; it
+ * resolves like the post itself, in the same single hop, instead of ending in a 404.
+ */
+const AMP_PERMALINK = /^\/([^/.]+)\/amp$/;
+
+/**
  * The segment of a path that may be a WordPress permalink, or null.
  *
  * The old site answered every article (`/%postname%/`) and, with the category base
@@ -187,7 +200,7 @@ const SINGLE_SEGMENT = /^\/([^/.]+)$/;
  * editoria and a route of this site are never candidates.
  */
 export function legacyPermalinkCandidate(pathname: string): string | null {
-  const segment = SINGLE_SEGMENT.exec(pathname)?.[1];
+  const segment = SINGLE_SEGMENT.exec(pathname)?.[1] ?? AMP_PERMALINK.exec(pathname)?.[1];
   if (!segment) return null;
   const lower = segment.toLowerCase();
   if (isEditoriaSlug(lower) || RESERVED_SEGMENTS.has(lower)) return null;

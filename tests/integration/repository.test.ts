@@ -276,6 +276,19 @@ describe('KalElContentRepository offers and reserved tags', () => {
     expect(paths).not.toContain('/tag/oferta');
     expect(paths).not.toContain('/tag/afiliado');
   });
+
+  // Em produção, até 2026-10-30, o sitemap de editorias listava /filmes e /series, que só
+  // redirecionam: um sitemap lista endereços finais.
+  it('keeps the renamed WordPress desks out of the category sitemap', async () => {
+    const cinema = { ...CATEGORY, id: 'aaaa1111-2222-4333-8444-555566667778', name: 'Cinema', slug: 'cinema' };
+    const filmes = { ...CATEGORY, id: 'aaaa1111-2222-4333-8444-555566667779', name: 'Filmes', slug: 'filmes' };
+    const { repo } = repository((url) => {
+      if (url.pathname.endsWith('/categories')) return json([CATEGORY, cinema, filmes]);
+      return taxonomyRoutes(url) ?? new Response('{}', { status: 404 });
+    });
+    const { entries } = await repo.listSitemap('categories');
+    expect(entries.map((e) => e.path)).toEqual(['/cinema']);
+  });
 });
 
 describe('KalElContentRepository resilience', () => {
