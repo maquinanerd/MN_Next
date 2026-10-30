@@ -1,0 +1,12 @@
+/*
+ * Arial sized to Montserrat Regular — the face `next/font/google` generated for this family
+ * (`adjustFontFallback`), with its numbers. See montserrat.ts for why it is written here.
+ */
+@font-face {
+  font-family: 'Montserrat Fallback';
+  src: local('Arial');
+  ascent-override: 85.79%;
+  descent-override: 22.25%;
+  line-gap-override: 0%;
+  size-adjust: 112.83%;
+}
