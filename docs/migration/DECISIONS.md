@@ -1129,3 +1129,99 @@ matérias que já saíram continuariam com a URL. `mapDocument` passa a tratar u
 auto-embed (`scripts/wp/transform.ts`). Frase que menciona um vídeo, URL de canal e id
 malformado continuam parágrafo. Nenhum dado é reescrito no Kal El: a correção vale na
 leitura, e a matéria antiga passa a mostrar o player assim que o cache dela vence.
+
+### 7.25 Google Analytics 4 de volta, atrás do consentimento (2026-10-30)
+
+O site ficou sem Analytics desde a virada de 2026-09-16: a medição vinha do plugin
+MonsterInsights do WordPress, que saiu junto com ele. A propriedade continuava lá
+("Máquina Nerd", conta `141309275`), com três fluxos da Web e nenhum dado nas últimas 48 h.
+
+**Qual fluxo.** `Máquina Nerd – GA4` (`G-CQ0S5G3DY9`, fluxo `2588796622`), porque é o que
+está vinculado ao Search Console (`sc-domain:maquinanerd.com.br`, desde 2026-03-31): os
+relatórios de busca orgânica do GA4 cruzam o Search Console com as páginas de destino
+**desse** fluxo. Os dois fluxos do MonsterInsights alimentam a mesma propriedade, então o
+histórico não se perde por não usá-los. O id entra por `NEXT_PUBLIC_GA_MEASUREMENT_ID`,
+público e lido no build, como os do AdSense; sem ele nada carrega.
+
+**Consentimento "básico".** A barra de privacidade promete medir audiência só com
+autorização, então o `gtag.js` nem é baixado antes do "Aceitar todos"
+(`lib/analytics.ts`). Aceitar no meio da visita liga a medição sem recarregar; recusar
+depois manda `consent update` negado ao script já carregado. O modo "avançado" do Consent
+Mode (pings sem cookie antes do aceite, para o Google modelar quem recusou) daria números
+maiores, mas contradiz o texto da barra e da política de privacidade — fica como decisão do
+dono, não do código. Consequência: o GA4 conta só quem aceitou; o Search Console continua
+sendo a fonte de verdade do orgânico. Uma recusa depois do aceite, no mesmo documento, liga
+também o opt-out do gtag (`ga-disable-<id>`): `consent update` sozinho só para os cookies, e
+a tag já carregada seguiria mandando pings sem cookie — justamente o modo avançado.
+
+**Pré-visualização fora.** `/preview/*` nunca é medida: o endereço leva o slug de uma
+matéria não publicada, quase sempre a manchete, e só a redação abre essas páginas.
+
+**Navegação entre páginas.** A métrica otimizada do fluxo já conta "alterações na página de
+acordo com os eventos do histórico", que é como o App Router troca de página. Por isso o
+código não manda `page_view` por rota — mandaria em dobro.
+
+**CSP.** Só num build com id: `script-src` ganha um host nomeado
+(`www.googletagmanager.com`); `connect-src` e `img-src` ganham os curingas de subdomínio que
+o próprio Google documenta (`*.google-analytics.com`, `*.analytics.google.com`,
+`*.googletagmanager.com`), porque o GA4 escolhe o host regional de coleta na hora. Uma lista
+nomeada que errasse um host derrubaria page views sem erro visível. `script-src` continua
+sem curinga.
+
+**Páginas institucionais.** `/cookies` lista `_ga`/`_ga_<id>` e diz o que o AdSense grava;
+a política de privacidade diz o que o Google Analytics recebe. A revisão do PR corrigiu uma
+promessa antiga das duas páginas: o AdSense carrega para todos (sem aceite, só não
+personaliza) e o Google pode gravar cookies dele para frequência e antifraude — o texto dizia
+que nada além do `mn-consent` existia sem aceite.
+
+**Revisão.** O Codex CLI respondeu 401 (login vencido na máquina); a revisão foi feita por
+um agente independente, sem acesso às minhas conclusões. Dos seis achados, cinco foram
+corrigidos. O sexto — `docker-compose.prod.yml` passa o build arg vazio quando a variável
+não está no shell, o que esconde o valor do `.env.production` — é o mesmo padrão dos
+`NEXT_PUBLIC_ADSENSE_*` e não afeta o Coolify, que é a produção; fica registrado aqui.
+
+### 7.26 Toda capa do site respondia 503 "Busy" (2026-10-30)
+
+A auditoria de SEO achou `og:image` e as imagens do `NewsArticle` — os recortes
+`/media/<id>/16x9-v1.jpg`, `4x3-v1.jpg`, `1x1-v1.jpg` — respondendo `503 Busy` em 0,3–0,9 s,
+16 de 16 tentativas em capas diferentes, com o portal saudável (`/api/health?ready=1` ok).
+Sem essas imagens o Google não tem a imagem grande para o Discover, as Principais notícias
+e o Google Imagens, e as prévias em redes sociais saem sem foto. O contêiner estava no ar
+desde o deploy de 2026-10-01.
+
+**Mecânica.** A rota desenha os recortes numa fila de 2 vagas e 32 lugares de espera
+(`lib/renditions.ts`). Nada limitava quanto tempo um trabalho segurava a vaga: o prazo de
+10 s valia só para o download, por `AbortSignal.any` com `AbortSignal.timeout`, e o desenho
+no `sharp` não tinha prazo nenhum. Dois trabalhos que nunca terminaram prenderam as duas
+vagas; quem chegou depois esperou para sempre, e o leitor que desistia continuava ocupando
+o lugar na fila até chegar a vez dele — que nunca chegava. Com os 32 lugares tomados, todo
+pedido novo recebia 503 na hora. Qual dos dois passos travou não dá para saber sem os logs
+do contêiner, que o token do MCP não lê; a correção fecha os dois.
+
+**Correção.**
+
+- A fila tem prazo duro por trabalho (`RENDITION_DEADLINE_MS`, 20 s): passado o prazo, a
+  vaga vai para o próximo, termine o trabalho ou não, e a rota responde `504` com o log
+  `media.variant-timeout`.
+- O trabalho recebe um sinal que aborta no prazo ou quando o leitor sai, de um
+  `AbortController` com `setTimeout` comum — sem `AbortSignal.any`/`AbortSignal.timeout`,
+  que o Node referencia fracamente —, então o download é cancelado de verdade.
+- O leitor que desiste sai da fila na hora, em vez de guardar o lugar.
+- O `sharp` recebe `timeout` de 10 s: o prazo da fila libera a vaga, mas só isso libera a
+  thread do libvips, que o otimizador de imagens do Next divide com a rota.
+- Fila cheia vira o log `media.queue-full` (no máximo um por minuto), com as contagens.
+
+O deploy deste PR troca o contêiner e destrava as capas na hora; os testes de
+`tests/unit/renditions.test.ts` reproduzem o trabalho que nunca termina e o leitor que
+desiste.
+
+### 7.27 Ajustes de SEO da auditoria de 2026-10-30
+
+- `/sitemap/categories.xml` deixa de listar `/filmes` e `/series`, editorias do WordPress
+  que o Kal El ainda tem como categoria mas cujo endereço só redireciona.
+- `/category/filmes` e `/categoria/series` vão direto a `/cinema` e `/series-e-tv`, em um
+  salto em vez de dois.
+- `/{slug}/amp/`, a cópia AMP de um post do WordPress, resolve como o próprio post, no
+  mesmo salto, em vez de 404.
+- Matéria sem meta description e sem resumo (parte do acervo importado) usa o primeiro
+  parágrafo, cortado em 160 caracteres, em vez de sair com a descrição vazia.
