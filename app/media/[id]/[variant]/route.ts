@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
-import { parseRenditionFile } from '@mn/seo';
+import { parseRenditionFile, type Rendition } from '@mn/seo';
 
 import { correlationId, logger } from '../../../../lib/logger';
 import { IMMUTABLE, mediaSource } from '../../../../lib/media-proxy';
 import {
-  DOWNLOAD_TIMEOUT_MS,
   MAX_INPUT_BYTES,
+  QueueDeadlineError,
+  RENDITION_DEADLINE_MS,
   createQueue,
   readCapped,
   renderRendition,
@@ -31,8 +32,15 @@ import {
 
 export const runtime = 'nodejs';
 
-/** Two drawn at a time, thirty-two waiting; past that a request is told to come back. */
-const queue = createQueue(2, 32);
+/**
+ * Two drawn at a time, thirty-two waiting; past that a request is told to come back. No job
+ * keeps its slot past the deadline, whatever it is stuck on (lib/renditions.ts).
+ */
+const queue = createQueue(2, 32, RENDITION_DEADLINE_MS);
+
+/** A full queue is logged at most once a minute: it is a state to see, not an event per hit. */
+const BUSY_LOG_INTERVAL_MS = 60_000;
+let lastBusyLog = 0;
 
 export async function GET(
   request: Request,
@@ -48,50 +56,67 @@ export async function GET(
   const url = new URL(request.url);
   if (url.search) return new NextResponse(null, { status: 301, headers: { location: url.pathname } });
 
-  const drawn = await queue.run(async (): Promise<Response> => {
-    // A CMS that stops answering gives the slot back instead of holding it for as long as
-    // the reader waits.
-    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS)]);
-    const source = await mediaSource(id, signal, cid);
-    if (source instanceof NextResponse) return source;
-
-    const declared = Number(source.upstream.headers.get('content-length') ?? '0');
-    if (declared > MAX_INPUT_BYTES) {
-      await source.upstream.body.cancel();
-      return new NextResponse('Image too large', { status: 422 });
-    }
-    let input: Buffer | null;
-    try {
-      input = await readCapped(source.upstream.body, MAX_INPUT_BYTES);
-    } catch (err) {
-      // The reader went away, or the CMS did, halfway through the download.
-      if (request.signal.aborted) return new NextResponse(null, { status: 499 });
-      logger.warn('media.fetch-failed', { correlationId: cid, mediaId: id, error: String(err) });
-      return new NextResponse('Upstream unavailable', { status: 502 });
-    }
-    if (!input) return new NextResponse('Image too large', { status: 422 });
-
-    let jpeg: Buffer;
-    try {
-      jpeg = await renderRendition(input, rendition);
-    } catch (err) {
-      logger.warn('media.variant-failed', { correlationId: cid, mediaId: id, variant: rendition, error: String(err) });
-      return new NextResponse('Unprocessable image', { status: 422 });
-    }
-
-    return new NextResponse(new Uint8Array(jpeg), {
-      status: 200,
-      headers: {
-        'content-type': 'image/jpeg',
-        'content-length': String(jpeg.byteLength),
-        'cache-control': IMMUTABLE,
-        'x-content-type-options': 'nosniff',
-        'content-security-policy': "default-src 'none'; sandbox",
-      },
-    });
-  }, request.signal);
+  let drawn: Response | null;
+  try {
+    drawn = await queue.run((signal) => draw(id, rendition, signal, cid), request.signal);
+  } catch (err) {
+    if (request.signal.aborted) return new NextResponse(null, { status: 499 });
+    if (!(err instanceof QueueDeadlineError)) throw err;
+    logger.warn('media.variant-timeout', { correlationId: cid, mediaId: id, variant: rendition, ...queue.stats() });
+    return new NextResponse('Timed out', { status: 504, headers: { 'retry-after': '5', 'cache-control': 'no-store' } });
+  }
 
   if (drawn) return drawn;
   if (request.signal.aborted) return new NextResponse(null, { status: 499 });
+  const now = Date.now();
+  if (now - lastBusyLog >= BUSY_LOG_INTERVAL_MS) {
+    lastBusyLog = now;
+    logger.warn('media.queue-full', { correlationId: cid, ...queue.stats() });
+  }
   return new NextResponse('Busy', { status: 503, headers: { 'retry-after': '5', 'cache-control': 'no-store' } });
+}
+
+/**
+ * The download and the drawing of one rendition. `signal` aborts at the queue's deadline or
+ * when the reader leaves, so a CMS that stops answering gives the slot back instead of
+ * holding it for as long as the reader waits.
+ */
+async function draw(id: string, rendition: Rendition, signal: AbortSignal, cid: string): Promise<Response> {
+  const source = await mediaSource(id, signal, cid);
+  if (source instanceof NextResponse) return source;
+
+  const declared = Number(source.upstream.headers.get('content-length') ?? '0');
+  if (declared > MAX_INPUT_BYTES) {
+    await source.upstream.body.cancel();
+    return new NextResponse('Image too large', { status: 422 });
+  }
+  let input: Buffer | null;
+  try {
+    input = await readCapped(source.upstream.body, MAX_INPUT_BYTES);
+  } catch (err) {
+    // The reader went away, or the deadline passed, or the CMS did, halfway through.
+    if (signal.aborted) return new NextResponse(null, { status: 499 });
+    logger.warn('media.fetch-failed', { correlationId: cid, mediaId: id, error: String(err) });
+    return new NextResponse('Upstream unavailable', { status: 502 });
+  }
+  if (!input) return new NextResponse('Image too large', { status: 422 });
+
+  let jpeg: Buffer;
+  try {
+    jpeg = await renderRendition(input, rendition);
+  } catch (err) {
+    logger.warn('media.variant-failed', { correlationId: cid, mediaId: id, variant: rendition, error: String(err) });
+    return new NextResponse('Unprocessable image', { status: 422 });
+  }
+
+  return new NextResponse(new Uint8Array(jpeg), {
+    status: 200,
+    headers: {
+      'content-type': 'image/jpeg',
+      'content-length': String(jpeg.byteLength),
+      'cache-control': IMMUTABLE,
+      'x-content-type-options': 'nosniff',
+      'content-security-policy': "default-src 'none'; sandbox",
+    },
+  });
 }

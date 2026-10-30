@@ -1,7 +1,7 @@
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 
-import { createQueue, readCapped, renderRendition } from '../../lib/renditions';
+import { QueueDeadlineError, createQueue, readCapped, renderRendition } from '../../lib/renditions';
 
 /**
  * The media route's drawing and its guards (lib/renditions.ts), without a CMS: what a
@@ -120,6 +120,65 @@ describe('createQueue', () => {
   it('gives the slot back when the work throws', async () => {
     const queue = createQueue(1, 5);
     await expect(queue.run(() => Promise.reject(new Error('falhou')))).rejects.toThrow('falhou');
+    expect(await queue.run(async () => 'depois')).toBe('depois');
+  });
+
+  // Produção, 2026-10-30: dois trabalhos que nunca terminaram prenderam as duas vagas, a fila
+  // de espera encheu de leitores que já tinham ido embora, e toda capa do site respondia 503.
+  it('gives the slot of a job that never settles to the next in line at the deadline', async () => {
+    const queue = createQueue(1, 5, 30);
+    const stuck = queue.run(() => new Promise<never>(() => undefined));
+    const next = queue.run(async () => 'servida');
+    await expect(stuck).rejects.toBeInstanceOf(QueueDeadlineError);
+    expect(await next).toBe('servida');
+    expect(queue.stats()).toEqual({ running: 0, waiting: 0 });
+  });
+
+  it('hands the job a signal that aborts at the deadline, so its download is cancelled too', async () => {
+    const queue = createQueue(1, 5, 30);
+    let seen: AbortSignal | undefined;
+    const run = queue.run(
+      (signal) =>
+        new Promise<never>(() => {
+          seen = signal;
+        }),
+    );
+    await expect(run).rejects.toBeInstanceOf(QueueDeadlineError);
+    expect(seen?.aborted).toBe(true);
+  });
+
+  it('lets a reader who gave up leave the line at once, without waiting for a slot', async () => {
+    const queue = createQueue(1, 1);
+    let release = (): void => undefined;
+    const blocker = queue.run(() => new Promise<void>((resolve) => (release = resolve)));
+    const reader = new AbortController();
+    const gaveUp = queue.run(async () => 'nunca', reader.signal);
+    expect(queue.stats()).toEqual({ running: 1, waiting: 1 });
+    reader.abort();
+    expect(await gaveUp).toBeNull();
+    // Its place is free: the line is not full of readers who already left.
+    expect(queue.stats()).toEqual({ running: 1, waiting: 0 });
+    const next = queue.run(async () => 'atendido');
+    release();
+    await blocker;
+    expect(await next).toBe('atendido');
+    expect(queue.stats()).toEqual({ running: 0, waiting: 0 });
+  });
+
+  it('cancels a running job whose reader left, and frees the slot', async () => {
+    const queue = createQueue(1, 5, 10_000);
+    const reader = new AbortController();
+    let seen: AbortSignal | undefined;
+    const run = queue.run(
+      (signal) =>
+        new Promise<never>(() => {
+          seen = signal;
+        }),
+      reader.signal,
+    );
+    reader.abort();
+    await expect(run).rejects.toBeDefined();
+    expect(seen?.aborted).toBe(true);
     expect(await queue.run(async () => 'depois')).toBe('depois');
   });
 });
