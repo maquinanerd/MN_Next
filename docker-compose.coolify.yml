@@ -48,6 +48,9 @@ services:
         - NEXT_PUBLIC_ADSENSE_SLOT_300X250=${NEXT_PUBLIC_ADSENSE_SLOT_300X250:-}
         - NEXT_PUBLIC_ADSENSE_SLOT_300X600=${NEXT_PUBLIC_ADSENSE_SLOT_300X600:-}
         - NEXT_PUBLIC_ADSENSE_SLOT_970X250=${NEXT_PUBLIC_ADSENSE_SLOT_970X250:-}
+        # Google Analytics 4 (`G-…`). Sem ele nada é medido; com ele, só depois do "Aceitar
+        # todos" no aviso de privacidade.
+        - NEXT_PUBLIC_GA_MEASUREMENT_ID=${NEXT_PUBLIC_GA_MEASUREMENT_ID:-}
     environment:
       # Declares the public URL Coolify generates for this service, routed to port 3000.
       - SERVICE_URL_PORTAL_3000

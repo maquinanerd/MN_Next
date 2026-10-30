@@ -15,7 +15,11 @@ export async function generateMetadata(): Promise<Metadata> {
   });
 }
 
-/** Lists what the code actually sets — `components/ConsentGate.tsx` and `lib/preview.ts`. */
+/**
+ * Lists what the code actually sets — `components/ConsentGate.tsx` and `lib/preview.ts` —
+ * what the ad library may set for every reader (`components/Adsense.tsx`), and what Google
+ * Analytics sets after an accept (`lib/analytics.ts`).
+ */
 export default function CookiesPage() {
   return (
     <InstitutionalPage titulo="Cookies">
@@ -31,11 +35,27 @@ export default function CookiesPage() {
         </li>
       </ul>
 
+      <h2>Publicidade</h2>
+      <p>
+        Os anúncios do Google AdSense aparecem para todos os leitores. Sem o seu aceite eles não são personalizados, mas
+        o Google ainda pode gravar cookies próprios (como <code>__gads</code> e <code>__gpi</code>) para limitar a
+        repetição de um anúncio, medir a entrega de forma agregada e combater fraude. Com o aceite, os anúncios também
+        podem ser personalizados.
+      </p>
+
       <h2>Dependem do seu consentimento</h2>
       <p>
-        Medição de audiência, publicidade personalizada e conteúdos de terceiros (como vídeos do YouTube) só são
-        carregados depois que você aceita. Vídeos incorporados, além disso, só carregam quando você clica neles.
+        Medição de audiência e publicidade personalizada só começam depois que você aceita. Vídeos incorporados (como os
+        do YouTube) só carregam quando você clica neles.
       </p>
+      <ul>
+        <li>
+          <code>_ga</code> e <code>_ga_&lt;id&gt;</code> — Google Analytics. Guardam um identificador aleatório do
+          navegador, para o Google Analytics distinguir visitantes e sessões; os relatórios que vemos são agregados
+          (quantas pessoas leram uma matéria, de onde vieram). Duram até dois anos e só são gravados depois do “Aceitar
+          todos”.
+        </li>
+      </ul>
 
       <h2>Como mudar a sua escolha</h2>
       <p>
