@@ -424,6 +424,27 @@ function excerptFrom(dto: KalElArticleSummary): string {
   return dto.excerpt ?? dto.dek ?? '';
 }
 
+/** Room a search result gives a description before it truncates it. */
+const LEAD_MAX_CHARS = 160;
+
+/** The first paragraph's text, cut on a word to fit a description; '' when there is none. */
+export function leadText(blocks: ContentBlock[]): string {
+  for (const block of blocks) {
+    if (block.type !== 'paragraph') continue;
+    const text = block.content
+      .map((node) => (node.type === 'text' ? node.text : ' '))
+      .join('')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!text) continue;
+    if (text.length <= LEAD_MAX_CHARS) return text;
+    const cut = text.slice(0, LEAD_MAX_CHARS - 1);
+    const lastSpace = cut.lastIndexOf(' ');
+    return `${(lastSpace > LEAD_MAX_CHARS / 2 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+  }
+  return '';
+}
+
 /**
  * When a reader should be told the text changed: `updatedAt`, but only when it is later
  * than both the publication and the moment the record was created in Kal El.
@@ -501,11 +522,14 @@ export function mapArticle(dto: KalElArticle, ctx: MapperContext): MapArticleRes
   const schemaType = resolveSchemaType(summary.template, dto.type);
   const commercial = buildCommercial(dto, summary.commercialKind, ctx);
 
+  // A story with neither a meta description nor an excerpt — some of the imported archive —
+  // describes itself with its opening paragraph, not with an empty `description`.
+  const excerpt = summary.excerpt || leadText(doc.blocks);
   const article: Article = {
     ...summary,
     readingMinutes: readingMinutes(doc.wordCount),
     body: doc.blocks,
-    seo: mapSeo(dto.seo, { title: dto.title, excerpt: summary.excerpt, cover: summary.cover, schemaType }, ctx.media),
+    seo: mapSeo(dto.seo, { title: dto.title, excerpt, cover: summary.cover, schemaType }, ctx.media),
     editedAt: editedAt(dto),
     ...(commercial ? { commercial } : {}),
   };

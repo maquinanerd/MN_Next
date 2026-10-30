@@ -31,6 +31,7 @@ import {
   type ContentRepository,
   type ListWindow,
 } from '../repository';
+import { RENAMED_DESKS } from '../site';
 import { isValidSlug } from '../slug';
 import {
   kalelArticleListSchema,
@@ -745,7 +746,11 @@ export class KalElContentRepository implements ContentRepository {
       return {
         // No `lastmod`: none of these knows when its listing last changed, and a stamp of
         // "now" on every fetch is the inaccurate lastmod Google learns to ignore site-wide.
-        entries: (await this.fetchCategories()).map((c) => ({ path: `/${c.slug}` })),
+        // The WordPress desks the front end renamed (`filmes`, `series`) are still categories
+        // in Kal El, but their address only redirects: a sitemap lists final URLs.
+        entries: (await this.fetchCategories())
+          .filter((c) => !Object.hasOwn(RENAMED_DESKS, c.slug))
+          .map((c) => ({ path: `/${c.slug}` })),
         nextCursor: null,
       };
     }

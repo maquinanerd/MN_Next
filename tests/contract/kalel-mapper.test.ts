@@ -4,6 +4,7 @@ import type { Author, Category, Image, Tag } from '@mn/content';
 import {
   editedAt,
   isBrandUnsafe,
+  leadText,
   mapArticle,
   mapArticleSummary,
   mapAuthor,
@@ -274,6 +275,29 @@ describe('mapArticle', () => {
     expect(result?.article.seo.title).toBe(ARTICLE.title);
     expect(result?.article.seo.description).toBe(ARTICLE.excerpt);
     expect(result?.article.seo.noindex).toBe(false);
+  });
+
+  // `/cinema/superman-2025-todos-os-21-personagens…`, importada sem resumo, saía com
+  // `<meta name="description">` ausente e `"description": ""` no JSON-LD.
+  it('describes a story with no excerpt by its opening paragraph, cut to fit a result', () => {
+    const result = mapArticle({ ...ARTICLE, excerpt: null, dek: null }, context());
+    const description = result?.article.seo.description ?? '';
+    expect(description.length).toBeGreaterThan(20);
+    expect(description.length).toBeLessThanOrEqual(160);
+    const firstParagraph = result?.article.body.find((b) => b.type === 'paragraph');
+    const text =
+      firstParagraph?.type === 'paragraph'
+        ? firstParagraph.content.map((n) => (n.type === 'text' ? n.text : ' ')).join('')
+        : '';
+    expect(text.replace(/\s+/g, ' ').trim().startsWith(description.replace(/…$/, ''))).toBe(true);
+  });
+
+  it('cuts a long opening paragraph on a word, with an ellipsis', () => {
+    const long = `${'palavra '.repeat(40)}fim`;
+    const lead = leadText([{ type: 'paragraph', content: [{ type: 'text', text: long, marks: [] }] }]);
+    expect(lead.length).toBeLessThanOrEqual(160);
+    expect(lead.endsWith('palavra…')).toBe(true);
+    expect(leadText([{ type: 'heading', level: 2, text: 'Só título', id: 'so-titulo' }])).toBe('');
   });
 
   it('honours an explicit noindex from the CMS', () => {

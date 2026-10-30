@@ -24,17 +24,26 @@ export default function PrivacyPage() {
     >
       <h2>O que é coletado sem consentimento</h2>
       <p>
-        Apenas o necessário para o site funcionar: o cookie que guarda a sua escolha no aviso de privacidade. Ele não
-        identifica você e não é compartilhado. A lista completa está em <Link href="/cookies">cookies</Link>.
+        O necessário para o site funcionar: o cookie que guarda a sua escolha no aviso de privacidade, que não
+        identifica você e não é compartilhado. Além dele, os anúncios do Google AdSense aparecem para todos, sem
+        personalização, e o Google pode gravar cookies próprios para limitar a repetição de anúncios, medir a entrega e
+        combater fraude. A lista completa está em <Link href="/cookies">cookies</Link>.
       </p>
 
       <h2>O que depende do seu consentimento</h2>
       <ul>
-        <li>Medição de audiência e métricas de desempenho agregadas.</li>
-        <li>Publicidade personalizada.</li>
+        <li>
+          Medição de audiência com o Google Analytics, que recebe as páginas visitadas, a origem da visita, o tipo de
+          aparelho, a cidade aproximada (o endereço IP não é armazenado), a rolagem até o fim da página, os cliques em
+          links para outros sites e os termos buscados na busca do site; e métricas de desempenho agregadas.
+        </li>
+        <li>Personalização dos anúncios.</li>
         <li>Conteúdos incorporados de terceiros, como vídeos do YouTube, que só carregam depois de um clique.</li>
       </ul>
-      <p>Enquanto você não aceitar, nada disso é executado. Recusar não limita o acesso a nenhuma matéria.</p>
+      <p>
+        Enquanto você não aceitar, nada disso é executado. Recusar não limita o acesso a nenhuma matéria; os anúncios
+        continuam, sem personalização.
+      </p>
 
       <h2>Newsletter</h2>
       <p>

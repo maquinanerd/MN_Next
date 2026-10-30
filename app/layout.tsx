@@ -5,6 +5,7 @@ import { baseMetadata } from '@mn/seo';
 
 import './globals.css';
 import { Adsense } from '../components/Adsense';
+import { Analytics } from '../components/Analytics';
 import { Footer } from '../components/Chrome';
 import { ConsentGate } from '../components/ConsentGate';
 import { WebVitals } from '../components/WebVitals';
@@ -56,6 +57,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Footer />
         <ConsentGate />
         <WebVitals />
+        <Analytics />
         <Adsense />
       </body>
     </html>

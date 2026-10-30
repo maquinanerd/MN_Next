@@ -64,6 +64,8 @@ ARG NEXT_PUBLIC_ADSENSE_SLOT_728X90
 ARG NEXT_PUBLIC_ADSENSE_SLOT_300X250
 ARG NEXT_PUBLIC_ADSENSE_SLOT_300X600
 ARG NEXT_PUBLIC_ADSENSE_SLOT_970X250
+# Google Analytics 4: o id do fluxo da Web, também público e lido no build (CSP incluída).
+ARG NEXT_PUBLIC_GA_MEASUREMENT_ID
 ENV NEXT_OUTPUT=standalone NODE_ENV=production
 # `node --env-file`, not `. file` in a shell: a secret containing `$` or a backtick is
 # read literally instead of being expanded. Variables already in the environment (the

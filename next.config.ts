@@ -2,6 +2,7 @@ import path from 'node:path';
 
 import type { NextConfig } from 'next';
 
+import { GA_CSP, gaMeasurementId } from './lib/analytics';
 import { ADSENSE_CSP, adsenseClient } from './packages/ui/src/ads/adsense';
 
 /**
@@ -41,7 +42,8 @@ function allowedImageHosts(): string[] {
  *
  * The ad stack's origins are added to `script-src`, `img-src`, `frame-src` and
  * `connect-src` explicitly, host by host (`ADSENSE_CSP`), and only in a build that has a
- * publisher id — never by relaxing the policy further.
+ * publisher id — never by relaxing the policy further. Google Analytics' hosts (`GA_CSP`)
+ * join the same way, only in a build that has a measurement id.
  *
  * `style-src` allows inline because React writes the `style` attributes this design uses
  * for aspect ratios and ad reservations, and attribute styles have no hash equivalent.
@@ -51,16 +53,21 @@ function contentSecurityPolicy(): string {
   // Named hosts, added only by a build that actually serves ads: a portal without a
   // publisher id keeps the tighter policy, and the list never becomes a wildcard.
   const ads = adsenseClient() ? ADSENSE_CSP : { script: [], image: [], frame: [], connect: [] };
-  const join = (hosts: readonly string[]) => (hosts.length ? ` ${hosts.join(' ')}` : '');
+  const ga = gaMeasurementId() ? GA_CSP : { script: [], image: [], connect: [] };
+  const join = (...lists: readonly (readonly string[])[]) => {
+    const hosts = lists.flat();
+    return hosts.length ? ` ${hosts.join(' ')}` : '';
+  };
 
   return [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-inline'${join(ads.script)}`,
+    `script-src 'self' 'unsafe-inline'${join(ads.script, ga.script)}`,
     "style-src 'self' 'unsafe-inline'",
-    `img-src 'self' data: blob: ${imageHosts.join(' ')}`.trim() + join(ads.image),
+    `img-src 'self' data: blob: ${imageHosts.join(' ')}`.trim() + join(ads.image, ga.image),
     "font-src 'self'",
-    // The RUM beacon and the newsletter post go to this origin only.
-    `connect-src 'self'${join(ads.connect)}`,
+    // The RUM beacon and the newsletter post go to this origin; analytics, when configured,
+    // to Google's collection hosts.
+    `connect-src 'self'${join(ads.connect, ga.connect)}`,
     // Only the two players the embed facade can actually open.
     `frame-src https://www.youtube-nocookie.com https://player.vimeo.com${join(ads.frame)}`,
     "frame-ancestors 'self'",

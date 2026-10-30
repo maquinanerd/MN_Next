@@ -87,4 +87,13 @@ export default tseslint.config(
     files: ['scripts/**/*.{ts,mjs}', 'tests/**/*.ts', '*.config.{ts,mjs}'],
     rules: { 'no-console': 'off' },
   },
+  {
+    /**
+     * gtag reads `arguments` objects off the data layer, not arrays: the `gtag` function
+     * Google documents pushes its own `arguments`, and a rest parameter would push an array
+     * the library ignores.
+     */
+    files: ['lib/analytics.ts'],
+    rules: { 'prefer-rest-params': 'off' },
+  },
 );

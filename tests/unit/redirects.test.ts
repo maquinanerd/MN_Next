@@ -112,6 +112,12 @@ describe('legacyRedirect', () => {
     expect(legacyRedirect('/ofertas/uma-oferta', noParams)).toBeNull();
   });
 
+  it('sends the category archive of a renamed desk straight to the new desk, in one hop', () => {
+    expect(legacyRedirect('/category/filmes', noParams)).toEqual({ to: '/cinema', status: 301 });
+    expect(legacyRedirect('/categoria/series', noParams)).toEqual({ to: '/series-e-tv', status: 301 });
+    expect(legacyRedirect('/category/games', noParams)).toEqual({ to: '/games', status: 301 });
+  });
+
   it('sends a dated permalink to its slug, and leaves the archive of a day alone', () => {
     expect(legacyRedirect('/2024/05/uma-materia', noParams)).toEqual({ to: '/uma-materia', status: 301 });
     expect(legacyRedirect('/2024/05/17/uma-materia', noParams)).toEqual({ to: '/uma-materia', status: 301 });
@@ -150,6 +156,15 @@ describe('legacyPermalinkCandidate', () => {
   it('leaves every route of the site, and itself', () => {
     for (const segment of RESERVED_SEGMENTS) expect(legacyPermalinkCandidate(`/${segment}`), segment).toBeNull();
     expect(legacyPermalinkCandidate('/legado')).toBeNull();
+  });
+
+  it('resolves the AMP copy of a post like the post itself', () => {
+    expect(legacyPermalinkCandidate('/a-man-on-the-inside-final-2-temporada/amp')).toBe(
+      'a-man-on-the-inside-final-2-temporada',
+    );
+    // An editoria or a route of the site followed by `amp` is not a WordPress post.
+    expect(legacyPermalinkCandidate('/cinema/amp')).toBeNull();
+    expect(legacyPermalinkCandidate('/tag/amp')).toBeNull();
   });
 
   it('leaves the home, nested paths and files', () => {

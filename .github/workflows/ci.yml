@@ -53,7 +53,10 @@ jobs:
     # The visual baselines are rendered on Windows, where the project is developed, and
     # glyph rasterisation moves line breaks between platforms: a Linux render of the same
     # page comes out taller. The visual gate runs where its baselines were made.
-    runs-on: ${{ matrix.gate == 'visual' && 'windows-latest' || 'ubuntu-latest' }}
+    # The others are pinned to 24.04: when `ubuntu-latest` became 26.04 (October 2026),
+    # Playwright 1.55 refused to install Chromium there and the three gates failed before
+    # running a single test. Move this together with a Playwright upgrade.
+    runs-on: ${{ matrix.gate == 'visual' && 'windows-latest' || 'ubuntu-24.04' }}
     timeout-minutes: 30
     needs: static
     strategy:

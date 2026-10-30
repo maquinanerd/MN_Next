@@ -15,6 +15,9 @@ const ENV_KEYS = [
   'NEXT_PUBLIC_ADSENSE_SLOT_300X250',
   'NEXT_PUBLIC_ADSENSE_SLOT_300X600',
   'NEXT_PUBLIC_ADSENSE_SLOT_970X250',
+  // Zerado também: com o id do GA4 no ambiente, a CSP ganharia os curingas de coleta dele, e
+  // o "sem curinga" abaixo passaria a depender do shell de quem roda o teste.
+  'NEXT_PUBLIC_GA_MEASUREMENT_ID',
 ] as const;
 
 function withEnv(values: Partial<Record<(typeof ENV_KEYS)[number], string>>) {
