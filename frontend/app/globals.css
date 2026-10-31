@@ -38,6 +38,8 @@
 :root {
   --mn-gutter: 68px;
   --mn-max: 1500px;
+  /* Gap da grade de notícias; as grades OpaPreço do site usam o mesmo (docs/05, regra 1). */
+  --mn-grid-gap: 40px;
   /* Logo de 267×65 a 34px de altura. */
   --mn-logo-w: 139.66px;
   /* Largura natural da nav medida no navegador (Montserrat 600; 13px e 12px). */
@@ -48,6 +50,7 @@
 @media (max-width: 760px) {
   :root {
     --mn-gutter: 16px;
+    --mn-grid-gap: 16px;
   }
 }
 
