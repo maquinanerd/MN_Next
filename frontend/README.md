@@ -21,7 +21,7 @@ O site abre em http://localhost:3000. Outros comandos:
 | `npm start` | serve o build |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | TypeScript sem emitir |
-| `npm test` | Vitest: regras de preço do OpaPreço e posição dos anúncios no texto |
+| `npm test` | Vitest: regras de preço do OpaPreço, posição dos anúncios no texto e escape do JSON-LD |
 
 ## Modo demonstração e variáveis
 
@@ -32,6 +32,7 @@ Sem configuração nenhuma, conteúdo e ofertas vêm das fixtures de demonstraç
 | `NEXT_PUBLIC_SITE_URL` | URL canônica (padrão `https://www.maquinanerd.com.br`) |
 | `OPAPRECO_AD_SERVER_URL` | liga o ad server real (`GET {url}/v1/ad`); sem ela, o servidor de demonstração |
 | `OPAPRECO_PUBLISHER` | id do publisher na requisição (padrão `maquinanerd`) |
+| `OPAPRECO_ALLOWED_HOSTS` | hosts aceitos no link afiliado, separados por vírgula (vazio: qualquer host https) |
 | `OPAPRECO_MODE=off` | nenhum slot é montado (todas as posições colapsam) |
 | `MN_CONTENT_SOURCE=cms` | usa o adaptador do CMS (`lib/content/cms.ts`, ainda não implementado: falha de forma visível) |
 
