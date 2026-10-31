@@ -45,7 +45,11 @@ export function Pagination({
   return (
     <nav aria-label="Paginação" className="mt-10 flex flex-wrap items-center justify-center gap-1.5">
       {atual > 1 ? (
-        <Link href={href(atual - 1)} aria-label="Página anterior" className={`${box} w-9 border-mn-line-3 text-mn-muted`}>
+        <Link
+          href={href(atual - 1)}
+          aria-label="Página anterior"
+          className={`${box} w-9 border-mn-line-3 text-mn-muted`}
+        >
           ‹
         </Link>
       ) : (
@@ -55,7 +59,11 @@ export function Pagination({
       )}
       {pageItems(atual, total).map((n, i) =>
         n === "…" ? (
-          <span key={`e${i}`} aria-hidden="true" className={`${box} min-w-9 border-transparent px-2.5 text-[13px] font-semibold text-mn-muted`}>
+          <span
+            key={`e${i}`}
+            aria-hidden="true"
+            className={`${box} min-w-9 border-transparent px-2.5 text-[13px] font-semibold text-mn-muted`}
+          >
             …
           </span>
         ) : (
@@ -76,7 +84,11 @@ export function Pagination({
         ),
       )}
       {atual < total ? (
-        <Link href={href(atual + 1)} aria-label="Próxima página" className={`${box} w-9 border-mn-line-3 text-mn-ink`}>
+        <Link
+          href={href(atual + 1)}
+          aria-label="Próxima página"
+          className={`${box} w-9 border-mn-line-3 text-mn-ink`}
+        >
           ›
         </Link>
       ) : (

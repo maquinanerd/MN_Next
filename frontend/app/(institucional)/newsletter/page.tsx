@@ -20,8 +20,8 @@ export default function NewsletterPage() {
         <NewsletterForm />
       </div>
       <p className="text-[13px]">
-        Usaremos seu e-mail apenas para enviar a newsletter, com link de cancelamento em toda edição. Detalhes na{" "}
-        <Link href="/politica-de-privacidade">política de privacidade</Link>.
+        Usaremos seu e-mail apenas para enviar a newsletter, com link de cancelamento em toda edição. Detalhes
+        na <Link href="/politica-de-privacidade">política de privacidade</Link>.
       </p>
     </InstitutionalPage>
   );

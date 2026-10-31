@@ -53,13 +53,29 @@ export default async function Home() {
           <SectionTitle id="secao-cinema" forte="NOTÍCIAS" leve="DE CINEMA" />
           <div className="grid grid-cols-4 gap-10 mob:grid-cols-1">
             {home.cinema.cards.slice(0, 2).map((c) => (
-              <StackCard key={c.id} chamada={c} agora={agora} rotulo="assunto" corRotulo={RED_TEXT} sizes="(max-width: 760px) 100vw, 25vw" />
+              <StackCard
+                key={c.id}
+                chamada={c}
+                agora={agora}
+                rotulo="assunto"
+                corRotulo={RED_TEXT}
+                sizes="(max-width: 760px) 100vw, 25vw"
+              />
             ))}
             {big1 && <BigCard chamada={big1} agora={agora} className="col-span-2 mob:col-auto" />}
             {home.cinema.cards.slice(2, 4).map((c) => (
-              <StackCard key={c.id} chamada={c} agora={agora} rotulo="assunto" corRotulo={RED_TEXT} sizes="(max-width: 760px) 100vw, 25vw" />
+              <StackCard
+                key={c.id}
+                chamada={c}
+                agora={agora}
+                rotulo="assunto"
+                corRotulo={RED_TEXT}
+                sizes="(max-width: 760px) 100vw, 25vw"
+              />
             ))}
-            {big2 && <BigCard chamada={big2} agora={agora} rotulo="assunto" className="col-span-2 mob:col-auto" />}
+            {big2 && (
+              <BigCard chamada={big2} agora={agora} rotulo="assunto" className="col-span-2 mob:col-auto" />
+            )}
           </div>
         </Section>
         <GridSlot id="home-grid-cinema" />
@@ -79,7 +95,11 @@ export default async function Home() {
         <Section labelledBy="secao-series">
           <SectionTitle id="secao-series" forte="NOTÍCIAS" leve="DE SÉRIES E TV" />
           <Abertura
-            dados={{ manchete: home.series.manchete, destaques: home.series.destaques, lateral: home.quadrinhos }}
+            dados={{
+              manchete: home.series.manchete,
+              destaques: home.series.destaques,
+              lateral: home.quadrinhos,
+            }}
             agora={agora}
             rotuloLateral="assunto"
             lateralLabel="Últimas de Quadrinhos"
@@ -97,10 +117,21 @@ export default async function Home() {
 
         {/* 5. Animes | Especiais. */}
         <Section labelledBy="secao-animes">
-          <SectionTitle id="secao-animes" forte="ANIMES" leve="| ESPECIAIS" acao={{ href: "/especiais", label: "Ver Especiais" }} />
+          <SectionTitle
+            id="secao-animes"
+            forte="ANIMES"
+            leve="| ESPECIAIS"
+            acao={{ href: "/especiais", label: "Ver Especiais" }}
+          />
           <div className="mn-scroll-row grid grid-cols-3 gap-10 mob:flex mob:gap-3 mob:overflow-x-auto mob:*:flex-[0_0_62%]">
             {home.animes.map((c) => (
-              <StackCard key={c.id} chamada={c} agora={agora} rotulo="completo" sizes="(max-width: 760px) 62vw, 33vw" />
+              <StackCard
+                key={c.id}
+                chamada={c}
+                agora={agora}
+                rotulo="completo"
+                sizes="(max-width: 760px) 62vw, 33vw"
+              />
             ))}
           </div>
         </Section>

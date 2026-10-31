@@ -8,7 +8,15 @@ import { SITE } from "@/lib/site";
 
 const ICONES: Record<RedeTipo, ReactNode> = {
   site: (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
       <circle cx="12" cy="12" r="9" />
       <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
     </svg>
@@ -19,7 +27,15 @@ const ICONES: Record<RedeTipo, ReactNode> = {
     </svg>
   ),
   instagram: (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
       <rect x="3.5" y="3.5" width="17" height="17" rx="5" />
       <circle cx="12" cy="12" r="4" />
       <circle cx="17.1" cy="6.9" r="1.2" fill="currentColor" stroke="none" />
@@ -32,21 +48,37 @@ const ICONES: Record<RedeTipo, ReactNode> = {
   ),
 };
 
-const NOME_REDE: Record<RedeTipo, string> = { site: "Site", facebook: "Facebook", instagram: "Instagram", x: "X" };
+const NOME_REDE: Record<RedeTipo, string> = {
+  site: "Site",
+  facebook: "Facebook",
+  instagram: "Instagram",
+  x: "X",
+};
 
 /** Avatar circular só com retrato real; sem retrato, só o nome (docs/04). */
 export function Avatar({ autor, size }: { autor: Autor; size: 40 | 44 | 52 }) {
   if (!autor.avatar) return null;
   return (
-    <span className="block flex-none overflow-hidden rounded-full bg-mn-media" style={{ width: size, height: size }}>
-      <Image src={autor.avatar} alt="" width={size} height={size} className="block h-full w-full object-cover" />
+    <span
+      className="block flex-none overflow-hidden rounded-full bg-mn-media"
+      style={{ width: size, height: size }}
+    >
+      <Image
+        src={autor.avatar}
+        alt=""
+        width={size}
+        height={size}
+        className="block h-full w-full object-cover"
+      />
     </span>
   );
 }
 
 export function Datas({ materia, inline = false }: { materia: Materia; inline?: boolean }) {
   const atualizado =
-    materia.atualizadoEm && materia.atualizadoEm !== materia.publicadoEm ? dataLongaHora(materia.atualizadoEm) : null;
+    materia.atualizadoEm && materia.atualizadoEm !== materia.publicadoEm
+      ? dataLongaHora(materia.atualizadoEm)
+      : null;
   const publicado = <time dateTime={materia.publicadoEm}>{dataLonga(materia.publicadoEm)}</time>;
   if (inline)
     return (
@@ -83,14 +115,22 @@ export function AuthorRail({ materia }: { materia: Materia }) {
   return (
     <aside aria-label="Sobre a matéria" className="pb-12 text-xs le900:hidden">
       {autor && (
-        <div className={`mb-3.5 grid items-center gap-3.5 ${autor.avatar ? "grid-cols-[52px_1fr]" : "grid-cols-1"}`}>
+        <div
+          className={`mb-3.5 grid items-center gap-3.5 ${autor.avatar ? "grid-cols-[52px_1fr]" : "grid-cols-1"}`}
+        >
           <Avatar autor={autor} size={52} />
           <span className="flex flex-col gap-[7px]">
             <span className="text-sm font-extrabold tracking-[-.02em]">{autor.nome}</span>
             {autor.redes?.length ? (
               <span className="flex gap-2 text-mn-ink">
                 {autor.redes.map((r) => (
-                  <a key={r.tipo} href={r.url} aria-label={`${autor.nome}: ${NOME_REDE[r.tipo]}`} rel="noopener" target="_blank">
+                  <a
+                    key={r.tipo}
+                    href={r.url}
+                    aria-label={`${autor.nome}: ${NOME_REDE[r.tipo]}`}
+                    rel="noopener"
+                    target="_blank"
+                  >
                     {ICONES[r.tipo]}
                   </a>
                 ))}
@@ -143,7 +183,15 @@ export function AuthorRail({ materia }: { materia: Materia }) {
 }
 
 /** Linha de autor horizontal (matéria overlay e de oferta). */
-export function AuthorLine({ materia, size, prefixo = "" }: { materia: Materia; size: 40 | 44; prefixo?: string }) {
+export function AuthorLine({
+  materia,
+  size,
+  prefixo = "",
+}: {
+  materia: Materia;
+  size: 40 | 44;
+  prefixo?: string;
+}) {
   const autor = materia.autorDetalhe;
   return (
     <div className="flex items-center gap-3.5">

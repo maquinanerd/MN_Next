@@ -2,7 +2,12 @@ import type { Metadata } from "next";
 import type { Materia } from "./types";
 
 export function materiaMetadata(m: Materia, path: string): Metadata {
-  const description = m.resumo ?? m.lead.map((t) => t.texto).join("").slice(0, 160);
+  const description =
+    m.resumo ??
+    m.lead
+      .map((t) => t.texto)
+      .join("")
+      .slice(0, 160);
   return {
     title: m.titulo,
     description,

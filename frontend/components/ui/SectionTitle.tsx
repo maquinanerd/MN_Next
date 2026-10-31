@@ -23,11 +23,7 @@ export function SectionTitle({
   className?: string;
 }) {
   const size =
-    tamanho === "secao"
-      ? "text-[26px] mob:text-xl"
-      : tamanho === "materia"
-        ? "text-[22px]"
-        : "text-lg";
+    tamanho === "secao" ? "text-[26px] mob:text-xl" : tamanho === "materia" ? "text-[22px]" : "text-lg";
   const titulo: ReactNode = (
     <Tag id={id} className={`m-0 leading-[1.1] font-extrabold tracking-[-.02em] uppercase ${size}`}>
       {forte}

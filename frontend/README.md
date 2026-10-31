@@ -15,42 +15,42 @@ npm run dev
 
 O site abre em http://localhost:3000. Outros comandos:
 
-| Comando | O que faz |
-|---|---|
-| `npm run build` | build de produção (gera as páginas estáticas) |
-| `npm start` | serve o build |
-| `npm run lint` | ESLint |
-| `npm run typecheck` | TypeScript sem emitir |
-| `npm test` | Vitest: regras de preço do OpaPreço, posição dos anúncios no texto e escape do JSON-LD |
+| Comando             | O que faz                                                                              |
+| ------------------- | -------------------------------------------------------------------------------------- |
+| `npm run build`     | build de produção (gera as páginas estáticas)                                          |
+| `npm start`         | serve o build                                                                          |
+| `npm run lint`      | ESLint                                                                                 |
+| `npm run typecheck` | TypeScript sem emitir                                                                  |
+| `npm test`          | Vitest: regras de preço do OpaPreço, posição dos anúncios no texto e escape do JSON-LD |
 
 ## Modo demonstração e variáveis
 
 Sem configuração nenhuma, conteúdo e ofertas vêm das fixtures de demonstração. Nesse modo a página mostra a faixa "Demonstração" no topo, todas as páginas saem com `noindex` e o `robots.txt` bloqueia tudo.
 
-| Variável | Efeito |
-|---|---|
-| `NEXT_PUBLIC_SITE_URL` | URL canônica (padrão `https://www.maquinanerd.com.br`) |
-| `OPAPRECO_AD_SERVER_URL` | liga o ad server real (`GET {url}/v1/ad`); sem ela, o servidor de demonstração |
-| `OPAPRECO_PUBLISHER` | id do publisher na requisição (padrão `maquinanerd`) |
-| `OPAPRECO_ALLOWED_HOSTS` | hosts aceitos no link afiliado, separados por vírgula (vazio: qualquer host https) |
-| `OPAPRECO_MODE=off` | nenhum slot é montado (todas as posições colapsam) |
-| `MN_CONTENT_SOURCE=cms` | usa o adaptador do CMS (`lib/content/cms.ts`, ainda não implementado: falha de forma visível) |
+| Variável                 | Efeito                                                                                        |
+| ------------------------ | --------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SITE_URL`   | URL canônica (padrão `https://www.maquinanerd.com.br`)                                        |
+| `OPAPRECO_AD_SERVER_URL` | liga o ad server real (`GET {url}/v1/ad`); sem ela, o servidor de demonstração                |
+| `OPAPRECO_PUBLISHER`     | id do publisher na requisição (padrão `maquinanerd`)                                          |
+| `OPAPRECO_ALLOWED_HOSTS` | hosts aceitos no link afiliado, separados por vírgula (vazio: qualquer host https)            |
+| `OPAPRECO_MODE=off`      | nenhum slot é montado (todas as posições colapsam)                                            |
+| `MN_CONTENT_SOURCE=cms`  | usa o adaptador do CMS (`lib/content/cms.ts`, ainda não implementado: falha de forma visível) |
 
 ## Rotas
 
-| Rota | Página |
-|---|---|
-| `/` | home |
-| `/page/[n]` | "Mais do Máquina Nerd", páginas 2+ |
-| `/[editoria]` | editoria: `cinema`, `series-e-tv`, `games`, `quadrinhos`, `animes`, `videos`, `especiais` |
-| `/[editoria]/page/[n]` | lista paginada da editoria |
-| `/[editoria]/assunto/[assunto]` (+ `/page/[n]`) | filtro de assunto |
-| `/[editoria]/[slug]` | matéria padrão ou overlay (o layout vem da matéria) |
-| `/ofertas` e `/ofertas/[slug]` | índice e matéria de oferta |
-| `/busca?q=` | busca (dinâmica, fora do índice) |
-| `/sobre`, `/newsletter`, `/anuncie`, `/politica-de-afiliados`, `/politica-de-privacidade`, `/termos-de-uso`, `/cookies`, `/acessibilidade`, `/mais` | institucionais |
-| `/dev/componentes`, `/dev/opapreco` | vitrines internas dos primitivos e dos seis componentes OpaPreço (fora do índice) |
-| `/sitemap.xml`, `/robots.txt`, `/opengraph-image`, `/icon.svg` | SEO |
+| Rota                                                                                                                                                | Página                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `/`                                                                                                                                                 | home                                                                                      |
+| `/page/[n]`                                                                                                                                         | "Mais do Máquina Nerd", páginas 2+                                                        |
+| `/[editoria]`                                                                                                                                       | editoria: `cinema`, `series-e-tv`, `games`, `quadrinhos`, `animes`, `videos`, `especiais` |
+| `/[editoria]/page/[n]`                                                                                                                              | lista paginada da editoria                                                                |
+| `/[editoria]/assunto/[assunto]` (+ `/page/[n]`)                                                                                                     | filtro de assunto                                                                         |
+| `/[editoria]/[slug]`                                                                                                                                | matéria padrão ou overlay (o layout vem da matéria)                                       |
+| `/ofertas` e `/ofertas/[slug]`                                                                                                                      | índice e matéria de oferta                                                                |
+| `/busca?q=`                                                                                                                                         | busca (dinâmica, fora do índice)                                                          |
+| `/sobre`, `/newsletter`, `/anuncie`, `/politica-de-afiliados`, `/politica-de-privacidade`, `/termos-de-uso`, `/cookies`, `/acessibilidade`, `/mais` | institucionais                                                                            |
+| `/dev/componentes`, `/dev/opapreco`                                                                                                                 | vitrines internas dos primitivos e dos seis componentes OpaPreço (fora do índice)         |
+| `/sitemap.xml`, `/robots.txt`, `/opengraph-image`, `/icon.svg`                                                                                      | SEO                                                                                       |
 
 ## Estrutura
 

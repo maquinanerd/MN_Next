@@ -10,7 +10,13 @@ export function Trechos({ trechos }: { trechos: Trecho[] }) {
         if (t.tipo === "negrito") return <strong key={i}>{t.texto}</strong>;
         if (t.patrocinado)
           return (
-            <a key={i} href={t.href} target="_blank" rel="sponsored nofollow noopener" className="underline underline-offset-3">
+            <a
+              key={i}
+              href={t.href}
+              target="_blank"
+              rel="sponsored nofollow noopener"
+              className="underline underline-offset-3"
+            >
               {t.texto}
             </a>
           );

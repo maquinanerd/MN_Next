@@ -49,8 +49,12 @@ export function StackCard({
       <h3 className="m-0 text-sm leading-[1.3] font-bold tracking-[-.01em]">
         <Link href={chamada.href}>{chamada.titulo}</Link>
       </h3>
-      {resumo && chamada.resumo && <p className="m-0 text-xs leading-[1.45] text-mn-summary">{chamada.resumo}</p>}
-      {meta !== false && agora && <Meta chamada={chamada} agora={agora} modo={meta} className="text-mn-muted" />}
+      {resumo && chamada.resumo && (
+        <p className="m-0 text-xs leading-[1.45] text-mn-summary">{chamada.resumo}</p>
+      )}
+      {meta !== false && agora && (
+        <Meta chamada={chamada} agora={agora} modo={meta} className="text-mn-muted" />
+      )}
     </article>
   );
 }

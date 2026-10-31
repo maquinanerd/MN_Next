@@ -21,16 +21,29 @@ export function ProductCard({ produto }: { produto: Produto }) {
         aria-hidden="true"
         className="relative block aspect-square overflow-hidden bg-[#F7F7F7]"
       >
-        <Image src={produto.imagem.url} alt="" fill sizes="(max-width: 760px) 100vw, 200px" className="object-contain" unoptimized={produto.imagem.url.endsWith(".svg")} />
+        <Image
+          src={produto.imagem.url}
+          alt=""
+          fill
+          sizes="(max-width: 760px) 100vw, 200px"
+          className="object-contain"
+          unoptimized={produto.imagem.url.endsWith(".svg")}
+        />
       </a>
       <div className="flex min-w-0 flex-col gap-2.5">
         {/* Disclosure em 11px (o protótipo usa 10px): nenhum aviso de afiliado abaixo de 11px. */}
-        <span className="text-[11px] font-bold tracking-[.04em] text-mn-ink-3 uppercase">Oferta · link de afiliado</span>
-        <p className="m-0 text-[17px] leading-[1.25] font-extrabold tracking-[-.02em] text-mn-ink">{produto.nome}</p>
+        <span className="text-[11px] font-bold tracking-[.04em] text-mn-ink-3 uppercase">
+          Oferta · link de afiliado
+        </span>
+        <p className="m-0 text-[17px] leading-[1.25] font-extrabold tracking-[-.02em] text-mn-ink">
+          {produto.nome}
+        </p>
         <p className="m-0 text-[13px] leading-normal text-[#555]">{produto.descricao}</p>
         {produto.precoAtual && (
           <div className="mt-1 flex flex-wrap items-baseline gap-2.5">
-            <span className="text-[22px] font-extrabold tracking-[-.02em] text-mn-red-text">{produto.precoAtual}</span>
+            <span className="text-[22px] font-extrabold tracking-[-.02em] text-mn-red-text">
+              {produto.precoAtual}
+            </span>
             {produto.precoAnterior && (
               <s className="text-xs text-mn-ink-3" aria-label={`Preço anterior ${produto.precoAnterior}`}>
                 {produto.precoAnterior}
@@ -73,7 +86,12 @@ export function FloatRelated({ item }: { item: Chamada }) {
       className="float-right mb-4 ml-7 box-border flex w-[220px] flex-col gap-2.5 border border-mn-line p-3.5 mob:float-none mob:m-0 mob:mb-5 mob:w-full"
     >
       <span className="text-[13px] font-extrabold tracking-[-.02em]">Relacionado</span>
-      <Link href={item.href} tabIndex={-1} aria-hidden="true" className="relative block aspect-video overflow-hidden bg-mn-media">
+      <Link
+        href={item.href}
+        tabIndex={-1}
+        aria-hidden="true"
+        className="relative block aspect-video overflow-hidden bg-mn-media"
+      >
         <Foto imagem={item.imagem} sizes="(max-width: 760px) 100vw, 220px" />
       </Link>
       <Link href={item.href} className="text-xs leading-[1.35] font-bold">
@@ -100,8 +118,8 @@ export function AffiliateNotice() {
   return (
     <div className="text-xs leading-[1.6] text-[#444]">
       <p className="m-0">
-        *Comprando pelos links acima, o Máquina Nerd pode receber uma comissão, sem custo adicional para você. Ofertas
-        podem estar disponíveis em uma ou mais lojas parceiras. Saiba mais na{" "}
+        *Comprando pelos links acima, o Máquina Nerd pode receber uma comissão, sem custo adicional para você.
+        Ofertas podem estar disponíveis em uma ou mais lojas parceiras. Saiba mais na{" "}
         <Link href="/politica-de-afiliados" className="underline underline-offset-3">
           política de afiliados
         </Link>
@@ -133,7 +151,9 @@ export function SponsoredGrid({ itens }: { itens: Patrocinado[] }) {
               <span className="text-sm leading-[1.3] font-bold tracking-[-.01em]">{p.titulo}</span>
               <span className="flex items-center justify-between gap-2 text-[11px] text-mn-muted">
                 <span>{p.parceiro}</span>
-                <span className="border border-mn-line-3 px-2.5 py-[3px] font-bold text-mn-ink">Saiba mais</span>
+                <span className="border border-mn-line-3 px-2.5 py-[3px] font-bold text-mn-ink">
+                  Saiba mais
+                </span>
               </span>
             </a>
           </li>

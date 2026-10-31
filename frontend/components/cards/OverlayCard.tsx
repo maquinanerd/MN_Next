@@ -37,7 +37,9 @@ export function OverlayCard({
           {chamada.titulo}
         </span>
         {meta === "autor" ? (
-          autores ? <span className="text-[11px] text-white/60">Por {autores}</span> : null
+          autores ? (
+            <span className="text-[11px] text-white/60">Por {autores}</span>
+          ) : null
         ) : (
           <Meta chamada={chamada} agora={agora} modo={meta} className="text-white/60" />
         )}

@@ -11,7 +11,10 @@ export function Section({
   labelledBy?: string;
 }) {
   return (
-    <section aria-labelledby={labelledBy} className={`mt-14 border-t border-mn-line pt-12 mob:mt-9 ${className}`}>
+    <section
+      aria-labelledby={labelledBy}
+      className={`mt-14 border-t border-mn-line pt-12 mob:mt-9 ${className}`}
+    >
       {children}
     </section>
   );

@@ -25,7 +25,13 @@ export function Meta({
   const por = autores(chamada);
   return (
     <div className={`text-[11px] leading-normal ${className}`}>
-      {modo === "autor-tempo" && por ? <>Por {por} · {tempo}</> : tempo}
+      {modo === "autor-tempo" && por ? (
+        <>
+          Por {por} · {tempo}
+        </>
+      ) : (
+        tempo
+      )}
       {modo === "tempo-editoria" && <> | {chamada.formato === "video" ? "Vídeos" : chamada.editoria.nome}</>}
     </div>
   );

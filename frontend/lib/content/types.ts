@@ -7,7 +7,14 @@
  * na página sem passar pelo mapeamento do adaptador.
  */
 
-export type EditoriaSlug = "cinema" | "series-e-tv" | "games" | "quadrinhos" | "animes" | "videos" | "especiais";
+export type EditoriaSlug =
+  | "cinema"
+  | "series-e-tv"
+  | "games"
+  | "quadrinhos"
+  | "animes"
+  | "videos"
+  | "especiais";
 
 export interface Editoria {
   slug: EditoriaSlug;

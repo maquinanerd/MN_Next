@@ -23,7 +23,10 @@ export function ArticleHeader({
 }) {
   return (
     <>
-      <span className="text-[13px] font-bold tracking-[-.01em]" style={{ color: cor ?? materia.editoria.corTexto }}>
+      <span
+        className="text-[13px] font-bold tracking-[-.01em]"
+        style={{ color: cor ?? materia.editoria.corTexto }}
+      >
         {rotulo}
       </span>
       <div className="mt-6 flex items-start gap-6 mob:flex-col mob:items-start mob:gap-4">
@@ -41,7 +44,9 @@ export function ArticleHeader({
 /** Linha fina: 19px/500 (17px no mobile). */
 export function Lead({ children }: { children: ReactNode }) {
   return (
-    <p className="mn-lead m-0 mt-6 text-[19px] leading-[1.4] font-medium tracking-[-.01em] mob:text-[17px]">{children}</p>
+    <p className="mn-lead m-0 mt-6 text-[19px] leading-[1.4] font-medium tracking-[-.01em] mob:text-[17px]">
+      {children}
+    </p>
   );
 }
 
@@ -79,7 +84,9 @@ export function WideFigure({
           style={pb ? { filter: "grayscale(1)" } : undefined}
         />
       </div>
-      {legenda && <figcaption className="mt-2 max-w-[420px] text-[10px] text-mn-muted italic">{legenda}</figcaption>}
+      {legenda && (
+        <figcaption className="mt-2 max-w-[420px] text-[10px] text-mn-muted italic">{legenda}</figcaption>
+      )}
     </figure>
   );
 }
@@ -152,7 +159,8 @@ export function ArticleEnd({ materia, path }: { materia: Materia; path: string }
     <div className="mt-10 border-t border-mn-line pt-8 text-xs leading-[1.6] text-[#444]">
       {materia.notaFinal && <p className="m-0 italic">{materia.notaFinal}</p>}
       <p className={materia.notaFinal ? "mt-3.5 mb-0" : "m-0"}>
-        Se quiser comentar esta reportagem ou qualquer outra coisa que viu no Máquina Nerd, vá até a nossa página no{" "}
+        Se quiser comentar esta reportagem ou qualquer outra coisa que viu no Máquina Nerd, vá até a nossa
+        página no{" "}
         <a href="https://www.facebook.com/maquinanerd" rel="noopener" className="mn-inline-link">
           Facebook
         </a>{" "}
@@ -167,7 +175,8 @@ export function ArticleEnd({ materia, path }: { materia: Materia; path: string }
         <Link href="/newsletter" className="mn-inline-link">
           inscreva-se na newsletter semanal do Máquina Nerd
         </Link>
-        . Uma seleção de reportagens de Cinema, Séries e TV, Games e Quadrinhos, entregue na sua caixa de entrada.
+        . Uma seleção de reportagens de Cinema, Séries e TV, Games e Quadrinhos, entregue na sua caixa de
+        entrada.
       </p>
       <div className="mt-6">
         <ShareButtons path={path} titulo={materia.titulo} comNativo />
@@ -184,7 +193,10 @@ export function NextStory({ chamada }: { chamada: Chamada }) {
       <div className="grid grid-cols-[minmax(0,1fr)_296px] items-start gap-10 mob:grid-cols-1">
         <div className="flex max-w-[300px] flex-col gap-3.5 mob:max-w-none">
           <div className="flex items-center gap-3.5">
-            <span className="px-3.5 py-[3px] text-[11px]" style={{ background: chamada.editoria.cor, color: on }}>
+            <span
+              className="px-3.5 py-[3px] text-[11px]"
+              style={{ background: chamada.editoria.cor, color: on }}
+            >
               {chamada.editoria.nome}
             </span>
             <span className="text-[11px] text-mn-muted">{mesAno(chamada.publicadoEm)}</span>
@@ -219,10 +231,22 @@ export function RelatedGrid({ itens, agora }: { itens: Chamada[]; agora: string 
   if (!itens.length) return null;
   return (
     <section aria-labelledby="relacionadas" className="mt-12 border-t border-mn-line pt-10 pb-14">
-      <SectionTitle id="relacionadas" forte="NOTÍCIAS" leve="RELACIONADAS" tamanho="materia" className="!mb-6" />
+      <SectionTitle
+        id="relacionadas"
+        forte="NOTÍCIAS"
+        leve="RELACIONADAS"
+        tamanho="materia"
+        className="!mb-6"
+      />
       <div className="grid grid-cols-3 gap-6 mob:grid-cols-1 mob:gap-3.5">
         {itens.map((c) => (
-          <OverlayCard key={c.id} chamada={c} agora={agora} meta="autor" sizes="(max-width: 760px) 100vw, 33vw" />
+          <OverlayCard
+            key={c.id}
+            chamada={c}
+            agora={agora}
+            meta="autor"
+            sizes="(max-width: 760px) 100vw, 33vw"
+          />
         ))}
       </div>
     </section>

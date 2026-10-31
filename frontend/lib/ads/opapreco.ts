@@ -27,7 +27,10 @@ async function fetchLive(base: URL, slot: SlotId, ctx: SlotContext, now: () => n
   if (ctx.tags?.length) url.searchParams.set("tags", ctx.tags.join(","));
   if (ctx.index) url.searchParams.set("index", String(ctx.index));
   try {
-    const res = await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    const res = await fetch(url, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
     if (res.status === 204) return { status: 204 };
     if (!res.ok) {
       logEmpty(slot, `http_${res.status}`);
@@ -47,7 +50,8 @@ async function fetchLive(base: URL, slot: SlotId, ctx: SlotContext, now: () => n
  * outras, a mesma oferta vira product_card_v1.
  */
 function umaQuedaPorPagina(slot: SlotId, result: AdResult): AdResult {
-  if (result.status !== 200 || result.render.component !== "price_drop_v1" || slot === "article-drop") return result;
+  if (result.status !== 200 || result.render.component !== "price_drop_v1" || slot === "article-drop")
+    return result;
   return { ...result, render: { component: "product_card_v1", offer: result.render.offer } };
 }
 

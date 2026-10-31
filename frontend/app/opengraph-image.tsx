@@ -14,7 +14,15 @@ export default async function OpenGraphImage() {
   const src = `data:image/png;base64,${logo.toString("base64")}`;
   return new ImageResponse(
     (
-      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", background: "#0D0D0D" }}>
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          background: "#0D0D0D",
+        }}
+      >
         <div style={{ display: "flex", height: 12 }}>
           {FAIXAS.map((c) => (
             <div key={c} style={{ flex: 1, background: c }} />

@@ -26,7 +26,11 @@ export function Verificado({
     const calcula = () => {
       const now = Date.now();
       const lista = chave.split("|");
-      setTexto(grade ? gridFootLabel(lista, grade.merchant, now) : (checkedLabel(lista[0]!, now, minusculo) ?? inicial));
+      setTexto(
+        grade
+          ? gridFootLabel(lista, grade.merchant, now)
+          : (checkedLabel(lista[0]!, now, minusculo) ?? inicial),
+      );
     };
     calcula();
     const id = setInterval(calcula, 60_000);

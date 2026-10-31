@@ -29,8 +29,13 @@ export function BigCard({
         video ? "min-h-[420px] mob:aspect-[4/3] mob:min-h-0" : "min-h-[300px] mob:aspect-[16/10] mob:min-h-0"
       } ${className}`}
     >
-      <Foto imagem={chamada.imagem} sizes={video ? "(max-width: 760px) 100vw, 1364px" : "(max-width: 760px) 100vw, 50vw"} />
-      <span className={`absolute inset-0 ${video ? "bg-[linear-gradient(180deg,rgba(0,0,0,.1),rgba(0,0,0,.7))]" : "mn-shade-big"}`} />
+      <Foto
+        imagem={chamada.imagem}
+        sizes={video ? "(max-width: 760px) 100vw, 1364px" : "(max-width: 760px) 100vw, 50vw"}
+      />
+      <span
+        className={`absolute inset-0 ${video ? "bg-[linear-gradient(180deg,rgba(0,0,0,.1),rgba(0,0,0,.7))]" : "mn-shade-big"}`}
+      />
       {video && <PlayIcon size={48} />}
       <span className="absolute top-5 left-5 flex items-center gap-[7px]">
         <EditoriaLabel chamada={chamada} modo={rotulo} sobreImagem />

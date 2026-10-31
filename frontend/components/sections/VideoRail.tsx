@@ -51,7 +51,8 @@ export function VideoRail({ abas }: { abas: Aba[] }) {
                 onClick={() => escolher(a.id)}
                 onKeyDown={(e) => {
                   if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
-                  const next = visiveis[(i + (e.key === "ArrowRight" ? 1 : visiveis.length - 1)) % visiveis.length]!;
+                  const next =
+                    visiveis[(i + (e.key === "ArrowRight" ? 1 : visiveis.length - 1)) % visiveis.length]!;
                   escolher(next.id);
                   document.getElementById(`${base}-tab-${next.id}`)?.focus();
                 }}
@@ -94,7 +95,10 @@ export function VideoRail({ abas }: { abas: Aba[] }) {
       >
         {/* No mobile a fileira rola: todos os clipes da aba; no desktop, quatro por vez. */}
         {aba.itens.map((c, i) => (
-          <div key={c.id} className={i >= inicio && i < inicio + POR_VEZ ? "min-w-0" : "hidden min-w-0 mob:block"}>
+          <div
+            key={c.id}
+            className={i >= inicio && i < inicio + POR_VEZ ? "min-w-0" : "hidden min-w-0 mob:block"}
+          >
             <StackCard
               chamada={c}
               rotulo="assunto"

@@ -5,7 +5,13 @@ import type { AdComponent } from "@/lib/ads/types";
  * (desligado com prefers-reduced-motion). Reaproveita as classes de layout dos componentes,
  * então a altura do esqueleto acompanha a do anúncio que vai ocupar o lugar.
  */
-export function Skeleton({ component, alinharAoSite = false }: { component: AdComponent; alinharAoSite?: boolean }) {
+export function Skeleton({
+  component,
+  alinharAoSite = false,
+}: {
+  component: AdComponent;
+  alinharAoSite?: boolean;
+}) {
   switch (component) {
     case "product_card_v1":
       return (

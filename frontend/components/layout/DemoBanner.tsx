@@ -8,7 +8,8 @@ export function DemoBanner() {
   const content = contentSource() === "fixtures";
   const ads = adsSource() === "fixtures";
   if (!content && !ads) return null;
-  const what = content && ads ? "conteúdo e ofertas fictícios" : content ? "conteúdo fictício" : "ofertas fictícias";
+  const what =
+    content && ads ? "conteúdo e ofertas fictícios" : content ? "conteúdo fictício" : "ofertas fictícias";
   const until = content && ads ? "o CMS e o OpaPreço" : content ? "o CMS" : "o OpaPreço";
   return (
     <div role="note" className="bg-[#111] text-white">

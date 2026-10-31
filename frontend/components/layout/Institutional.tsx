@@ -24,8 +24,12 @@ export function InstitutionalPage({
       <SiteHeader active={active} />
       <main id="conteudo" className="mn-wrap pt-8 pb-16 mob:pt-5">
         <div className="mb-7 border-b border-mn-line pb-5">
-          <h1 className="m-0 text-[34px] leading-none font-extrabold tracking-[-.03em] mob:text-[28px]">{titulo}</h1>
-          {intro && <p className="mt-4 mb-0 max-w-[68ch] text-[15px] leading-normal text-mn-ink-3">{intro}</p>}
+          <h1 className="m-0 text-[34px] leading-none font-extrabold tracking-[-.03em] mob:text-[28px]">
+            {titulo}
+          </h1>
+          {intro && (
+            <p className="mt-4 mb-0 max-w-[68ch] text-[15px] leading-normal text-mn-ink-3">{intro}</p>
+          )}
         </div>
         <div className="mn-prose">{children}</div>
       </main>

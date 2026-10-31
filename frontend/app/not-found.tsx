@@ -32,7 +32,10 @@ export default function NotFound() {
             type="search"
             className="h-11 min-w-0 flex-1 border border-mn-line-3 px-3 font-sans text-[15px]"
           />
-          <button type="submit" className="h-11 cursor-pointer border-0 bg-mn-red px-6 font-sans text-sm font-bold text-white">
+          <button
+            type="submit"
+            className="h-11 cursor-pointer border-0 bg-mn-red px-6 font-sans text-sm font-bold text-white"
+          >
             Buscar
           </button>
         </form>
@@ -41,7 +44,11 @@ export default function NotFound() {
             Página inicial
           </Link>
           {EDITORIA_SLUGS.map((s) => (
-            <Link key={s} href={`/${s}`} className="border border-mn-line-3 px-3.5 py-[7px] text-xs font-semibold">
+            <Link
+              key={s}
+              href={`/${s}`}
+              className="border border-mn-line-3 px-3.5 py-[7px] text-xs font-semibold"
+            >
               {EDITORIAS[s].nome}
             </Link>
           ))}

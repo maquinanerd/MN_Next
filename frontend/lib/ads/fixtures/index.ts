@@ -21,27 +21,107 @@ interface Demo {
 }
 
 const D: Record<string, Demo> = {
-  dualsense: { t: "Controle sem Fio Sony DualSense Edge para PlayStation 5", ratio: "horizontal", price: 1199, ref: 1499, disc: 20, min: 0 },
-  dualsenseLongo: { t: "Controle sem Fio Sony DualSense Edge para PlayStation 5 com Gatilhos Ajustáveis", ratio: "horizontal", price: 1199, ref: 1499, disc: 20, min: 0 },
-  fireTv: { t: "Fire TV Stick 4K com Controle Remoto por Voz", ratio: "horizontal", price: 379, ref: 499, disc: 24, min: 4 },
-  projetor: { t: "Projetor Portátil Full HD com Wi-Fi e Bluetooth", ratio: "horizontal", price: 899.9, ref: 1199.9, disc: 25, min: 8 },
+  dualsense: {
+    t: "Controle sem Fio Sony DualSense Edge para PlayStation 5",
+    ratio: "horizontal",
+    price: 1199,
+    ref: 1499,
+    disc: 20,
+    min: 0,
+  },
+  dualsenseLongo: {
+    t: "Controle sem Fio Sony DualSense Edge para PlayStation 5 com Gatilhos Ajustáveis",
+    ratio: "horizontal",
+    price: 1199,
+    ref: 1499,
+    disc: 20,
+    min: 0,
+  },
+  fireTv: {
+    t: "Fire TV Stick 4K com Controle Remoto por Voz",
+    ratio: "horizontal",
+    price: 379,
+    ref: 499,
+    disc: 24,
+    min: 4,
+  },
+  projetor: {
+    t: "Projetor Portátil Full HD com Wi-Fi e Bluetooth",
+    ratio: "horizontal",
+    price: 899.9,
+    ref: 1199.9,
+    disc: 25,
+    min: 8,
+  },
   batman: { t: "Batman: O Longo Dia das Bruxas, encadernado", ratio: "vertical", price: 119.9, min: 18 },
-  sandman: { t: "Sandman Edição Definitiva vol. 1, capa dura", ratio: "vertical", price: 199.9, ref: 249.9, disc: 20, min: 12 },
+  sandman: {
+    t: "Sandman Edição Definitiva vol. 1, capa dura",
+    ratio: "vertical",
+    price: 199.9,
+    ref: 249.9,
+    disc: 20,
+    min: 12,
+  },
   funko: { t: "Funko Pop! Marvel Homem-Aranha", ratio: "vertical", price: 129.9, min: 6 },
-  estante: { t: "Estante para livros com 5 prateleiras", ratio: "vertical", price: 349.9, ref: 449.9, disc: 22, min: 25 },
-  demonSlayer: { t: "Box Mangá Demon Slayer vol. 1 a 5", ratio: "square", price: 179.9, ref: 229.9, disc: 22, min: 10 },
+  estante: {
+    t: "Estante para livros com 5 prateleiras",
+    ratio: "vertical",
+    price: 349.9,
+    ref: 449.9,
+    disc: 22,
+    min: 25,
+  },
+  demonSlayer: {
+    t: "Box Mangá Demon Slayer vol. 1 a 5",
+    ratio: "square",
+    price: 179.9,
+    ref: 229.9,
+    disc: 22,
+    min: 10,
+  },
   onePiece: { t: "Mangá One Piece vol. 1", ratio: "vertical", price: 39.9, min: 4 },
   goku: { t: "Action figure Goku Super Saiyajin 18 cm", ratio: "vertical", price: 249.9, min: 16 },
   pokebola: { t: "Luminária LED Pokébola", ratio: "square", price: 89.9, ref: 119.9, disc: 25, min: 8 },
-  bluray: { t: "Box Blu-ray Trilogia O Senhor dos Anéis Versão Estendida", ratio: "square", price: 249.9, min: 14 },
-  pipoqueira: { t: "Pipoqueira Elétrica sem Óleo 1200W", ratio: "square", price: 129.9, ref: 169.9, disc: 24, min: 6 },
+  bluray: {
+    t: "Box Blu-ray Trilogia O Senhor dos Anéis Versão Estendida",
+    ratio: "square",
+    price: 249.9,
+    min: 14,
+  },
+  pipoqueira: {
+    t: "Pipoqueira Elétrica sem Óleo 1200W",
+    ratio: "square",
+    price: 129.9,
+    ref: 169.9,
+    disc: 24,
+    min: 6,
+  },
   tela: { t: "Tela de Projeção Retrátil 100 polegadas", ratio: "horizontal", price: 389.9, min: 20 },
   smartTv: { t: "Smart TV 50 polegadas 4K UHD com HDR", ratio: "horizontal", price: 2299, min: 11 },
-  soundbar: { t: "Soundbar 2.1 com Subwoofer e Bluetooth", ratio: "horizontal", price: 799.9, ref: 999.9, disc: 20, min: 7 },
+  soundbar: {
+    t: "Soundbar 2.1 com Subwoofer e Bluetooth",
+    ratio: "horizontal",
+    price: 799.9,
+    ref: 999.9,
+    disc: 20,
+    min: 7,
+  },
   fone: { t: "Fone Bluetooth com Cancelamento de Ruído", ratio: "square", price: 349.9, min: 9 },
   pulse: { t: "Headset Gamer sem Fio Sony Pulse 3D Midnight Black", ratio: "square", price: 499.9, min: 5 },
-  spiderman: { t: "Marvel's Spider-Man 2 para PS5, mídia física", ratio: "vertical", price: 199.9, ref: 299.9, disc: 33, min: 15 },
-  base: { t: "Base de carregamento dupla para controles DualSense", ratio: "horizontal", price: 89.9, min: 3 },
+  spiderman: {
+    t: "Marvel's Spider-Man 2 para PS5, mídia física",
+    ratio: "vertical",
+    price: 199.9,
+    ref: 299.9,
+    disc: 33,
+    min: 15,
+  },
+  base: {
+    t: "Base de carregamento dupla para controles DualSense",
+    ratio: "horizontal",
+    price: 89.9,
+    min: 3,
+  },
   ps5: {
     t: "Console PlayStation 5 Slim Edição Digital 825GB",
     ratio: "horizontal",
@@ -51,7 +131,14 @@ const D: Record<string, Demo> = {
     min: 12,
     extra: { isOfficialStore: true, historicalPrice: { lowest30d: 3299 }, eyebrow: "Menor preço recente" },
   },
-  ssd: { t: "SSD NVMe Kingston Fury Renegade 1TB com Dissipador, PCIe 4.0, compatível com PS5", ratio: "square", price: 549.9, ref: 699.9, disc: 21, min: 12 },
+  ssd: {
+    t: "SSD NVMe Kingston Fury Renegade 1TB com Dissipador, PCIe 4.0, compatível com PS5",
+    ratio: "square",
+    price: 549.9,
+    ref: 699.9,
+    disc: 21,
+    min: 12,
+  },
   cabo: { t: "Cabo USB-C trançado 3 m para controle DualSense", ratio: null, price: 39.9, min: 20 },
   stinger: {
     t: "Headset Gamer HyperX Cloud Stinger 2 Core para PS5",
@@ -141,7 +228,8 @@ export function fixtureResponse(slot: SlotId, ctx: SlotContext, now: number): un
     tracking: { impressionUrl: "https://example.com/opapreco/impression" },
   });
   const card = (k: Key) => base("product_card_v1", { offer: offer(k, now) });
-  const grid = (heading: string, keys: Key[]) => base("product_grid_v1", { heading, offers: keys.map((k) => offer(k, now)) });
+  const grid = (heading: string, keys: Key[]) =>
+    base("product_grid_v1", { heading, offers: keys.map((k) => offer(k, now)) });
   const i = ctx.index ?? 0;
   const ed = ctx.editoria ?? "games";
   const tema = POR_EDITORIA[ed] ?? POR_EDITORIA.games!;
@@ -177,7 +265,9 @@ export function fixtureResponse(slot: SlotId, ctx: SlotContext, now: number): un
     case "article-top": {
       if (layout === "oferta") return null;
       const k: Key = layout === "overlay" ? "ps5" : "spiderman";
-      return base(ctx.viewport === "mobile" ? "product_card_v1" : "product_hero_v1", { offer: offer(k, now) });
+      return base(ctx.viewport === "mobile" ? "product_card_v1" : "product_hero_v1", {
+        offer: offer(k, now),
+      });
     }
     case "article-inline-01":
       if (layout === "overlay")
@@ -202,13 +292,16 @@ export function fixtureResponse(slot: SlotId, ctx: SlotContext, now: number): un
     case "article-drop":
       // Sem queda comprovada, o servidor manda um card no lugar (spec §4).
       if (layout === "oferta") return null;
-      return layout === "overlay" ? card("spiderman") : base("price_drop_v1", { offer: offer("stinger", now) });
+      return layout === "overlay"
+        ? card("spiderman")
+        : base("price_drop_v1", { offer: offer("stinger", now) });
     case "article-inline-03":
       return card(layout === "overlay" ? "pipoqueira" : layout === "oferta" ? "pulse" : "funko");
     case "article-sticky":
       return card("dualsense");
     case "article-bottom":
-      if (layout === "oferta") return grid("Mais ofertas para gamers", ["pulse", "dualsenseLongo", "spiderman", "base"]);
+      if (layout === "oferta")
+        return grid("Mais ofertas para gamers", ["pulse", "dualsenseLongo", "spiderman", "base"]);
       return grid(
         "Ofertas para o seu PS5",
         layout === "overlay" ? ["dualsenseLongo", "ssd", "base", "cabo"] : ["ssd", "pulse", "base", "cabo"],

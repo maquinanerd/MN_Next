@@ -54,7 +54,10 @@ describe("mustNotRender → 204", () => {
   });
 
   it("fakeDrop colapsa como price_drop_v1", () => {
-    const r = resolveResponse(response("price_drop_v1", { offer: offer(fixtures.mustNotRender.fakeDrop) }), NOW);
+    const r = resolveResponse(
+      response("price_drop_v1", { offer: offer(fixtures.mustNotRender.fakeDrop) }),
+      NOW,
+    );
     expect(r.status).toBe(204);
   });
 
@@ -74,7 +77,8 @@ describe("mustHideDiscount → só o preço atual", () => {
   it.each(Object.entries(cases))("%s", (_name, o) => {
     const r = card(o as RawOffer);
     expect(r.status).toBe(200);
-    if (r.status !== 200 || r.render.component === "product_grid_v1") throw new Error("esperava oferta única");
+    if (r.status !== 200 || r.render.component === "product_grid_v1")
+      throw new Error("esperava oferta única");
     expect(r.render.offer.referencePrice).toBeUndefined();
     expect(r.render.offer.discountPercent).toBeUndefined();
     expect(r.render.offer.currentPrice).toBe((o as RawOffer).currentPrice);
@@ -82,7 +86,8 @@ describe("mustHideDiscount → só o preço atual", () => {
 
   it("desconto comprovado é mantido", () => {
     const r = card(fixtures.offers.withDiscount);
-    if (r.status !== 200 || r.render.component === "product_grid_v1") throw new Error("esperava oferta única");
+    if (r.status !== 200 || r.render.component === "product_grid_v1")
+      throw new Error("esperava oferta única");
     expect(r.render.offer.discountPercent).toBe(21);
   });
 });
@@ -92,7 +97,10 @@ describe("product_grid_v1", () => {
   const offers = ids.map((k) => offer(fixtures.offers[k]));
 
   it("renderiza as 4 ofertas do slot de exemplo", () => {
-    const r = resolveResponse(response("product_grid_v1", { heading: "Ofertas para o seu PS5", offers }), NOW);
+    const r = resolveResponse(
+      response("product_grid_v1", { heading: "Ofertas para o seu PS5", offers }),
+      NOW,
+    );
     expect(r.status === 200 && r.render.component === "product_grid_v1" && r.render.offers.length).toBe(4);
   });
 
@@ -136,7 +144,8 @@ describe("achados da revisão", () => {
   const single = (o: Record<string, unknown>, component = "product_card_v1") =>
     resolveResponse(response(component, { offer: o }), NOW);
   const render = (r: ReturnType<typeof single>) => {
-    if (r.status !== 200 || r.render.component === "product_grid_v1") throw new Error("esperava oferta única");
+    if (r.status !== 200 || r.render.component === "product_grid_v1")
+      throw new Error("esperava oferta única");
     return r.render.offer;
   };
 
@@ -163,7 +172,9 @@ describe("achados da revisão", () => {
   });
 
   it("grade: oferta fora do contrato sai sozinha e 3 viram 2", () => {
-    const ok = ["withDiscount", "noDiscount", "verticalImage"].map((k) => offer(fixtures.offers[k as keyof typeof fixtures.offers] as RawOffer));
+    const ok = ["withDiscount", "noDiscount", "verticalImage"].map((k) =>
+      offer(fixtures.offers[k as keyof typeof fixtures.offers] as RawOffer),
+    );
     const r = resolveResponse(response("product_grid_v1", { offers: [...ok, { lixo: true }] }), NOW);
     expect(r.status === 200 && r.render.component === "product_grid_v1" && r.render.offers.length).toBe(2);
   });

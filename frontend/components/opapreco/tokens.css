@@ -2,31 +2,36 @@
    Aplicar no elemento raiz de cada slot: .op-slot { ... }
    Publisher pode sobrescrever apenas: --op-action*, --op-border, --op-radius-card, --op-font. */
 .op-slot {
-  --op-bg: #FFFFFF;
-  --op-surface: #F7F7F7;
-  --op-surface-hover: #F0F0F0;
-  --op-border: #E6E6E6;
-  --op-border-hover: #CFCFCF;
-  --op-divider: #D4D4D4;
+  --op-bg: #ffffff;
+  --op-surface: #f7f7f7;
+  --op-surface-hover: #f0f0f0;
+  --op-border: #e6e6e6;
+  --op-border-hover: #cfcfcf;
+  --op-divider: #d4d4d4;
   --op-text: #111111;
   --op-text-2: #666666;
   --op-text-body: #444444;
-  --op-action: #0B6E4F;
-  --op-action-hover: #095A41;
+  --op-action: #0b6e4f;
+  --op-action-hover: #095a41;
   --op-action-active: #074633;
-  --op-action-fg: #FFFFFF;
-  --op-action-subtle: #EDF5F1;
-  --op-action-subtle-active: #DCEDE4;
-  --op-positive: #0B6E4F;
-  --op-positive-bg: #EDF5F1;
-  --op-disabled-bg: #F0F0F0;
+  --op-action-fg: #ffffff;
+  --op-action-subtle: #edf5f1;
+  --op-action-subtle-active: #dcede4;
+  --op-positive: #0b6e4f;
+  --op-positive-bg: #edf5f1;
+  --op-disabled-bg: #f0f0f0;
   --op-disabled-fg: #666666;
-  --op-skeleton: #EEEEEE;
-  --op-image-icon: #9A9A9A;
+  --op-skeleton: #eeeeee;
+  --op-image-icon: #9a9a9a;
 
   --op-font: inherit;
-  --op-space-1: 4px; --op-space-2: 8px; --op-space-3: 12px; --op-space-4: 16px;
-  --op-space-5: 20px; --op-space-6: 24px; --op-space-8: 32px;
+  --op-space-1: 4px;
+  --op-space-2: 8px;
+  --op-space-3: 12px;
+  --op-space-4: 16px;
+  --op-space-5: 20px;
+  --op-space-6: 24px;
+  --op-space-8: 32px;
 
   --op-radius-badge: 4px;
   --op-radius-image: 6px;
@@ -67,5 +72,8 @@
   container-type: inline-size;
 }
 @media (prefers-reduced-motion: reduce) {
-  .op-slot { --op-duration: 0ms; --op-collapse: 0ms; }
+  .op-slot {
+    --op-duration: 0ms;
+    --op-collapse: 0ms;
+  }
 }

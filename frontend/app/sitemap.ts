@@ -34,7 +34,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "hourly" as const,
       priority: 0.8,
     })),
-    ...filtros.filter((p): p is string => !!p).map((p) => ({ url: absoluteUrl(p), changeFrequency: "daily" as const, priority: 0.5 })),
+    ...filtros
+      .filter((p): p is string => !!p)
+      .map((p) => ({ url: absoluteUrl(p), changeFrequency: "daily" as const, priority: 0.5 })),
     { url: absoluteUrl("/ofertas"), changeFrequency: "daily", priority: 0.5 },
     ...materias.map((m) => ({
       url: absoluteUrl(m.layout === "oferta" ? `/ofertas/${m.slug}` : `/${m.editoria}/${m.slug}`),

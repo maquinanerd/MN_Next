@@ -18,7 +18,12 @@ export function RowCard({
 }) {
   return (
     <article className="grid grid-cols-[296px_minmax(0,1fr)] gap-8 border-b border-mn-line py-6 mob:grid-cols-1 mob:gap-3.5">
-      <Link href={chamada.href} tabIndex={-1} aria-hidden="true" className="relative block aspect-[3/2] overflow-hidden rounded-mn bg-mn-media">
+      <Link
+        href={chamada.href}
+        tabIndex={-1}
+        aria-hidden="true"
+        className="relative block aspect-[3/2] overflow-hidden rounded-mn bg-mn-media"
+      >
         <Foto imagem={chamada.imagem} sizes="(max-width: 760px) 100vw, 296px" eager={eager} />
       </Link>
       <div className="flex max-w-[520px] flex-col gap-2.5 mob:max-w-none">

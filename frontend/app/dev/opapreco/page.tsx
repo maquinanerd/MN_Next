@@ -37,7 +37,13 @@ async function vitrine() {
   };
   const resolve = (component: string, props: Record<string, unknown>): AdResult =>
     resolveResponse(
-      { requestId: "vitrine", slot: "article-inline-02", component, props, tracking: { impressionUrl: "https://example.com/i" } },
+      {
+        requestId: "vitrine",
+        slot: "article-inline-02",
+        component,
+        props,
+        tracking: { impressionUrl: "https://example.com/i" },
+      },
       now,
     );
   const single = (raw: Raw, component = "product_card_v1") => resolve(component, { offer: toOffer(raw) });
@@ -121,11 +127,15 @@ export default async function OpaPrecoPage() {
       <main id="conteudo" className="mn-wrap pt-10 pb-16">
         <h1 className="m-0 text-[28px] font-extrabold tracking-[-.035em]">OpaPreço Ads — vitrine</h1>
         <p className="mt-2 mb-0 max-w-[720px] text-[13px] leading-normal text-mn-summary">
-          Os seis componentes da spec em todos os estados e casos de dados de <code>fixtures-offers.json</code>, passando
-          pelo mesmo contrato e pelas mesmas regras de preço do ad server real. Ofertas de demonstração.
+          Os seis componentes da spec em todos os estados e casos de dados de{" "}
+          <code>fixtures-offers.json</code>, passando pelo mesmo contrato e pelas mesmas regras de preço do ad
+          server real. Ofertas de demonstração.
         </p>
 
-        <Secao titulo="product_card_v1 · estados" nota="Hover, foco e clique forçados por classe para a captura; no site vêm de :hover, :focus-visible e :active.">
+        <Secao
+          titulo="product_card_v1 · estados"
+          nota="Hover, foco e clique forçados por classe para a captura; no site vêm de :hover, :focus-visible e :active."
+        >
           <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,520px),1fr))] gap-6">
             {ESTADOS.map((e) => (
               <Quadro key={e} rotulo={e} largura={720}>
@@ -209,7 +219,11 @@ export default async function OpaPrecoPage() {
         </Secao>
 
         <Secao titulo="product_grid_v1 · article-bottom (gap padrão de 16px)">
-          <Larguras>{() => <ProductGridV1 offers={v.gridOffers} heading="Ofertas para o seu PS5" servedAt={servedAt} />}</Larguras>
+          <Larguras>
+            {() => (
+              <ProductGridV1 offers={v.gridOffers} heading="Ofertas para o seu PS5" servedAt={servedAt} />
+            )}
+          </Larguras>
           <Larguras>{() => <Skeleton component="product_grid_v1" />}</Larguras>
         </Secao>
 
@@ -219,12 +233,20 @@ export default async function OpaPrecoPage() {
         >
           <div className="grid grid-cols-4 gap-10 mob:grid-cols-1">
             {[1, 2, 3, 4].map((n) => (
-              <div key={n} className="h-10 bg-mn-surface font-mono text-[11px] leading-10 text-mn-muted mob:hidden">
+              <div
+                key={n}
+                className="h-10 bg-mn-surface font-mono text-[11px] leading-10 text-mn-muted mob:hidden"
+              >
                 &nbsp;coluna {n}
               </div>
             ))}
           </div>
-          <OpaSlot id="home-grid-cinema" ctx={{ path: "/dev/opapreco" }} gap="var(--mn-grid-gap)" alinharAoSite />
+          <OpaSlot
+            id="home-grid-cinema"
+            ctx={{ path: "/dev/opapreco" }}
+            gap="var(--mn-grid-gap)"
+            alinharAoSite
+          />
         </Secao>
 
         <Secao titulo="product_compact_v1 · implementado, não usado no Máquina Nerd">

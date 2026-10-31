@@ -39,7 +39,10 @@ export function EditoriaView({ data, assuntoSlug }: { data: EditoriaData; assunt
       <SiteHeader active={editoria.slug} />
       <main id="conteudo" className="mn-wrap pt-8 mob:pt-5">
         <div className="mb-7 flex flex-wrap items-end justify-between gap-6 border-b border-mn-line pb-5">
-          <h1 className="m-0 text-[34px] leading-none font-extrabold tracking-[-.03em]" style={{ color: editoria.corTexto }}>
+          <h1
+            className="m-0 text-[34px] leading-none font-extrabold tracking-[-.03em]"
+            style={{ color: editoria.corTexto }}
+          >
             {editoria.nome}
           </h1>
           <nav aria-label={`Assuntos de ${editoria.nome}`} className="flex flex-wrap gap-1.5">
@@ -102,7 +105,10 @@ export function EditoriaView({ data, assuntoSlug }: { data: EditoriaData; assunt
             antesDaPaginacao={
               feed.pagina === 1 && feed.totalPaginas > 1 ? (
                 <div className="mt-10 flex justify-center">
-                  <Link href={pageHref(base, 2)} className="border border-mn-line-3 px-10 py-[9px] text-xs text-mn-ink">
+                  <Link
+                    href={pageHref(base, 2)}
+                    className="border border-mn-line-3 px-10 py-[9px] text-xs text-mn-ink"
+                  >
                     Carregar mais notícias de {editoria.nome}
                   </Link>
                 </div>

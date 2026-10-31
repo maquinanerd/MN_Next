@@ -14,7 +14,10 @@ const montserrat = Montserrat({
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.url),
-  title: { default: `${SITE.name} — cinema, séries, games, quadrinhos e animes`, template: `%s | ${SITE.name}` },
+  title: {
+    default: `${SITE.name} — cinema, séries, games, quadrinhos e animes`,
+    template: `%s | ${SITE.name}`,
+  },
   description: SITE.description,
   applicationName: SITE.name,
   openGraph: { siteName: SITE.name, locale: SITE.locale, type: "website" },

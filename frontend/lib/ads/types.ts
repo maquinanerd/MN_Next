@@ -37,7 +37,11 @@ export const OfferSchema = z
     eyebrow: z.enum(["Oferta verificada", "Menor preço recente", "Boa oportunidade"]).optional(),
     affiliateDisclosure: z.enum(["Link de afiliado", "Oferta afiliada", "Links de afiliado"]).optional(),
     priceDrop: z
-      .object({ from: z.number().positive(), percent: z.number().int().min(0).max(90), since: z.string().max(32).optional() })
+      .object({
+        from: z.number().positive(),
+        percent: z.number().int().min(0).max(90),
+        since: z.string().max(32).optional(),
+      })
       .strict()
       .optional(),
     historicalPrice: z.object({ lowest30d: z.number().positive().optional() }).strict().optional(),
@@ -60,12 +64,22 @@ export const COMPONENTS = [
 ] as const;
 export type AdComponent = (typeof COMPONENTS)[number];
 
-export const SERVER_SLOTS = ["article-top", "article-inline-01", "article-inline-02", "article-bottom", "sidebar"] as const;
+export const SERVER_SLOTS = [
+  "article-top",
+  "article-inline-01",
+  "article-inline-02",
+  "article-bottom",
+  "sidebar",
+] as const;
 export type ServerSlot = (typeof SERVER_SLOTS)[number];
 
 const SingleProps = z.object({ offer: OfferSchema }).strict();
 const ContextualProps = z
-  .object({ offer: OfferSchema, context: z.string().min(1).max(90), contextNote: z.string().max(140).optional() })
+  .object({
+    offer: OfferSchema,
+    context: z.string().min(1).max(90),
+    contextNote: z.string().max(140).optional(),
+  })
   .strict();
 // Cada oferta da grade é validada uma a uma nas regras: uma oferta fora do contrato sai,
 // as outras ficam.
@@ -88,7 +102,9 @@ export const AdResponseSchema = z.discriminatedUnion("component", [
   z.object({ ...Common, component: z.literal("product_compact_v1"), props: SingleProps }).strict(),
   z.object({ ...Common, component: z.literal("product_hero_v1"), props: SingleProps }).strict(),
   z.object({ ...Common, component: z.literal("price_drop_v1"), props: SingleProps }).strict(),
-  z.object({ ...Common, component: z.literal("contextual_recommendation_v1"), props: ContextualProps }).strict(),
+  z
+    .object({ ...Common, component: z.literal("contextual_recommendation_v1"), props: ContextualProps })
+    .strict(),
   z.object({ ...Common, component: z.literal("product_grid_v1"), props: GridProps }).strict(),
 ]);
 export type AdResponse = z.infer<typeof AdResponseSchema>;
@@ -103,8 +119,16 @@ export type AdResult =
       expiresAt?: string;
       impressionUrl?: string;
       render:
-        | { component: "product_card_v1" | "product_compact_v1" | "product_hero_v1" | "price_drop_v1"; offer: OfferData }
-        | { component: "contextual_recommendation_v1"; offer: OfferData; context: string; contextNote?: string }
+        | {
+            component: "product_card_v1" | "product_compact_v1" | "product_hero_v1" | "price_drop_v1";
+            offer: OfferData;
+          }
+        | {
+            component: "contextual_recommendation_v1";
+            offer: OfferData;
+            context: string;
+            contextNote?: string;
+          }
         | { component: "product_grid_v1"; offers: OfferData[]; heading?: string };
     };
 

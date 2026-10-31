@@ -17,13 +17,16 @@ export default function AcessibilidadePage() {
         <li>Todas as páginas podem ser navegadas pelo teclado, com o foco sempre visível.</li>
         <li>O link “Ir para o conteúdo”, no início de cada página, pula o menu.</li>
         <li>Imagens informativas têm descrição; imagens decorativas são ignoradas pelos leitores de tela.</li>
-        <li>Cada oferta é um único link, com o produto, o preço, a loja e o aviso de afiliado no nome lido em voz alta.</li>
+        <li>
+          Cada oferta é um único link, com o produto, o preço, a loja e o aviso de afiliado no nome lido em
+          voz alta.
+        </li>
         <li>Quem pede menos movimento ao sistema não vê as animações do menu nem das ofertas.</li>
       </ul>
       <h2>Encontrou um problema?</h2>
       <p>
-        Escreva para <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a> com o endereço da página e o que
-        aconteceu. Toda mensagem sobre acessibilidade é respondida.
+        Escreva para <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a> com o endereço da página
+        e o que aconteceu. Toda mensagem sobre acessibilidade é respondida.
       </p>
     </InstitutionalPage>
   );

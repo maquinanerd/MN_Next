@@ -27,7 +27,9 @@ export function ProductHeroV1({
   return (
     <OfferLink
       href={offer.href}
-      ariaLabel={ariaLabelFor(offer, disclosure, offer.cta ?? `Ver oferta na ${offer.merchant}`, { menor30d: true })}
+      ariaLabel={ariaLabelFor(offer, disclosure, offer.cta ?? `Ver oferta na ${offer.merchant}`, {
+        menor30d: true,
+      })}
       component="product_hero_v1"
       className="op-offer op-boxed op-hero"
       checkedAt={offer.checkedAt}
@@ -48,7 +50,15 @@ export function ProductHeroV1({
         </span>
         <span className="op-monitor">
           <span className="op-monitor__title">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#0B6E4F" strokeWidth="1.75" aria-hidden="true">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="#0B6E4F"
+              strokeWidth="1.75"
+              aria-hidden="true"
+            >
               <path d="M2 12l4-4 3 3 5-6" />
             </svg>
             Preço monitorado pelo OpaPreço

@@ -78,7 +78,11 @@ export function ProductGridV1({
       <span className="op-grid__foot">
         <Verificado
           checkedAt={list.map((o) => o.checkedAt)}
-          inicial={gridFootLabel(list.map((o) => o.checkedAt), list[0]!.merchant, Date.parse(servedAt))}
+          inicial={gridFootLabel(
+            list.map((o) => o.checkedAt),
+            list[0]!.merchant,
+            Date.parse(servedAt),
+          )}
           grade={{ merchant: list[0]!.merchant }}
         />
       </span>

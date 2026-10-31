@@ -66,7 +66,15 @@ export function MenuButton() {
       onClick={toggle}
       className="relative -my-2 -mr-2 flex h-8 w-8 cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-inherit before:absolute before:-inset-1.5 before:content-['']"
     >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        aria-hidden="true"
+      >
         <path d={open ? ICON_CLOSE : ICON_OPEN} />
       </svg>
     </button>
@@ -77,7 +85,11 @@ export function MenuButton() {
 export function MobileDrawer({ items, active }: { items: NavItem[]; active?: NavKey }) {
   const { open, close } = useMenu();
   return (
-    <div id={DRAWER_ID} hidden={!open} className="relative z-[3] border-b border-mn-line-2 bg-white text-mn-ink">
+    <div
+      id={DRAWER_ID}
+      hidden={!open}
+      className="relative z-[3] border-b border-mn-line-2 bg-white text-mn-ink"
+    >
       <nav aria-label="Menu" className="flex flex-col px-4 pt-1 pb-3">
         {items.map((item) => {
           const current = item.key === active;

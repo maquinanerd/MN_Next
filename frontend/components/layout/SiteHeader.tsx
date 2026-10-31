@@ -45,7 +45,11 @@ export function SiteHeader({ active, tema = "light" }: { active?: NavKey; tema?:
   return (
     <MenuRoot>
       <header
-        className={over ? "relative z-[2] border-b border-white/[.18] text-white" : "border-b border-mn-line-2 text-mn-ink"}
+        className={
+          over
+            ? "relative z-[2] border-b border-white/[.18] text-white"
+            : "border-b border-mn-line-2 text-mn-ink"
+        }
       >
         <div className="mn-wrap flex h-16 items-stretch gap-6 mob:grid mob:h-14 mob:grid-cols-[44px_minmax(0,1fr)_44px] mob:items-center mob:gap-0">
           <Link
@@ -70,7 +74,15 @@ export function SiteHeader({ active, tema = "light" }: { active?: NavKey; tema?:
               over ? "hover:text-white" : "hover:text-mn-ink"
             }`}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
               <circle cx="11" cy="11" r="7" />
               <path d="M20.5 20.5l-4.7-4.7" />
             </svg>

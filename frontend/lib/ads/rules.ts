@@ -1,5 +1,12 @@
 import { MAX_AGE_MS, MIN_DISCOUNT } from "./constants";
-import { AdResponseSchema, OfferSchema, type AdRender, type AdResponse, type AdResult, type OfferData } from "./types";
+import {
+  AdResponseSchema,
+  OfferSchema,
+  type AdRender,
+  type AdResponse,
+  type AdResult,
+  type OfferData,
+} from "./types";
 
 /**
  * Regras de exibição de preço do OpaPreço (OPAPRECO_ADS_SPEC.md §4, §12). O backend já
@@ -43,7 +50,9 @@ function comprovado(de: number, por: number, informado: number): boolean {
 }
 
 /** Desconto só com prova: referência maior que o preço, ao menos 5% e percentual coerente. */
-export function hasDiscount(o: Pick<OfferData, "currentPrice" | "referencePrice" | "discountPercent">): boolean {
+export function hasDiscount(
+  o: Pick<OfferData, "currentPrice" | "referencePrice" | "discountPercent">,
+): boolean {
   return (
     o.referencePrice !== undefined &&
     o.discountPercent !== undefined &&
@@ -94,7 +103,8 @@ export function isServable(o: Partial<OfferData> | null | undefined, now: number
   if (!(typeof o.currentPrice === "number" && o.currentPrice > 0)) return false;
   if (!o.href || !o.href.startsWith("https://") || !hostPermitido(o.href)) return false;
   if (!o.checkedAt) return false;
-  if (o.priceDrop && !hasValidPriceDrop({ currentPrice: o.currentPrice, priceDrop: o.priceDrop })) return false;
+  if (o.priceDrop && !hasValidPriceDrop({ currentPrice: o.currentPrice, priceDrop: o.priceDrop }))
+    return false;
   const age = ageMs(o.checkedAt, now);
   return Number.isFinite(age) && age >= -60_000 && age <= MAX_AGE_MS;
 }
@@ -108,7 +118,9 @@ export { checkedLabel } from "./labels";
 export function sanitizeOffer(o: OfferData): OfferData {
   const comDesconto = hasDiscount(o);
   const { referencePrice: _r, discountPercent: _d, eyebrow: _e, ...rest } = o;
-  const base = (comDesconto ? { ...rest, referencePrice: o.referencePrice, discountPercent: o.discountPercent } : rest) as OfferData;
+  const base = (
+    comDesconto ? { ...rest, referencePrice: o.referencePrice, discountPercent: o.discountPercent } : rest
+  ) as OfferData;
   const eyebrow = eyebrowFor(base, o.eyebrow);
   return { ...base, eyebrow };
 }
@@ -118,7 +130,10 @@ export function sanitizeOffer(o: OfferData): OfferData {
  * dos últimos 30 dias; "Boa oportunidade" só com desconto comprovado de 10% ou mais; nos
  * demais casos, "Oferta verificada" — o que o servidor pedir sem prova vira o neutro.
  */
-export function eyebrowFor(o: OfferData, pedido: OfferData["eyebrow"] = o.eyebrow): NonNullable<OfferData["eyebrow"]> {
+export function eyebrowFor(
+  o: OfferData,
+  pedido: OfferData["eyebrow"] = o.eyebrow,
+): NonNullable<OfferData["eyebrow"]> {
   const menor = isLowest30d(o);
   const boa = hasDiscount(o) && (o.discountPercent ?? 0) >= BOA_OPORTUNIDADE_PCT;
   if (pedido === "Menor preço recente") return menor ? pedido : "Oferta verificada";
@@ -154,7 +169,12 @@ export function applyRules(resp: AdResponse, now: number): AdResult {
     case "contextual_recommendation_v1": {
       const { offer, context, contextNote } = resp.props;
       if (!isServable(offer, now) || !context.trim()) return { status: 204 };
-      render = { component: "contextual_recommendation_v1", offer: sanitizeOffer(offer), context, contextNote };
+      render = {
+        component: "contextual_recommendation_v1",
+        offer: sanitizeOffer(offer),
+        context,
+        contextNote,
+      };
       break;
     }
     case "price_drop_v1": {

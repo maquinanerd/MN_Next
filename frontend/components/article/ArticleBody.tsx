@@ -37,7 +37,10 @@ export function ArticleBody({
         return;
       case "paragrafo": {
         const p = (
-          <p key={key} className={`mn-body ${primeiroParagrafo && secoes.length === 1 && !atual.length ? "mt-8" : ""}`}>
+          <p
+            key={key}
+            className={`mn-body ${primeiroParagrafo && secoes.length === 1 && !atual.length ? "mt-8" : ""}`}
+          >
             <Trechos trechos={b.trechos} />
           </p>
         );
@@ -74,7 +77,13 @@ export function ArticleBody({
           b.largura === "larga" ? (
             <WideFigure key={key} imagem={b.imagem} proporcao={b.proporcao} pb={b.pb} />
           ) : (
-            <WideFigure key={key} imagem={b.imagem} proporcao={b.proporcao} pb={b.pb} className="mt-7 !mx-0 [&_figcaption]:!mx-0" />
+            <WideFigure
+              key={key}
+              imagem={b.imagem}
+              proporcao={b.proporcao}
+              pb={b.pb}
+              className="mt-7 !mx-0 [&_figcaption]:!mx-0"
+            />
           ),
         );
         break;
@@ -82,7 +91,15 @@ export function ArticleBody({
         atual.push(<Citacao key={key} texto={b.texto} autor={b.autor} cor={corCitacao} />);
         break;
       case "relacionadas-inline":
-        atual.push(<RelatedInline key={key} itens={b.itens} imagem={b.imagem} maisHref={b.maisHref} maisRotulo={b.maisRotulo} />);
+        atual.push(
+          <RelatedInline
+            key={key}
+            itens={b.itens}
+            imagem={b.imagem}
+            maisHref={b.maisHref}
+            maisRotulo={b.maisRotulo}
+          />,
+        );
         break;
       case "produto":
         atual.push(<ProductCard key={key} produto={b.produto} />);

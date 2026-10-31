@@ -25,7 +25,15 @@ export interface OpaSlotProps {
 }
 
 /** Escolhe o componente devolvido pelo ad server. */
-export function AdView({ result, gap, alinharAoSite }: { result: Extract<AdResult, { status: 200 }>; gap?: string; alinharAoSite?: boolean }) {
+export function AdView({
+  result,
+  gap,
+  alinharAoSite,
+}: {
+  result: Extract<AdResult, { status: 200 }>;
+  gap?: string;
+  alinharAoSite?: boolean;
+}) {
   const { render, servedAt, expiresAt } = result;
   switch (render.component) {
     case "product_card_v1":
@@ -86,7 +94,11 @@ export function OpaSlot(props: OpaSlotProps) {
   return (
     <Suspense
       fallback={
-        <div data-op-slot={props.id} className={wrapperClass(props.id, props.className)} style={{ minHeight: reserve }}>
+        <div
+          data-op-slot={props.id}
+          className={wrapperClass(props.id, props.className)}
+          style={{ minHeight: reserve }}
+        >
           <Skeleton component={esperado} alinharAoSite={props.alinharAoSite} />
         </div>
       }

@@ -12,7 +12,11 @@ export async function generateStaticParams() {
       const ed = editoriaDef(editoria)!;
       const data = await getEditoria(ed.slug, 1, assuntoBySlug(ed, assunto));
       const total = data?.feed.totalPaginas ?? 1;
-      return Array.from({ length: Math.max(0, total - 1) }, (_, i) => ({ editoria, assunto, n: String(i + 2) }));
+      return Array.from({ length: Math.max(0, total - 1) }, (_, i) => ({
+        editoria,
+        assunto,
+        n: String(i + 2),
+      }));
     }),
   );
   const params = all.flat();

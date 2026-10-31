@@ -125,7 +125,9 @@ function home(cat: Catalog): HomeData {
         "teaser-resident-evil-2026",
         "entrevista-jerry-bruckheimer-piratas-do-caribe",
       ),
-      recentes: cat.latest((c) => c.formato === "video" && c.id !== "ahsoka-trailer-segunda-temporada-thrawn"),
+      recentes: cat.latest(
+        (c) => c.formato === "video" && c.id !== "ahsoka-trailer-segunda-temporada-thrawn",
+      ),
       // Sem dado de audiência nas fixtures: a aba "Mais vistos" não aparece.
     },
   };
@@ -138,7 +140,12 @@ function inline(texto: string): Trecho[] {
 function produtoXbox(): Produto {
   return {
     nome: "Controle Sem Fio Xbox — edição especial",
-    imagem: { url: "/demo/produto-1x1.svg", alt: "Controle Sem Fio Xbox — edição especial (imagem ilustrativa)", largura: 600, altura: 600 },
+    imagem: {
+      url: "/demo/produto-1x1.svg",
+      alt: "Controle Sem Fio Xbox — edição especial (imagem ilustrativa)",
+      largura: 600,
+      altura: 600,
+    },
     descricao:
       "Superfícies esculpidas, geometria refinada, botão direcional híbrido e aderência texturizada nos gatilhos. Compatível com Xbox Series X|S, Xbox One e PC.",
     precoAtual: "R$ 349,90",
@@ -146,19 +153,50 @@ function produtoXbox(): Produto {
     demonstracao: true,
     ofertas: [
       { loja: "Amazon", url: "https://example.com/aff/amazon/controle-xbox", preco: "R$ 349,90" },
-      { loja: "Mercado Livre", url: "https://example.com/aff/mercado-livre/controle-xbox", preco: "R$ 359,00" },
+      {
+        loja: "Mercado Livre",
+        url: "https://example.com/aff/mercado-livre/controle-xbox",
+        preco: "R$ 359,00",
+      },
     ],
   };
 }
 
 const PATROCINADOS: (Omit<Patrocinado, "imagem"> & { img: ImgKey })[] = [
-  { id: "cadeiras", titulo: "Cadeiras gamer com até 30% de desconto nesta semana", href: "https://example.com/patrocinado/cadeiras-gamer", parceiro: "Parceiro · Patrocinado", img: "shooter" },
-  { id: "ssd", titulo: "SSD NVMe 1TB: os modelos mais buscados de setembro", href: "https://example.com/patrocinado/ssd-nvme", parceiro: "Parceiro · Patrocinado", img: "bad" },
-  { id: "monitores", titulo: "Monitores 144Hz para quem joga no PC", href: "https://example.com/patrocinado/monitores-144hz", parceiro: "Parceiro · Patrocinado", img: "re" },
-  { id: "headsets", titulo: "Headsets sem fio: guia rápido de compra", href: "https://example.com/patrocinado/headsets", parceiro: "Parceiro · Patrocinado", img: "kid" },
+  {
+    id: "cadeiras",
+    titulo: "Cadeiras gamer com até 30% de desconto nesta semana",
+    href: "https://example.com/patrocinado/cadeiras-gamer",
+    parceiro: "Parceiro · Patrocinado",
+    img: "shooter",
+  },
+  {
+    id: "ssd",
+    titulo: "SSD NVMe 1TB: os modelos mais buscados de setembro",
+    href: "https://example.com/patrocinado/ssd-nvme",
+    parceiro: "Parceiro · Patrocinado",
+    img: "bad",
+  },
+  {
+    id: "monitores",
+    titulo: "Monitores 144Hz para quem joga no PC",
+    href: "https://example.com/patrocinado/monitores-144hz",
+    parceiro: "Parceiro · Patrocinado",
+    img: "re",
+  },
+  {
+    id: "headsets",
+    titulo: "Headsets sem fio: guia rápido de compra",
+    href: "https://example.com/patrocinado/headsets",
+    parceiro: "Parceiro · Patrocinado",
+    img: "kid",
+  },
 ];
 
-function resolveBlocos(corpo: BlocoFixture[], m: { mais: Bloco; flutuante?: Bloco; produto?: Bloco }): Bloco[] {
+function resolveBlocos(
+  corpo: BlocoFixture[],
+  m: { mais: Bloco; flutuante?: Bloco; produto?: Bloco },
+): Bloco[] {
   const out: Bloco[] = [];
   for (const b of corpo) {
     if (b.tipo === "@mais") out.push(m.mais);
@@ -180,7 +218,11 @@ function materia(cat: Catalog, row: ChamadaRow): Materia & { agora: string } {
   const mesmaEditoria = outros((c) => c.editoria.slug === row.ed);
   const especial = row.slug === "o-misterio-de-scarlett-johansson" || layout === "overlay";
   const maisItens = especial
-    ? cat.pick("imagens-que-fizeram-de-lanterns-um-icone", "o-falso-mito-de-jack-sparrow", "falsos-vingadores-america-do-sul")
+    ? cat.pick(
+        "imagens-que-fizeram-de-lanterns-um-icone",
+        "o-falso-mito-de-jack-sparrow",
+        "falsos-vingadores-america-do-sul",
+      )
     : mesmaEditoria.slice(0, 3);
   const assuntoSlug = row.assunto ? slugify(row.assunto) : undefined;
   const assuntoValido = assuntoSlug && ed.assuntos.some((a) => slugify(a) === assuntoSlug);
@@ -192,7 +234,10 @@ function materia(cat: Catalog, row: ChamadaRow): Materia & { agora: string } {
     maisRotulo: assuntoValido ? `Tudo sobre ${row.assunto}` : `Todo o ${ed.nome}`,
   };
 
-  const relacionadas = [...mesmaEditoria.slice(0, 3), ...outros((c) => c.editoria.slug !== row.ed)].slice(0, 6);
+  const relacionadas = [...mesmaEditoria.slice(0, 3), ...outros((c) => c.editoria.slug !== row.ed)].slice(
+    0,
+    6,
+  );
   const proxima = outros((c) => c.formato === "critica" || c.formato === "reportagem").find(
     (c) => c.editoria.slug !== row.ed,
   );
@@ -235,7 +280,10 @@ function materia(cat: Catalog, row: ChamadaRow): Materia & { agora: string } {
 
   return {
     ...comum,
-    imagem: base.imagem && { ...base.imagem, credito: base.imagem.credito ?? "Crédito da imagem: divulgação" },
+    imagem: base.imagem && {
+      ...base.imagem,
+      credito: base.imagem.credito ?? "Crédito da imagem: divulgação",
+    },
     atualizadoEm:
       row.slug === "o-misterio-de-scarlett-johansson"
         ? new Date(cat.now - (row.min - 15 * 60) * 60_000).toISOString()
@@ -274,7 +322,12 @@ export function fixtureAdapter(now: number): ContentAdapter {
       const [manchete, ...resto] = doEditoria;
       if (!manchete) return { agora, editoria, feed: paginate([], 1) };
       const abertura = { manchete, destaques: resto.slice(0, 3), lateral: resto.slice(3, 7) };
-      return { agora, editoria, abertura: pagina === 1 ? abertura : undefined, feed: paginate(resto.slice(7), pagina) };
+      return {
+        agora,
+        editoria,
+        abertura: pagina === 1 ? abertura : undefined,
+        feed: paginate(resto.slice(7), pagina),
+      };
     },
     async materia(editoria, slug) {
       const r = row(slug);
@@ -297,7 +350,11 @@ export function fixtureAdapter(now: number): ContentAdapter {
       if (!termo) return { ...paginate([], 1), agora };
       const hits = cat
         .latest()
-        .filter((c) => normalize([c.titulo, c.resumo, c.assunto, c.editoria.nome].filter(Boolean).join(" ")).includes(termo));
+        .filter((c) =>
+          normalize([c.titulo, c.resumo, c.assunto, c.editoria.nome].filter(Boolean).join(" ")).includes(
+            termo,
+          ),
+        );
       return { ...paginate(hits, pagina, POR_PAGINA), agora };
     },
     async todas(): Promise<MateriaRef[]> {

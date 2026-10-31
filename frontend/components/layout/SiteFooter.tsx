@@ -45,10 +45,23 @@ const LEGAL: FooterLink[][] = [
   ],
 ];
 
-function FooterAnchor({ link, className, style }: { link: FooterLink; className?: string; style?: CSSProperties }) {
+function FooterAnchor({
+  link,
+  className,
+  style,
+}: {
+  link: FooterLink;
+  className?: string;
+  style?: CSSProperties;
+}) {
   if (link.external) {
     return (
-      <a href={link.href} className={className} style={style} rel={link.href.startsWith("http") ? "noopener" : undefined}>
+      <a
+        href={link.href}
+        className={className}
+        style={style}
+        rel={link.href.startsWith("http") ? "noopener" : undefined}
+      >
         {link.label}
       </a>
     );
@@ -83,18 +96,41 @@ export function SiteFooter() {
         </div>
         <div className="mt-14 grid grid-cols-4 items-end gap-10 le900:mt-8 le900:grid-cols-1 le900:items-start le900:gap-5">
           <div className="flex gap-3.5 text-[#555]">
-            <a href={SITE.social.facebook} aria-label="Máquina Nerd no Facebook" rel="noopener" className="relative before:absolute before:-inset-[15px] before:content-['']">
+            <a
+              href={SITE.social.facebook}
+              aria-label="Máquina Nerd no Facebook"
+              rel="noopener"
+              className="relative before:absolute before:-inset-[15px] before:content-['']"
+            >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <path d="M13.5 21v-8h2.7l.4-3.1h-3.1V7.9c0-.9.25-1.5 1.55-1.5h1.65V3.6c-.3-.04-1.3-.13-2.45-.13-2.43 0-4.1 1.48-4.1 4.2v2.34H7.4V13h2.75v8h3.35z" />
               </svg>
             </a>
-            <a href={SITE.social.x} aria-label="Máquina Nerd no X" rel="noopener" className="relative before:absolute before:-inset-[15px] before:content-['']">
+            <a
+              href={SITE.social.x}
+              aria-label="Máquina Nerd no X"
+              rel="noopener"
+              className="relative before:absolute before:-inset-[15px] before:content-['']"
+            >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <path d="M17.5 3h3.2l-7 8 8.2 10h-6.4l-5-6.2L4.7 21H1.5l7.5-8.6L1.2 3h6.6l4.5 5.9L17.5 3zm-1.1 16.1h1.8L7.7 4.8H5.8l10.6 14.3z" />
               </svg>
             </a>
-            <a href={SITE.social.instagram} aria-label="Máquina Nerd no Instagram" rel="noopener" className="relative before:absolute before:-inset-[15px] before:content-['']">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <a
+              href={SITE.social.instagram}
+              aria-label="Máquina Nerd no Instagram"
+              rel="noopener"
+              className="relative before:absolute before:-inset-[15px] before:content-['']"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
+              >
                 <rect x="3.5" y="3.5" width="17" height="17" rx="5" />
                 <circle cx="12" cy="12" r="4" />
                 <circle cx="17.1" cy="6.9" r="1.2" fill="currentColor" stroke="none" />
@@ -110,8 +146,8 @@ export function SiteFooter() {
               </div>
             ))}
             <p className="m-0 text-[9px] leading-[1.6] text-mn-muted le900:col-span-full">
-              © {YEAR} Máquina Nerd. O Máquina Nerd não se responsabiliza pelo conteúdo de sites
-              externos. Parte da mesma rede do Cinerie.
+              © {YEAR} Máquina Nerd. O Máquina Nerd não se responsabiliza pelo conteúdo de sites externos.
+              Parte da mesma rede do Cinerie.
             </p>
           </div>
         </div>

@@ -42,7 +42,15 @@ export function OfferImage({
 
 export function TagIcon({ size = 28 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      aria-hidden="true"
+    >
       <path d="M3 12V4h8l10 10-8 8L3 12z" />
       <circle cx="7.5" cy="7.5" r="1.5" />
     </svg>
@@ -51,7 +59,15 @@ export function TagIcon({ size = 28 }: { size?: number }) {
 
 export function ArrowIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      aria-hidden="true"
+    >
       <path d="M5 11L11 5M6 5h5v5" />
     </svg>
   );
@@ -80,9 +96,7 @@ export function Discount({ offer, withReference = true }: { offer: OfferData; wi
   if (!hasDiscount(offer)) return null;
   return (
     <>
-      {withReference && (
-        <s className="op-ref">{formatBRL(offer.referencePrice!)}</s>
-      )}
+      {withReference && <s className="op-ref">{formatBRL(offer.referencePrice!)}</s>}
       <span className="op-disc">{discountLabel(offer.discountPercent!)}</span>
     </>
   );
@@ -101,7 +115,9 @@ export function ariaLabelFor(
   { menor30d = false }: { menor30d?: boolean } = {},
 ): string {
   const extras = [
-    hasDiscount(offer) ? `de ${formatBRL(offer.referencePrice!)}, ${offer.discountPercent}% de desconto` : null,
+    hasDiscount(offer)
+      ? `de ${formatBRL(offer.referencePrice!)}, ${offer.discountPercent}% de desconto`
+      : null,
     menor30d && isLowest30d(offer) ? "menor preço dos últimos 30 dias" : null,
   ].filter(Boolean);
   const preco = `${formatBRL(offer.currentPrice)}${extras.length ? ` (${extras.join("; ")})` : ""}`;
@@ -110,7 +126,15 @@ export function ariaLabelFor(
 }
 
 /** "Shopee · Preço verificado há 12 min", com a verificação recalculada no navegador. */
-export function MetaLine({ offer, servedAt, lower = false }: { offer: OfferData; servedAt: string; lower?: boolean }) {
+export function MetaLine({
+  offer,
+  servedAt,
+  lower = false,
+}: {
+  offer: OfferData;
+  servedAt: string;
+  lower?: boolean;
+}) {
   const checked = checkedLabel(offer.checkedAt, Date.parse(servedAt), lower);
   if (!checked) return <>{offer.merchant}</>;
   return (

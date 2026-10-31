@@ -40,7 +40,10 @@ function Formulario({ q }: { q: string }) {
         placeholder="Filmes, séries, games, quadrinhos…"
         className="h-11 min-w-0 flex-1 border border-mn-line-3 px-3 font-sans text-[15px] placeholder:text-mn-muted"
       />
-      <button type="submit" className="h-11 cursor-pointer border-0 bg-mn-red px-6 font-sans text-sm font-bold text-white">
+      <button
+        type="submit"
+        className="h-11 cursor-pointer border-0 bg-mn-red px-6 font-sans text-sm font-bold text-white"
+      >
         Buscar
       </button>
     </form>
@@ -56,7 +59,9 @@ async function Resultados({ searchParams }: { searchParams: SP }) {
     return (
       <>
         <Formulario q="" />
-        <p className="mt-6 text-sm text-mn-ink-3">Digite um termo para buscar nas notícias do Máquina Nerd.</p>
+        <p className="mt-6 text-sm text-mn-ink-3">
+          Digite um termo para buscar nas notícias do Máquina Nerd.
+        </p>
       </>
     );
   }
@@ -88,7 +93,10 @@ async function Resultados({ searchParams }: { searchParams: SP }) {
           <ul className="m-0 flex list-none flex-wrap gap-1.5 p-0">
             {EDITORIA_SLUGS.map((s) => (
               <li key={s}>
-                <Link href={`/${s}`} className="block border border-mn-line-3 px-3.5 py-[7px] text-xs font-semibold">
+                <Link
+                  href={`/${s}`}
+                  className="block border border-mn-line-3 px-3.5 py-[7px] text-xs font-semibold"
+                >
                   {EDITORIAS[s].nome}
                 </Link>
               </li>

@@ -14,7 +14,9 @@ import type { SlotId } from "./slots";
 export function placeInlineSlots(blocos: Bloco[], layout: Layout): Map<number, SlotId> {
   const out = new Map<number, SlotId>();
   const sequencia: SlotId[] =
-    layout === "oferta" ? ["article-inline-02", "article-inline-03"] : ["article-inline-02", "article-drop", "article-inline-03"];
+    layout === "oferta"
+      ? ["article-inline-02", "article-inline-03"]
+      : ["article-inline-02", "article-drop", "article-inline-03"];
 
   let n = 0;
   const paragrafos: { index: number; numero: number; candidato: boolean }[] = [];
@@ -22,7 +24,11 @@ export function placeInlineSlots(blocos: Bloco[], layout: Layout): Map<number, S
     if (b.tipo !== "paragrafo") return;
     n += 1;
     const next = blocos[index + 1];
-    paragrafos.push({ index, numero: n, candidato: !!next && (next.tipo === "paragrafo" || next.tipo === "subtitulo") });
+    paragrafos.push({
+      index,
+      numero: n,
+      candidato: !!next && (next.tipo === "paragrafo" || next.tipo === "subtitulo"),
+    });
   });
 
   // O contextual precisa de texto depois dele: com o 2º parágrafo no fim, não entra.

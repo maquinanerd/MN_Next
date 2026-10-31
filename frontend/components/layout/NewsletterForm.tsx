@@ -2,7 +2,10 @@
 
 import { useId, useState, type FormEvent } from "react";
 
-type Estado = { tipo: "inicial" } | { tipo: "erro"; mensagem: string } | { tipo: "confirmado"; email: string };
+type Estado =
+  | { tipo: "inicial" }
+  | { tipo: "erro"; mensagem: string }
+  | { tipo: "confirmado"; email: string };
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -20,7 +23,8 @@ export function NewsletterForm() {
     event.preventDefault();
     const email = String(new FormData(event.currentTarget).get("email") ?? "").trim();
     if (!email) return setEstado({ tipo: "erro", mensagem: "Informe um e-mail." });
-    if (!EMAIL.test(email)) return setEstado({ tipo: "erro", mensagem: "Esse e-mail não parece válido. Confira e tente de novo." });
+    if (!EMAIL.test(email))
+      return setEstado({ tipo: "erro", mensagem: "Esse e-mail não parece válido. Confira e tente de novo." });
     setEstado({ tipo: "confirmado", email });
   }
 
@@ -29,8 +33,8 @@ export function NewsletterForm() {
       <div role="status" className="flex flex-col gap-2">
         <p className="m-0 text-[17px] font-bold">Inscrição registrada (simulação).</p>
         <p className="m-0 text-sm leading-normal text-mn-ink-3">
-          Nada foi enviado nem guardado: a newsletter ainda não está ligada a um provedor de e-mail. Com a integração
-          pronta, a confirmação irá para <strong>{estado.email}</strong>.
+          Nada foi enviado nem guardado: a newsletter ainda não está ligada a um provedor de e-mail. Com a
+          integração pronta, a confirmação irá para <strong>{estado.email}</strong>.
         </p>
         <button
           type="button"
@@ -47,8 +51,8 @@ export function NewsletterForm() {
   return (
     <form noValidate onSubmit={enviar} className="flex flex-col gap-3">
       <p className="m-0 border-l-[3px] border-mn-red bg-mn-surface px-3 py-2 text-[13px] leading-normal text-mn-ink-2">
-        <strong>Simulação:</strong> a inscrição ainda não está integrada a um provedor de e-mail. O formulário mostra como
-        vai funcionar, mas não envia nem guarda o seu endereço.
+        <strong>Simulação:</strong> a inscrição ainda não está integrada a um provedor de e-mail. O formulário
+        mostra como vai funcionar, mas não envia nem guarda o seu endereço.
       </p>
       <label htmlFor={`${id}-email`} className="text-sm font-semibold">
         Seu e-mail

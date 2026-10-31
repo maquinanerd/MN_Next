@@ -52,7 +52,15 @@ function EditoriaStrip({ m }: { m: Materia }) {
       style={{ background: m.editoria.cor, color: ON_COLOR[m.editoria.textoSobreCor] }}
     >
       <span>{m.editoria.nome}</span>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        aria-hidden="true"
+      >
         <path d="M4 7h16M4 12h16M4 17h16" />
       </svg>
     </Link>
@@ -64,7 +72,12 @@ function TopSlot({ ctx }: { ctx: SlotContext }) {
   return (
     <>
       <OpaSlot id="article-top" ctx={{ ...ctx, viewport: "desktop" }} className="op-only-desktop mt-7" />
-      <OpaSlot id="article-top" ctx={{ ...ctx, viewport: "mobile" }} className="op-only-mobile mt-6" orientacao="narrow" />
+      <OpaSlot
+        id="article-top"
+        ctx={{ ...ctx, viewport: "mobile" }}
+        className="op-only-mobile mt-6"
+        orientacao="narrow"
+      />
     </>
   );
 }
@@ -94,7 +107,10 @@ export function MateriaPadrao({ m, path }: { m: M; path: string }) {
       <div className="mn-art-shell" style={linkVars(m.editoria.corTexto)}>
         <div className="mn-wrap grid grid-cols-[200px_minmax(0,1fr)] pt-8 le900:grid-cols-1 mob:pt-5">
           <AuthorRail materia={m} />
-          <main id="conteudo" className="min-w-0 border-l border-mn-line pl-[68px] le900:border-l-0 le900:pl-0">
+          <main
+            id="conteudo"
+            className="min-w-0 border-l border-mn-line pl-[68px] le900:border-l-0 le900:pl-0"
+          >
             <div className="mn-art-col">
               <article>
                 <ArticleHeader materia={m} path={path} />
@@ -128,7 +144,15 @@ function FullBleedCover({ m }: { m: Materia }) {
   return (
     <div className="relative flex min-h-svh flex-col bg-[#111] text-white">
       {m.imagem && (
-        <Image src={m.imagem.url} alt={m.imagem.alt} fill loading="eager" fetchPriority="high" sizes="100vw" className="object-cover" />
+        <Image
+          src={m.imagem.url}
+          alt={m.imagem.alt}
+          fill
+          loading="eager"
+          fetchPriority="high"
+          sizes="100vw"
+          className="object-cover"
+        />
       )}
       <span
         aria-hidden="true"
@@ -141,12 +165,16 @@ function FullBleedCover({ m }: { m: Materia }) {
             {m.titulo}
           </h1>
           {leadTexto && (
-            <p className="m-0 max-w-[720px] text-[clamp(15px,1.2vw,18px)] leading-normal text-white/92">{leadTexto}</p>
+            <p className="m-0 max-w-[720px] text-[clamp(15px,1.2vw,18px)] leading-normal text-white/92">
+              {leadTexto}
+            </p>
           )}
         </div>
       </div>
       {m.imagem?.credito && (
-        <span className="absolute right-3 bottom-2.5 z-[2] text-[10px] text-white/60 italic">{m.imagem.credito}</span>
+        <span className="absolute right-3 bottom-2.5 z-[2] text-[10px] text-white/60 italic">
+          {m.imagem.credito}
+        </span>
       )}
     </div>
   );

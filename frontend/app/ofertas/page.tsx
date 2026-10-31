@@ -14,10 +14,15 @@ export const metadata: Metadata = {
 export default async function OfertasPage() {
   const { itens, agora } = await getOfertasLista();
   return (
-    <InstitutionalPage titulo="Ofertas" intro="Matérias de ofertas com links de afiliado, sempre identificados.">
+    <InstitutionalPage
+      titulo="Ofertas"
+      intro="Matérias de ofertas com links de afiliado, sempre identificados."
+    >
       <div className="max-w-[1000px] text-sm">
         {itens.length ? (
-          itens.map((c, i) => <RowCard key={c.id} chamada={c} agora={agora} rotulo="assunto" eager={i === 0} />)
+          itens.map((c, i) => (
+            <RowCard key={c.id} chamada={c} agora={agora} rotulo="assunto" eager={i === 0} />
+          ))
         ) : (
           <p>Nenhuma oferta publicada no momento.</p>
         )}
