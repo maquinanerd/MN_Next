@@ -1,36 +1,77 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Máquina Nerd — front-end com OpaPreço Ads
 
-## Getting Started
+Front-end do portal Máquina Nerd construído a partir do kit `maquina-nerd-kit` (protótipos `*.dc.html`, docs 01–06 e a spec do OpaPreço Ads). Next.js 16 (App Router, Cache Components), TypeScript estrito e Tailwind 4. A monetização em página é feita só pelos componentes do OpaPreço Ads; não há AdSense.
 
-First, run the development server:
+Este projeto é independente do portal em produção que fica na raiz do repositório: tem `package.json`, lockfile, lint e build próprios.
+
+## Como rodar
+
+Requer Node 20.9 ou mais novo.
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+O site abre em http://localhost:3000. Outros comandos:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Comando | O que faz |
+|---|---|
+| `npm run build` | build de produção (gera as páginas estáticas) |
+| `npm start` | serve o build |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | TypeScript sem emitir |
+| `npm test` | Vitest: regras de preço do OpaPreço e posição dos anúncios no texto |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Modo demonstração e variáveis
 
-## Learn More
+Sem configuração nenhuma, conteúdo e ofertas vêm das fixtures de demonstração. Nesse modo a página mostra a faixa "Demonstração" no topo, todas as páginas saem com `noindex` e o `robots.txt` bloqueia tudo.
 
-To learn more about Next.js, take a look at the following resources:
+| Variável | Efeito |
+|---|---|
+| `NEXT_PUBLIC_SITE_URL` | URL canônica (padrão `https://www.maquinanerd.com.br`) |
+| `OPAPRECO_AD_SERVER_URL` | liga o ad server real (`GET {url}/v1/ad`); sem ela, o servidor de demonstração |
+| `OPAPRECO_PUBLISHER` | id do publisher na requisição (padrão `maquinanerd`) |
+| `OPAPRECO_MODE=off` | nenhum slot é montado (todas as posições colapsam) |
+| `MN_CONTENT_SOURCE=cms` | usa o adaptador do CMS (`lib/content/cms.ts`, ainda não implementado: falha de forma visível) |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Rotas
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Rota | Página |
+|---|---|
+| `/` | home |
+| `/page/[n]` | "Mais do Máquina Nerd", páginas 2+ |
+| `/[editoria]` | editoria: `cinema`, `series-e-tv`, `games`, `quadrinhos`, `animes`, `videos`, `especiais` |
+| `/[editoria]/page/[n]` | lista paginada da editoria |
+| `/[editoria]/assunto/[assunto]` (+ `/page/[n]`) | filtro de assunto |
+| `/[editoria]/[slug]` | matéria padrão ou overlay (o layout vem da matéria) |
+| `/ofertas` e `/ofertas/[slug]` | índice e matéria de oferta |
+| `/busca?q=` | busca (dinâmica, fora do índice) |
+| `/sobre`, `/newsletter`, `/anuncie`, `/politica-de-afiliados`, `/politica-de-privacidade`, `/termos-de-uso`, `/cookies`, `/acessibilidade`, `/mais` | institucionais |
+| `/dev/componentes`, `/dev/opapreco` | vitrines internas dos primitivos e dos seis componentes OpaPreço (fora do índice) |
+| `/sitemap.xml`, `/robots.txt`, `/opengraph-image`, `/icon.svg` | SEO |
 
-## Deploy on Vercel
+## Estrutura
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+app/                 rotas (App Router)
+components/
+  layout/            SiteHeader, EditoriaNav, Menu (gaveta), SiteFooter, DemoBanner, Institutional, NewsletterForm
+  cards/             HeroCard, OverlayCard, BigCard, StackCard, SideList, RowCard
+  sections/          Abertura, Feed, Section, EditoriaView, VideoRail
+  article/           ArticleHeader, AuthorRail, WideFigure, ArticleBody, RelatedInline, FullBleedCover (MateriaViews), ShareButtons
+  commerce/          ProductCard multi-loja, FloatRelated, SponsoredGrid, AffiliateNotice, LeiaTambem
+  ui/                SectionTitle, Pagination, EditoriaLabel, Meta, FitSidebar, Foto, JsonLd
+  opapreco/          OpaSlot, ProductCardV1, ProductHeroV1, ProductGridV1, PriceDropV1,
+                     ContextualRecommendationV1, ProductCompactV1, OfferLink, SlotView, Skeletons, tokens.css
+lib/
+  content/           tipos, editorias, adaptador (interface), fixtures, leitura em cache
+  ads/               contratos (zod), regras de preço, slots, posição no texto, cliente do ad server, fixtures
+  format/            datas
+  seo/               JSON-LD
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Trocar as fixtures pelo real
+
+- **Conteúdo:** implementar `ContentAdapter` (`lib/content/adapter.ts`) em `lib/content/cms.ts`, validando a resposta e mapeando para os tipos de `lib/content/types.ts`. Nenhum componente muda.
+- **Anúncios:** apontar `OPAPRECO_AD_SERVER_URL` para o ad server. A resposta passa pelo contrato (`lib/ads/types.ts`) e pelas regras (`lib/ads/rules.ts`) antes de chegar aos componentes; erro, timeout de 1,5 s ou 204 colapsam o slot.
