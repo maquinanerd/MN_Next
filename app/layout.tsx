@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from 'next';
-import { Montserrat } from 'next/font/google';
 import { DemoBanner } from '@mn/ui';
 import { baseMetadata } from '@mn/seo';
 
+import { montserratVariable } from './fonts/montserrat';
 import './globals.css';
 import { Adsense } from '../components/Adsense';
 import { Analytics } from '../components/Analytics';
@@ -14,8 +14,8 @@ import { seoContext } from '../lib/seo-context';
 /**
  * Root layout.
  *
- * Montserrat — the family the logo is drawn in (kit docs/01) — self-hosted by `next/font`,
- * so production makes no request to Google Fonts; only the six weights the system uses.
+ * Montserrat comes from files in the repository (`app/fonts`, through `next/font/local`):
+ * neither the build nor production makes a request to Google Fonts.
  *
  * The header is not here: each page renders it, because the overlay article draws it on
  * top of its cover. The footer is identical everywhere, so it is.
@@ -23,13 +23,6 @@ import { seoContext } from '../lib/seo-context';
  * Nothing in this file reads a cookie or a header. Doing so would opt the whole route
  * tree out of static rendering and throw away the ISR the delivery strategy rests on.
  */
-
-const montserrat = Montserrat({
-  subsets: ['latin', 'latin-ext'],
-  weight: ['300', '400', '500', '600', '700', '800'],
-  display: 'swap',
-  variable: '--font-montserrat',
-});
 
 export const metadata: Metadata = baseMetadata(seoContext());
 
@@ -44,7 +37,7 @@ const isDemo = process.env.CONTENT_SOURCE !== 'kalel';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className={montserrat.variable}>
+    <html lang="pt-BR" className={montserratVariable}>
       <body>
         <a
           href="#conteudo"

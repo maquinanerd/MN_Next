@@ -37,5 +37,5 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", ".next", ".migration-reference", "artifacts", "migration-orchestration"]
+  "exclude": ["node_modules", ".next", ".migration-reference", "artifacts", "migration-orchestration", "frontend"]
 }

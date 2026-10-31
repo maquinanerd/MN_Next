@@ -1,0 +1,405 @@
+@import "tailwindcss";
+@import "../components/opapreco/opapreco.css";
+
+/*
+ * Breakpoints dos protótipos (docs/06-mobile-e-a11y.md). Os protótipos usam container
+ * queries no elemento raiz; aqui viram media queries com os mesmos limiares e a mesma
+ * semântica de `max-width` inclusivo (as variantes `max-*` do Tailwind são exclusivas).
+ */
+/* Do maior para o menor: a ordem de registro é a ordem no CSS gerado, e o menor vence. */
+@custom-variant le1240 (@media (max-width: 1240px));
+@custom-variant le1180 (@media (max-width: 1180px));
+@custom-variant le1100 (@media (max-width: 1100px));
+/* Laterais OpaPreço só existem a partir de 1024px (spec OpaPreço §6). */
+@custom-variant lt1024 (@media (max-width: 1023.98px));
+@custom-variant le900 (@media (max-width: 900px));
+@custom-variant mob (@media (max-width: 760px));
+
+@theme {
+  /* Montserrat do repositório (app/fonts/montserrat.ts): uma família por escrita, latin primeiro. */
+  --font-sans:
+    var(--font-mn-latin), var(--font-mn-latin-ext), var(--font-mn-vietnamese), var(--font-mn-cyrillic),
+    var(--font-mn-cyrillic-ext), "Montserrat Fallback", "Helvetica Neue", Arial, sans-serif;
+
+  /* Marca (docs/01-tokens.md) */
+  --color-mn-red: #e30613;
+  --color-mn-red-text: #b00710;
+  --color-mn-ink: #111111;
+  --color-mn-ink-2: #333333;
+  --color-mn-ink-3: #5f5f5f;
+  --color-mn-muted: #6b6b6b;
+  --color-mn-summary: #666666;
+  --color-mn-line: #e8e8e8;
+  --color-mn-line-2: #ececec;
+  --color-mn-line-3: #e1e1e1;
+  --color-mn-surface: #f2f2f2;
+  --color-mn-media: #eeeeee;
+
+  --radius-mn: 3px;
+}
+
+:root {
+  --mn-gutter: 68px;
+  --mn-max: 1500px;
+  /* Gap da grade de notícias; as grades OpaPreço do site usam o mesmo (docs/05, regra 1). */
+  --mn-grid-gap: 40px;
+  /* Logo de 267×65 a 34px de altura. */
+  --mn-logo-w: 139.66px;
+  /* Largura natural da nav medida no navegador (Montserrat 600; 13px e 12px). */
+  --mn-nav-w: 798.27px;
+  --mn-nav-w-sm: 670.41px;
+}
+
+@media (max-width: 760px) {
+  :root {
+    --mn-gutter: 16px;
+    --mn-grid-gap: 16px;
+  }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: #fff;
+    color: var(--color-mn-ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.35;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  a:hover {
+    color: var(--mn-link-hover, var(--color-mn-red-text));
+  }
+
+  ::selection {
+    background: var(--color-mn-red);
+    color: #fff;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-mn-ink);
+    outline-offset: 2px;
+  }
+
+  img {
+    max-width: 100%;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+}
+
+@layer components {
+  /* Contêiner de 1500px com margem lateral de 68px (16px no mobile). */
+  .mn-wrap {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: var(--mn-max);
+    margin-inline: auto;
+    padding-inline: var(--mn-gutter);
+  }
+
+  /* ---------- Nav de editorias ---------- */
+  .mn-nav {
+    scrollbar-width: none;
+  }
+  .mn-nav::-webkit-scrollbar {
+    display: none;
+  }
+  .mn-nav-item {
+    position: relative;
+    flex: none;
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    padding: 0 17px;
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    color: #111;
+  }
+  .mn-nav-item[aria-current="page"] {
+    background: var(--nav-c);
+    color: var(--nav-on);
+  }
+  .mn-nav-fill {
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 4px;
+    background: var(--nav-c);
+    transition: height 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .mn-nav-label {
+    position: relative;
+    z-index: 1;
+    transition: color 0.2s ease 0.08s;
+  }
+  .mn-nav-item:hover .mn-nav-fill,
+  .mn-nav-item:focus-visible .mn-nav-fill {
+    height: 100%;
+  }
+  .mn-nav-item:hover .mn-nav-label,
+  .mn-nav-item:focus-visible .mn-nav-label {
+    color: var(--nav-on);
+  }
+  .mn-nav-item:focus-visible {
+    outline-offset: -2px;
+  }
+  /* Variante sobre a capa da matéria overlay: itens brancos, sem filete. */
+  .mn-nav--over .mn-nav-item {
+    color: #fff;
+    opacity: 0.9;
+  }
+  .mn-nav--over .mn-nav-item:hover,
+  .mn-nav--over .mn-nav-item:focus-visible {
+    opacity: 1;
+    color: #fff;
+  }
+  .mn-nav--over .mn-nav-fill {
+    display: none;
+  }
+  .mn-nav--over .mn-nav-item:hover .mn-nav-label {
+    color: #fff;
+  }
+  .mn-nav--over .mn-nav-item:focus-visible {
+    outline-color: #fff;
+  }
+
+  @media (max-width: 1180px) {
+    .mn-nav-item {
+      padding: 0 12px;
+      font-size: 12px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mn-nav-fill,
+    .mn-nav-label {
+      transition: none;
+    }
+  }
+
+  /* Gradiente de leitura sobre foto (o único gradiente permitido). */
+  .mn-shade {
+    background: linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.1) 0%,
+      rgba(0, 0, 0, 0.05) 35%,
+      rgba(0, 0, 0, 0.78) 100%
+    );
+  }
+  .mn-shade-hero {
+    background: linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.15) 0%,
+      rgba(0, 0, 0, 0.05) 35%,
+      rgba(0, 0, 0, 0.72) 100%
+    );
+  }
+  .mn-shade-big {
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.72));
+  }
+
+  .mn-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* ---------- Lateral ajustada à altura da coluna principal (FitSidebar) ---------- */
+  .mn-fit {
+    position: relative;
+    min-height: 0;
+    align-self: stretch;
+  }
+  .mn-fit-in {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .mn-fit-list {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    justify-content: space-between;
+    overflow: hidden;
+  }
+  .mn-fit-list > * {
+    width: 100%;
+  }
+  .mn-fit-slot {
+    flex: none;
+    padding-top: 20px;
+  }
+  /* Slot que colapsou (204): sem respiro sobrando no rodapé da lateral. */
+  .mn-fit-slot:empty {
+    display: none;
+  }
+  @media (max-width: 1180px) {
+    .mn-fit-slot {
+      display: none;
+    }
+  }
+  @media (max-width: 760px) {
+    .mn-fit {
+      border-top: 1px solid var(--color-mn-line);
+      padding-top: 8px;
+    }
+    .mn-fit-in {
+      position: static;
+    }
+    .mn-fit-list {
+      flex-wrap: nowrap;
+      overflow: visible;
+      gap: 16px;
+    }
+  }
+
+  /* ---------- Matéria ---------- */
+  /*
+   * Coluna de texto alinhada ao menu (docs/03): mesma largura da nav e mesmo início do
+   * primeiro item, calculados em CSS a partir das medidas fixas do cabeçalho (contêiner de
+   * 1500px, margem de 68px, logo e larguras naturais da nav), sem medir no navegador.
+   * `--mn-col-left` é onde começa a área de conteúdo: 337px com a coluna do autor
+   * (68 + 200 + 1 + 68), 68px sem ela.
+   */
+  .mn-art-shell {
+    container-type: inline-size;
+  }
+  .mn-art-col {
+    --w: calc(min(100cqw, 1500px) - 136px);
+    --area: calc(var(--w) - var(--mn-logo-w) - 193px);
+    --nav-left: calc(68px + var(--mn-logo-w) + 64px + max(0px, (var(--area) - var(--mn-nav-w)) / 2));
+    /* Como no protótipo: a largura natural da nav, mesmo quando ela rola (limitada à coluna). */
+    width: var(--mn-nav-w);
+    max-width: 100%;
+    margin-left: max(0px, calc(var(--nav-left) - var(--mn-col-left, 337px)));
+  }
+  @media (max-width: 1180px) {
+    .mn-art-col {
+      /* Nav alinhada à esquerda, logo com 12px de margem. */
+      --nav-left: calc(68px + var(--mn-logo-w) + 36px);
+      width: var(--mn-nav-w-sm);
+    }
+  }
+  @media (max-width: 900px) {
+    .mn-art-col {
+      width: 100%;
+      margin-left: 0;
+    }
+  }
+
+  /* Corpo: 17px/1.6 justificado no desktop; 16px/1.65 à esquerda no mobile. Sem hifenização. */
+  .mn-body {
+    margin: 0;
+    font-size: 17px;
+    line-height: 1.6;
+    color: var(--color-mn-ink-2);
+    text-align: justify;
+    hyphens: manual;
+  }
+  .mn-body + .mn-body {
+    margin-top: 20px;
+  }
+  /* Link no meio do texto: cor da editoria e sublinhado (só a cor não distingue; WCAG 1.4.1). */
+  .mn-body a,
+  .mn-lead a,
+  .mn-inline-link {
+    color: var(--mn-link, var(--color-mn-red-text));
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+  @media (max-width: 760px) {
+    .mn-body {
+      font-size: 16px;
+      line-height: 1.65;
+      text-align: left;
+    }
+  }
+
+  .mn-wide + .mn-body {
+    margin-top: 28px;
+  }
+
+  /* Figura larga: extravasa 72px de cada lado; perde o extravasamento até 1240px. */
+  .mn-wide {
+    margin-inline: -72px;
+  }
+  .mn-wide figcaption {
+    margin-inline: 72px;
+  }
+  @media (max-width: 1240px) {
+    .mn-wide,
+    .mn-wide figcaption {
+      margin-inline: 0;
+    }
+  }
+
+  /* Texto corrido das páginas institucionais (a coluna de leitura da matéria). */
+  .mn-prose {
+    max-width: 760px;
+    font-size: 17px;
+    line-height: 1.6;
+    color: var(--color-mn-ink-2);
+  }
+  .mn-prose p,
+  .mn-prose ul {
+    margin: 0 0 20px;
+  }
+  .mn-prose ul {
+    padding-left: 22px;
+    list-style: disc;
+  }
+  .mn-prose li + li {
+    margin-top: 8px;
+  }
+  .mn-prose h2 {
+    margin: 36px 0 14px;
+    font-size: 22px;
+    line-height: 1.2;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    color: var(--color-mn-ink);
+  }
+  .mn-prose a {
+    color: var(--color-mn-red-text);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .mn-prose code {
+    font-size: 0.9em;
+  }
+  @media (max-width: 760px) {
+    .mn-prose {
+      font-size: 16px;
+      line-height: 1.65;
+    }
+  }
+
+  /* Rolagem horizontal das fileiras de cards no mobile (games, animes, clipes). */
+  .mn-scroll-row {
+    scrollbar-width: none;
+  }
+  .mn-scroll-row::-webkit-scrollbar {
+    display: none;
+  }
+}

@@ -26,6 +26,8 @@ export default tseslint.config(
       'test-results/**',
       'public/**',
       'next-env.d.ts',
+      // Front-end standalone do kit OpaPreço: projeto próprio, com lint e build próprios.
+      'frontend/**',
     ],
   },
   js.configs.recommended,
@@ -64,6 +66,20 @@ export default tseslint.config(
       // Raw HTML injection is confined to the three primitives that escape their input.
       'react/no-danger': 'error',
       'no-console': ['error', { allow: ['warn', 'error'] }],
+
+      // `next/font/google` downloads the font during `next build`, and a failed download
+      // fails the build — CI and the Coolify deploy alike (DECISIONS §7.28).
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'next/font/google',
+              message: 'Fonts come from files in the repository (app/fonts, next/font/local).',
+            },
+          ],
+        },
+      ],
     },
   },
   {
