@@ -48,6 +48,7 @@ export interface ContentAdapter {
   editoria(slug: EditoriaSlug, opts: { assunto?: string; pagina: number }): Promise<EditoriaData | null>;
   materia(editoria: string, slug: string): Promise<(Materia & { agora: string }) | null>;
   oferta(slug: string): Promise<(Materia & { agora: string }) | null>;
+  ofertas(): Promise<{ itens: Chamada[]; agora: string }>;
   busca(q: string, pagina: number): Promise<Pagina<Chamada> & { agora: string }>;
   todas(): Promise<MateriaRef[]>;
 }

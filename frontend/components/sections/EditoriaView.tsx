@@ -28,7 +28,7 @@ export function EditoriaView({ data, assuntoSlug }: { data: EditoriaData; assunt
   return (
     <>
       <SiteHeader active={editoria.slug} />
-      <main className="mn-wrap pt-8 mob:pt-5">
+      <main id="conteudo" className="mn-wrap pt-8 mob:pt-5">
         <div className="mb-7 flex flex-wrap items-end justify-between gap-6 border-b border-mn-line pb-5">
           <h1 className="m-0 text-[34px] leading-none font-extrabold tracking-[-.03em]" style={{ color: editoria.corTexto }}>
             {editoria.nome}

@@ -35,7 +35,7 @@ export default async function ComponentesPage() {
   return (
     <>
       <SiteHeader />
-      <main className="mn-wrap pt-10 pb-16">
+      <main id="conteudo" className="mn-wrap pt-10 pb-16">
         <h1 className="m-0 text-[28px] font-extrabold tracking-[-.035em]">Componentes editoriais</h1>
         <p className="mt-2 mb-0 text-[13px] text-mn-summary">
           Primitivos da Etapa 2 com dados de demonstração. Rota interna, fora do índice.

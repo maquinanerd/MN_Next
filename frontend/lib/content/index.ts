@@ -50,6 +50,13 @@ export async function getOferta(slug: string) {
   return adapter().oferta(slug);
 }
 
+export async function getOfertasLista() {
+  "use cache";
+  cacheLife("minutes");
+  cacheTag("ofertas");
+  return adapter().ofertas();
+}
+
 export async function searchContent(q: string, pagina: number) {
   "use cache";
   cacheLife("minutes");

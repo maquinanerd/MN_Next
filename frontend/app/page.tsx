@@ -32,7 +32,7 @@ export default async function Home() {
   return (
     <>
       <SiteHeader active="noticias" />
-      <main className="mn-wrap pt-10 mob:pt-5">
+      <main id="conteudo" className="mn-wrap pt-10 mob:pt-5">
         <h1 className="sr-only">Máquina Nerd: notícias de cinema, séries e TV, games, quadrinhos e animes</h1>
 
         {/* 1. Abertura: manchete + três overlays + lateral com chamadas e card OpaPreço (games). */}

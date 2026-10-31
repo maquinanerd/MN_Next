@@ -114,7 +114,7 @@ export default async function OpaPrecoPage() {
   return (
     <>
       <SiteHeader />
-      <main className="mn-wrap pt-10 pb-16">
+      <main id="conteudo" className="mn-wrap pt-10 pb-16">
         <h1 className="m-0 text-[28px] font-extrabold tracking-[-.035em]">OpaPreço Ads — vitrine</h1>
         <p className="mt-2 mb-0 max-w-[720px] text-[13px] leading-normal text-mn-summary">
           Os seis componentes da spec em todos os estados e casos de dados de <code>fixtures-offers.json</code>, passando

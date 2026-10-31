@@ -94,7 +94,7 @@ export function MateriaPadrao({ m, path }: { m: M; path: string }) {
       <div className="mn-art-shell" style={linkVars(m.editoria.corTexto)}>
         <div className="mn-wrap grid grid-cols-[200px_minmax(0,1fr)] pt-8 le900:grid-cols-1 mob:pt-5">
           <AuthorRail materia={m} />
-          <main className="min-w-0 border-l border-mn-line pl-[68px] le900:border-l-0 le900:pl-0">
+          <main id="conteudo" className="min-w-0 border-l border-mn-line pl-[68px] le900:border-l-0 le900:pl-0">
             <div className="mn-art-col">
               <article>
                 <ArticleHeader materia={m} path={path} />
@@ -161,7 +161,7 @@ export function MateriaOverlay({ m, path }: { m: M; path: string }) {
       <FullBleedCover m={m} />
       <div className="mn-art-shell" style={linkVars(m.editoria.corTexto)}>
         <div className="mn-wrap pt-10 mob:pt-6">
-          <main className="mx-auto max-w-[760px] min-w-0">
+          <main id="conteudo" className="mx-auto max-w-[760px] min-w-0">
             <article>
               <div className="flex flex-wrap items-center justify-between gap-6 border-b border-mn-line pb-6">
                 <AuthorLine materia={m} size={44} />
@@ -198,7 +198,7 @@ export function MateriaOferta({ m, path }: { m: M; path: string }) {
       <EditoriaStrip m={m} />
       <div className="mn-art-shell" style={linkVars(RED, { "--mn-col-left": "68px" })}>
         <div className="mn-wrap pt-10 mob:pt-5">
-          <main className="min-w-0">
+          <main id="conteudo" className="min-w-0">
             <div className="mn-art-col">
               <article>
                 <ArticleHeader

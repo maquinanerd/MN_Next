@@ -286,6 +286,12 @@ export function fixtureAdapter(now: number): ContentAdapter {
       if (!r || r.formato !== "oferta") return null;
       return materia(cat, r);
     },
+    async ofertas() {
+      const itens = cat.all
+        .filter((c) => c.formato === "oferta")
+        .sort((a, b) => b.publicadoEm.localeCompare(a.publicadoEm));
+      return { itens, agora };
+    },
     async busca(q, pagina) {
       const termo = normalize(q.trim());
       if (!termo) return { ...paginate([], 1), agora };

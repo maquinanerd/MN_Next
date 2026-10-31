@@ -38,7 +38,7 @@ export default async function HomePaginada({ params }: Props) {
   return (
     <>
       <SiteHeader active="noticias" />
-      <main className="mn-wrap pt-8 pb-16 mob:pt-5">
+      <main id="conteudo" className="mn-wrap pt-8 pb-16 mob:pt-5">
         <div className="mb-2">
           <SectionTitle as="h1" forte="MAIS" leve={`DO MÁQUINA NERD · PÁGINA ${pagina}`} className="mb-2" />
         </div>

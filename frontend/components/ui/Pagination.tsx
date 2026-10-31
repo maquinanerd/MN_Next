@@ -31,10 +31,13 @@ export function Pagination({
   base,
   cor = "#E30613",
   textoSobreCor = "light",
+  href = (n) => pageHref(base, n),
 }: {
   atual: number;
   total: number;
   base: string;
+  /** Endereço de cada página; por padrão `base/page/n` (a busca usa `?pagina=n`). */
+  href?: (n: number) => string;
   cor?: string;
   textoSobreCor?: "light" | "dark";
 }) {
@@ -42,7 +45,7 @@ export function Pagination({
   return (
     <nav aria-label="Paginação" className="mt-10 flex flex-wrap items-center justify-center gap-1.5">
       {atual > 1 ? (
-        <Link href={pageHref(base, atual - 1)} aria-label="Página anterior" className={`${box} w-9 border-mn-line-3 text-mn-muted`}>
+        <Link href={href(atual - 1)} aria-label="Página anterior" className={`${box} w-9 border-mn-line-3 text-mn-muted`}>
           ‹
         </Link>
       ) : (
@@ -58,7 +61,7 @@ export function Pagination({
         ) : (
           <Link
             key={n}
-            href={pageHref(base, n)}
+            href={href(n)}
             aria-label={`Página ${n}`}
             aria-current={n === atual ? "page" : undefined}
             className={`${box} min-w-9 px-2.5 text-[13px] font-semibold`}
@@ -73,7 +76,7 @@ export function Pagination({
         ),
       )}
       {atual < total ? (
-        <Link href={pageHref(base, atual + 1)} aria-label="Próxima página" className={`${box} w-9 border-mn-line-3 text-mn-ink`}>
+        <Link href={href(atual + 1)} aria-label="Próxima página" className={`${box} w-9 border-mn-line-3 text-mn-ink`}>
           ›
         </Link>
       ) : (

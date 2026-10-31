@@ -332,6 +332,47 @@
     }
   }
 
+  /* Texto corrido das páginas institucionais (a coluna de leitura da matéria). */
+  .mn-prose {
+    max-width: 760px;
+    font-size: 17px;
+    line-height: 1.6;
+    color: var(--color-mn-ink-2);
+  }
+  .mn-prose p,
+  .mn-prose ul {
+    margin: 0 0 20px;
+  }
+  .mn-prose ul {
+    padding-left: 22px;
+    list-style: disc;
+  }
+  .mn-prose li + li {
+    margin-top: 8px;
+  }
+  .mn-prose h2 {
+    margin: 36px 0 14px;
+    font-size: 22px;
+    line-height: 1.2;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    color: var(--color-mn-ink);
+  }
+  .mn-prose a {
+    color: var(--color-mn-red-text);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .mn-prose code {
+    font-size: 0.9em;
+  }
+  @media (max-width: 760px) {
+    .mn-prose {
+      font-size: 16px;
+      line-height: 1.65;
+    }
+  }
+
   /* Rolagem horizontal das fileiras de cards no mobile (games, animes, clipes). */
   .mn-scroll-row {
     scrollbar-width: none;
