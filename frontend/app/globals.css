@@ -256,6 +256,82 @@
     }
   }
 
+  /* ---------- Matéria ---------- */
+  /*
+   * Coluna de texto alinhada ao menu (docs/03): mesma largura da nav e mesmo início do
+   * primeiro item, calculados em CSS a partir das medidas fixas do cabeçalho (contêiner de
+   * 1500px, margem de 68px, logo e larguras naturais da nav), sem medir no navegador.
+   * `--mn-col-left` é onde começa a área de conteúdo: 337px com a coluna do autor
+   * (68 + 200 + 1 + 68), 68px sem ela.
+   */
+  .mn-art-shell {
+    container-type: inline-size;
+  }
+  .mn-art-col {
+    --w: calc(min(100cqw, 1500px) - 136px);
+    --area: calc(var(--w) - var(--mn-logo-w) - 193px);
+    --nav-left: calc(68px + var(--mn-logo-w) + 64px + max(0px, (var(--area) - var(--mn-nav-w)) / 2));
+    width: min(var(--mn-nav-w), var(--area));
+    max-width: 100%;
+    margin-left: max(0px, calc(var(--nav-left) - var(--mn-col-left, 337px)));
+  }
+  @media (max-width: 1180px) {
+    .mn-art-col {
+      --area: calc(var(--w) - var(--mn-logo-w) - 165px);
+      --nav-left: calc(68px + var(--mn-logo-w) + 36px);
+      width: min(var(--mn-nav-w-sm), var(--area));
+    }
+  }
+  @media (max-width: 900px) {
+    .mn-art-col {
+      width: 100%;
+      margin-left: 0;
+    }
+  }
+
+  /* Corpo: 17px/1.6 justificado no desktop; 16px/1.65 à esquerda no mobile. Sem hifenização. */
+  .mn-body {
+    margin: 0;
+    font-size: 17px;
+    line-height: 1.6;
+    color: var(--color-mn-ink-2);
+    text-align: justify;
+    hyphens: manual;
+  }
+  .mn-body + .mn-body {
+    margin-top: 20px;
+  }
+  .mn-body a,
+  .mn-lead a,
+  .mn-inline-link {
+    color: var(--mn-link, var(--color-mn-red-text));
+  }
+  @media (max-width: 760px) {
+    .mn-body {
+      font-size: 16px;
+      line-height: 1.65;
+      text-align: left;
+    }
+  }
+
+  .mn-wide + .mn-body {
+    margin-top: 28px;
+  }
+
+  /* Figura larga: extravasa 72px de cada lado; perde o extravasamento até 1240px. */
+  .mn-wide {
+    margin-inline: -72px;
+  }
+  .mn-wide figcaption {
+    margin-inline: 72px;
+  }
+  @media (max-width: 1240px) {
+    .mn-wide,
+    .mn-wide figcaption {
+      margin-inline: 0;
+    }
+  }
+
   /* Rolagem horizontal das fileiras de cards no mobile (games, animes, clipes). */
   .mn-scroll-row {
     scrollbar-width: none;
