@@ -6,13 +6,14 @@
  * queries no elemento raiz; aqui viram media queries com os mesmos limiares e a mesma
  * semântica de `max-width` inclusivo (as variantes `max-*` do Tailwind são exclusivas).
  */
-@custom-variant mob (@media (max-width: 760px));
-@custom-variant le900 (@media (max-width: 900px));
-@custom-variant le1100 (@media (max-width: 1100px));
-@custom-variant le1180 (@media (max-width: 1180px));
+/* Do maior para o menor: a ordem de registro é a ordem no CSS gerado, e o menor vence. */
 @custom-variant le1240 (@media (max-width: 1240px));
+@custom-variant le1180 (@media (max-width: 1180px));
+@custom-variant le1100 (@media (max-width: 1100px));
 /* Laterais OpaPreço só existem a partir de 1024px (spec OpaPreço §6). */
 @custom-variant lt1024 (@media (max-width: 1023.98px));
+@custom-variant le900 (@media (max-width: 900px));
+@custom-variant mob (@media (max-width: 760px));
 
 @theme {
   --font-sans: var(--font-montserrat), "Helvetica Neue", Arial, sans-serif;
@@ -201,6 +202,55 @@
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  /* ---------- Lateral ajustada à altura da coluna principal (FitSidebar) ---------- */
+  .mn-fit {
+    position: relative;
+    min-height: 0;
+    align-self: stretch;
+  }
+  .mn-fit-in {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .mn-fit-list {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    justify-content: space-between;
+    overflow: hidden;
+  }
+  .mn-fit-list > * {
+    width: 100%;
+  }
+  .mn-fit-slot {
+    flex: none;
+    padding-top: 20px;
+  }
+  @media (max-width: 1180px) {
+    .mn-fit-slot {
+      display: none;
+    }
+  }
+  @media (max-width: 760px) {
+    .mn-fit {
+      border-top: 1px solid var(--color-mn-line);
+      padding-top: 8px;
+    }
+    .mn-fit-in {
+      position: static;
+    }
+    .mn-fit-list {
+      flex-wrap: nowrap;
+      overflow: visible;
+      gap: 16px;
+    }
   }
 
   /* Rolagem horizontal das fileiras de cards no mobile (games, animes, clipes). */

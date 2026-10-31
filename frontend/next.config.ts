@@ -26,7 +26,7 @@ const nextConfig: NextConfig = {
     formats: ["image/avif", "image/webp"],
     remotePatterns: [
       // Fotos de demonstração dos protótipos: vêm do acervo público do site atual.
-      { protocol: "https", hostname: "www.maquinanerd.com.br", pathname: "/wp-content/uploads/**" },
+      { protocol: "https", hostname: "www.maquinanerd.com.br", pathname: "/media/**" },
     ],
   },
 };
