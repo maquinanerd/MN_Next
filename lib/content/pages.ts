@@ -44,6 +44,12 @@ export function agora(): Date {
 export const OPENING = 8;
 /** "Mais do Máquina Nerd": nine rows (kit docs/03). */
 export const FEED_PER_PAGE = 9;
+/**
+ * How far past those nine the home reads: the sections between the opening and the feed
+ * show the newest story of each editoria, so the newest stories after the opening are
+ * often already on the page. The most those sections take is 6 + 4 + 4 + 4 + 3 + 5.
+ */
+const FEED_FOLGA = 26;
 /** "Todas as notícias de …" */
 export const EDITORIA_PER_PAGE = 10;
 
@@ -73,6 +79,26 @@ function take(items: Chamada[], used: Set<string>, n: number): Chamada[] {
   return out;
 }
 
+/**
+ * The first page of "Mais do Máquina Nerd": the newest stories after the opening that the
+ * home has not shown above it, nine at most, and how many stories of the stream it read to
+ * find them — where page 2 begins.
+ */
+export function feedSemRepetir(
+  janela: Chamada[],
+  usadas: ReadonlySet<string>,
+  n = FEED_PER_PAGE,
+): { itens: Chamada[]; lidas: number } {
+  const itens: Chamada[] = [];
+  let lidas = 0;
+  for (const item of janela) {
+    if (itens.length >= n) break;
+    lidas += 1;
+    if (!usadas.has(item.id)) itens.push(item);
+  }
+  return { itens, lidas };
+}
+
 async function section(slug: string, perPage: number): Promise<Chamada[]> {
   const page = await optional(repo().listCategory(slug, 1, { perPage }), `home-${slug}`);
   return page ? toChamadas(page.items) : [];
@@ -90,6 +116,8 @@ export interface HomeView {
   videos: { destaque: Chamada | null; clipes: Chamada[] };
   feed: Chamada[];
   paginacao: Paginacao;
+  /** Stories after the opening the feed went through; `/page/2` starts after them. */
+  feedLidas: number;
   /** For the JSON-LD collection. */
   itens: ArticleSummary[];
 }
@@ -97,10 +125,11 @@ export interface HomeView {
 /**
  * The home, in the prototype's order (Máquina Nerd Template.dc.html): the opening, then
  * Cinema, Games, Séries e TV with "Últimas de Quadrinhos", Animes, the video
- * band and "Mais do Máquina Nerd". A story is never shown twice above the feed.
+ * band and "Mais do Máquina Nerd". A story is never shown twice on the home: the feed
+ * skips what the sections above it already show.
  */
 export async function homeView(): Promise<HomeView> {
-  const [latest, cinema, series, games, quadrinhos, animes, videos, feed] = await Promise.all([
+  const [latest, cinema, series, games, quadrinhos, animes, videos, janela] = await Promise.all([
     repo().listLatest(1, { perPage: OPENING }),
     section('cinema', 14),
     section('series-e-tv', 12),
@@ -108,36 +137,65 @@ export async function homeView(): Promise<HomeView> {
     section('quadrinhos', 10),
     section('animes', 10),
     section('videos', 10),
-    repo().listLatest(1, { skip: OPENING, perPage: FEED_PER_PAGE }),
+    repo().listLatest(1, { skip: OPENING, perPage: FEED_PER_PAGE + FEED_FOLGA }),
   ]);
 
   const used = new Set<string>();
   const opening = take(toChamadas(latest.items), used, OPENING);
   const seriesItems = take(series, used, 4);
+  const cinemaItems = take(cinema, used, 6);
+  const gamesItems = take(games, used, 4);
+  const quadrinhosItems = take(quadrinhos, used, 4);
+  const animesItems = take(animes, used, 3);
+  const videoItems = take(videos, used, 5);
+  const feed = feedSemRepetir(toChamadas(janela.items), used);
 
+  // `total` counts the stories after the opening; the home's page holds the ones it read.
+  const restantes = janela.total === null ? null : Math.max(0, janela.total - feed.lidas);
   return {
     abertura: abertura(opening),
-    cinema: take(cinema, used, 6),
-    games: take(games, used, 4),
+    cinema: cinemaItems,
+    games: gamesItems,
     series: { manchete: seriesItems[0] ?? null, destaques: seriesItems.slice(1, 4) },
-    quadrinhos: take(quadrinhos, used, 4),
-    animes: take(animes, used, 3),
-    videos: (() => {
-      const v = take(videos, used, 5);
-      return { destaque: v[0] ?? null, clipes: v.slice(1, 5) };
-    })(),
-    feed: toChamadas(feed.items),
-    paginacao: paginacao(feed),
+    quadrinhos: quadrinhosItems,
+    animes: animesItems,
+    videos: { destaque: videoItems[0] ?? null, clipes: videoItems.slice(1, 5) },
+    feed: feed.itens,
+    paginacao: {
+      atual: 1,
+      total: restantes === null ? null : 1 + Math.ceil(restantes / FEED_PER_PAGE),
+      temProxima: restantes === null ? janela.hasNext || janela.items.length > feed.lidas : restantes > 0,
+    },
+    feedLidas: feed.lidas,
     itens: latest.items,
   };
 }
 
-/** `/page/{n}`: the home feed, continued. */
+/**
+ * `/page/{n}`: the home feed, continued from the story after the last one the home's feed
+ * read, so the pages neither repeat nor drop a story. Where that is comes from the home
+ * itself (its reads are cached).
+ *
+ * The boundary is approximate, and the stories the home's feed shows are dropped here so
+ * an error in it can never repeat them: `feedLidas` counts mapped stories while `skip`
+ * counts the CMS's rows (a row with no public URL shifts it back by one), the two pages
+ * revalidate apart, and a section that failed to load changes what the home skipped.
+ */
 export async function latestView(
   page: number,
 ): Promise<{ feed: Chamada[]; paginacao: Paginacao; itens: ArticleSummary[] }> {
-  const result = await repo().listLatest(page, { skip: OPENING, perPage: FEED_PER_PAGE });
-  return { feed: toChamadas(result.items), paginacao: paginacao(result), itens: result.items };
+  const home = await homeView();
+  const naHome = new Set(home.feed.map((c) => c.id));
+  const result = await repo().listLatest(page - 1, { skip: OPENING + home.feedLidas, perPage: FEED_PER_PAGE });
+  return {
+    feed: toChamadas(result.items).filter((c) => !naHome.has(c.id)),
+    paginacao: {
+      atual: page,
+      total: result.totalPages === null ? null : 1 + result.totalPages,
+      temProxima: result.hasNext,
+    },
+    itens: result.items,
+  };
 }
 
 // ---------------------------------------------------------------- editoria

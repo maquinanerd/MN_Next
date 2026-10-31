@@ -1,11 +1,29 @@
-import { HeroCard, OverlayCard, SideList, type Chamada } from '@mn/ui';
+import { HeroCard, OpaPrecoAd, OverlayCard, SideList, type Chamada, type ContextoDoAnuncio } from '@mn/ui';
 
 import { rotulo, tempo } from './meta';
+
+/** An OpaPreço slot under a side list, and what it tells OpaPreço about the page. */
+export interface AnuncioLateral {
+  slot: 'home-01' | 'home-02' | 'listing-01';
+  contexto?: ContextoDoAnuncio;
+}
+
+/**
+ * The OpaPreço ad under a side list (the opening's, "Últimas de Quadrinhos"), where the
+ * 300×250 was: the side list is shorter than the lead and its cards, and the column under
+ * it would otherwise stay empty. From 1024px only, OpaPreço's desktop, like the `sidebar`
+ * card: on a phone the side list sits under the lead, and between 761 and 1023px the
+ * column is too narrow for the card. A slot with no offer collapses and gives the margin
+ * back (`.mn-op`).
+ */
+export function AnuncioDaLateral({ slot, contexto }: AnuncioLateral) {
+  return <OpaPrecoAd slot={slot} {...(contexto ? { contexto } : {})} className="mt-24 hidden min-[1024px]:block" />;
+}
 
 /**
  * The opening shared by the home and every editoria (kit docs/03): the lead across three
  * of the four columns with three overlay cards under it, and the side column with four
- * text items.
+ * text items and, under them, an OpaPreço card.
  */
 export function Opening({
   manchete,
@@ -13,6 +31,7 @@ export function Opening({
   lateral,
   now,
   modo,
+  anuncio,
   headingLevel = 'h2',
 }: {
   manchete: Chamada | null;
@@ -21,6 +40,7 @@ export function Opening({
   now: Date;
   /** `home`: labels are editorias, times carry the editoria; `editoria`: labels are subjects. */
   modo: 'home' | 'editoria';
+  anuncio?: AnuncioLateral;
   headingLevel?: 'h2' | 'h3';
 }) {
   if (!manchete) return null;
@@ -37,7 +57,10 @@ export function Opening({
           </div>
         ) : null}
       </div>
-      <SideList itens={lateral} kicker={label} meta={(c) => tempo(c, now, modo === 'home')} />
+      <div>
+        <SideList itens={lateral} kicker={label} meta={(c) => tempo(c, now, modo === 'home')} />
+        {anuncio ? <AnuncioDaLateral {...anuncio} /> : null}
+      </div>
     </section>
   );
 }

@@ -144,6 +144,32 @@ test.describe('home', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
+  test('the side lists carry their own slots, shown from 1024px', async ({ page }) => {
+    const desktop = (page.viewportSize()?.width ?? 0) >= 1024;
+    for (const [path, keys] of [
+      ['/', ['home-01', 'home-02']],
+      ['/cinema', ['listing-01']],
+    ] as const) {
+      await page.goto(path);
+      for (const key of keys) {
+        const box = page.locator(`.mn-op:has(> op-slot[slot-key="${key}"])`);
+        await expect(box).toHaveCount(1);
+        await expect(box).toHaveCSS('display', desktop ? 'block' : 'none');
+      }
+    }
+    await expect(page.locator('op-slot[slot-key="listing-01"]')).toHaveAttribute('section', 'cinema');
+  });
+
+  test('the home feed repeats no story shown above it', async ({ page }) => {
+    await page.goto('/');
+    const hrefs = (scope: string) =>
+      page.locator(scope).evaluateAll((els) => els.map((el) => el.getAttribute('href') ?? ''));
+    const feed = await hrefs('section[aria-labelledby="lista-titulo"] article h3 a');
+    const above = await hrefs('main section:not([aria-labelledby="lista-titulo"]) a[href]');
+    expect(feed).toHaveLength(9);
+    expect(feed.filter((href) => above.includes(href))).toEqual([]);
+  });
+
   test('emits exactly one JSON-LD graph', async ({ page }) => {
     await page.goto('/');
     const blocks = page.locator('script[type="application/ld+json"]');
