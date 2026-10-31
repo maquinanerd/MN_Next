@@ -20,9 +20,7 @@
  *    `tabela`, `galeria`, `video`, `fonte`) are included so no published content is lost.
  */
 
-import type { AdFormato } from '@mn/tokens';
-
-export type { AdFormato };
+import type { OpaPrecoSlot } from './ads/opapreco';
 
 export type EditoriaSlug = 'cinema' | 'series-e-tv' | 'games' | 'quadrinhos' | 'animes' | 'videos' | 'especiais';
 
@@ -142,7 +140,7 @@ export type Bloco =
   | { tipo: 'incorporado'; provedor: string; url: string }
   | { tipo: 'fonte'; rotulo: string; url: string }
   | { tipo: 'relacionadas-inline'; itens: Chamada[]; imagem?: Imagem; mais?: { rotulo: string; href: string } }
-  | { tipo: 'anuncio'; formato: AdFormato; ordem: number }
+  | { tipo: 'anuncio'; slot: Extract<OpaPrecoSlot, 'article-inline-01' | 'article-inline-02'> }
   | { tipo: 'produto'; produto: Produto }
   | { tipo: 'leia-tambem'; item: Chamada };
 

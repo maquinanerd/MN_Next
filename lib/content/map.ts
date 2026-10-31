@@ -12,7 +12,19 @@ import {
   type Product,
   type RichText,
 } from '@mn/content';
-import type { Autor, Bloco, Chamada, EditoriaRef, Formato, Imagem, Layout, Materia, Produto, Trecho } from '@mn/ui';
+import type {
+  Autor,
+  Bloco,
+  Chamada,
+  ContextoDoAnuncio,
+  EditoriaRef,
+  Formato,
+  Imagem,
+  Layout,
+  Materia,
+  Produto,
+  Trecho,
+} from '@mn/ui';
 
 import { EDITORIAS, NOTICIAS, refOf } from './editorias';
 
@@ -215,42 +227,56 @@ export function withRelatedInline(blocos: Bloco[], itens: Chamada[], mais?: { ro
 }
 
 /**
- * Two 728×90 slots per article (kit docs/05), placed by rule rather than by hand:
+ * The two OpaPreço slots inside the text, placed by rule rather than by hand:
  *
- *  - only *between two paragraphs* — never after an image, a heading or a quote;
- *  - not before the second paragraph, and never within three blocks of each other;
- *  - aimed at 40% and 75% of the text, so a long piece carries them where reading is.
+ *  - `article-inline-01` after the second paragraph — or after the third, when the second
+ *    is followed by an image, a heading or a quote and the third is followed by text;
+ *  - `article-inline-02` with at least three paragraphs between it and the first, aimed at
+ *    60% of the text so a long piece carries it where reading still is, and always with
+ *    a paragraph after it;
+ *  - neither ever closes the text: `article-bottom` follows it, and two ads back to back
+ *    would read as one block of advertising.
  *
- * A text too short to hold one under those rules simply has fewer. `permitido` is the
+ * A text too short for one under those rules simply has fewer. `permitido` is the
  * brand-safety switch, decided on the server from the article's reserved tags.
  */
-export function withAds(blocos: Bloco[], permitido: boolean, max = 2): Bloco[] {
+export function withAds(blocos: Bloco[], permitido: boolean): Bloco[] {
   if (!permitido) return blocos;
-  const candidates: number[] = [];
-  // Paragraphs strictly before position i: a slot needs two of them above it.
-  let before = 0;
-  for (let i = 0; i < blocos.length; i += 1) {
-    if (before >= 2 && blocos[i - 1]?.tipo === 'paragrafo' && blocos[i]?.tipo === 'paragrafo') {
-      candidates.push(i);
-    }
-    if (blocos[i]?.tipo === 'paragrafo') before += 1;
-  }
-  const picks: number[] = [];
-  for (const fraction of [0.4, 0.75]) {
-    if (picks.length >= max) break;
-    const target = Math.floor(blocos.length * fraction);
-    const best = candidates
-      .filter((c) => picks.every((p) => Math.abs(p - c) >= 3))
-      .sort((a, b) => Math.abs(a - target) - Math.abs(b - target))[0];
-    if (best !== undefined) picks.push(best);
-  }
-  const ordered = [...picks].sort((a, b) => a - b);
+  // Where a slot after each paragraph would go, in reading order.
+  const ends = blocos.flatMap((b, i) => (b.tipo === 'paragrafo' ? [i + 1] : []));
+  const textFollows = (position: number) => blocos[position]?.tipo === 'paragrafo';
+
+  const early = [ends[1], ends[2]].filter((p): p is number => p !== undefined && p < blocos.length);
+  const first = early.find(textFollows) ?? early[0];
+  if (first === undefined) return blocos;
+
+  const firstAfter = ends.indexOf(first);
+  const target = Math.floor(ends.length * 0.6);
+  const second = ends
+    .map((position, paragraph) => ({ position, paragraph }))
+    .filter(({ position, paragraph }) => paragraph >= firstAfter + 3 && textFollows(position))
+    .sort((a, b) => Math.abs(a.paragraph - target) - Math.abs(b.paragraph - target))[0]?.position;
+
   const out = [...blocos];
-  // Insert from the end so earlier indices stay valid; number them in reading order.
-  [...ordered].reverse().forEach((position) => {
-    out.splice(position, 0, { tipo: 'anuncio', formato: '728x90', ordem: ordered.indexOf(position) + 1 });
-  });
+  // The later one first, so the earlier index stays valid.
+  if (second !== undefined) out.splice(second, 0, { tipo: 'anuncio', slot: 'article-inline-02' });
+  out.splice(first, 0, { tipo: 'anuncio', slot: 'article-inline-01' });
   return out;
+}
+
+/**
+ * What an article's OpaPreço slots tell the ad server besides the canonical URL and the
+ * title: the category, the topic tags — reserved tags are editorial switches, not
+ * subjects — and the article id, so no offer repeats within the article. Null when brand
+ * safety keeps ads off it.
+ */
+export function adContext(article: Article, permitido: boolean): ContextoDoAnuncio | null {
+  if (!permitido) return null;
+  return {
+    ...(article.category ? { secao: article.category.slug } : {}),
+    tags: article.tags.filter((t) => !isReservedTag(t.slug)).map((t) => t.slug),
+    conteudo: article.id,
+  };
 }
 
 const LAYOUT: Record<Article['layout'], Layout> = { standard: 'padrao', overlay: 'overlay', offer: 'oferta' };

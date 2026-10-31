@@ -20,6 +20,9 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const workspace = ['tokens', 'content', 'seo', 'ui'] as const;
 
 export default defineConfig({
+  // The JSX runtime Next compiles with, so a test can render a component without each
+  // file importing React (tsconfig leaves JSX to Next: `preserve`).
+  esbuild: { jsx: 'automatic' },
   test: {
     environment: 'node',
     globals: false,

@@ -57,13 +57,11 @@ ARG KAL_EL_PREVIEW_SECRET
 ARG TRUST_PROXY
 # The CSP and the image loader's allowlist are fixed at build time (next.config.ts).
 ARG MEDIA_ALLOWED_HOSTS
-# Publicidade: público por natureza e lido no build (next inlines NEXT_PUBLIC_*).
-ARG NEXT_PUBLIC_ADSENSE_CLIENT
-ARG NEXT_PUBLIC_ADSENSE_TEST
-ARG NEXT_PUBLIC_ADSENSE_SLOT_728X90
-ARG NEXT_PUBLIC_ADSENSE_SLOT_300X250
-ARG NEXT_PUBLIC_ADSENSE_SLOT_300X600
-ARG NEXT_PUBLIC_ADSENSE_SLOT_970X250
+# Publicidade (OpaPreço Ads): pública por natureza e lida no build (next inlines
+# NEXT_PUBLIC_*, e a CSP sai daqui). Vazias, os anúncios ficam ligados contra
+# https://opapreco.com.br.
+ARG NEXT_PUBLIC_OPAPRECO_ADS_ENABLED
+ARG NEXT_PUBLIC_OPAPRECO_ADS_ENDPOINT
 # Google Analytics 4: o id do fluxo da Web, também público e lido no build (CSP incluída).
 ARG NEXT_PUBLIC_GA_MEASUREMENT_ID
 ENV NEXT_OUTPUT=standalone NODE_ENV=production

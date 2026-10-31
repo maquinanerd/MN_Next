@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './opapreco';
 
 /**
  * Visual audit. @visual
@@ -67,8 +67,11 @@ test.describe('@visual design system', () => {
 
   test('no corner is rounder than 3px except the avatar and the round controls', async ({ page }) => {
     await page.goto('/');
+    // Inside an `<op-slot>` the drawing is OpaPreço's own component, whose style the portal
+    // must not override (DECISIONS §7.29): the rule is the portal's, not the ad's.
     const round = await page.evaluate(() =>
       Array.from(document.querySelectorAll('body *'))
+        .filter((el) => !el.closest('op-slot'))
         .filter((el) => {
           const r = Number.parseFloat(getComputedStyle(el).borderTopLeftRadius);
           return r > 3 && r < 999;

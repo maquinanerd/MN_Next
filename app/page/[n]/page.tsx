@@ -45,7 +45,6 @@ export default async function LatestPage({ params }: { params: Promise<Params> }
           paginacao={view.paginacao}
           hrefPara={(n) => (n === 1 ? '/' : `/page/${n}`)}
           now={now}
-          anunciosACada3
         />
       </main>
     </>

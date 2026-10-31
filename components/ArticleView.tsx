@@ -13,6 +13,7 @@ import {
   Lead,
   LeiaTambem,
   NextStory,
+  OpaPrecoAd,
   RelatedGrid,
   ShareRow,
   SponsoredGrid,
@@ -58,11 +59,19 @@ function PreviewNotice() {
  *    sponsored grid.
  *
  * Links in the text hover in the editoria's text colour, as the prototypes do.
+ *
+ * Every composition carries the same four OpaPreço slots, the most an article may have:
+ * `article-top` under the lead (never above the title), the two inline slots the adapter
+ * placed in the text, and `article-bottom` after the text, before the next story and the
+ * related grid. A preview asks for none: an unpublished page is not an ad context.
  */
 export function ArticleView({ view, preview = false }: { view: MateriaView; preview?: boolean }) {
   const { materia, nav } = view;
   const ativo = view.editoria?.nome;
   const hover = { '--mn-hover': materia.editoria.corTexto } as React.CSSProperties;
+  const anuncio = preview ? null : view.anuncios;
+  const top = anuncio ? <OpaPrecoAd slot="article-top" contexto={anuncio} className="mt-32" /> : null;
+  const bottom = anuncio ? <OpaPrecoAd slot="article-bottom" contexto={anuncio} className="my-48" /> : null;
 
   if (materia.layout === 'overlay') {
     return (
@@ -76,11 +85,18 @@ export function ArticleView({ view, preview = false }: { view: MateriaView; prev
                 <AuthorRow materia={materia} share className="pb-24" />
                 {materia.divulgacao ? <Disclosure divulgacao={materia.divulgacao} className="mb-8" /> : null}
                 <Lead>{materia.lead}</Lead>
-                <ArticleBody blocos={materia.blocos} cor={materia.editoria.cor} comercial={materia.comercial} />
+                {top}
+                <ArticleBody
+                  blocos={materia.blocos}
+                  cor={materia.editoria.cor}
+                  comercial={materia.comercial}
+                  anuncio={anuncio}
+                />
                 <EndNotes facebook={facebook} x={x} newsletter="/newsletter">
                   <ShareRow titulo={materia.titulo} url={materia.url} />
                 </EndNotes>
               </article>
+              {bottom}
               {materia.proxima ? <NextStory chamada={materia.proxima} /> : null}
               <RelatedGrid itens={materia.relacionadas} />
             </div>
@@ -107,17 +123,21 @@ export function ArticleView({ view, preview = false }: { view: MateriaView; prev
                 {materia.divulgacao ? <Disclosure divulgacao={materia.divulgacao} /> : null}
                 {leia[0] ? <LeiaTambem chamada={leia[0]} className="mt-24" /> : null}
                 <Lead>{materia.lead}</Lead>
+                {top}
                 <div className="mt-32 flow-root">
                   {view.flutuante ? <FloatRelated chamada={view.flutuante} /> : null}
-                  {first ? <ArticleBody blocos={[first]} cor={materia.editoria.cor} comercial /> : null}
+                  {first ? (
+                    <ArticleBody blocos={[first]} cor={materia.editoria.cor} comercial anuncio={anuncio} />
+                  ) : null}
                 </div>
-                <ArticleBody blocos={rest} cor={materia.editoria.cor} comercial />
+                <ArticleBody blocos={rest} cor={materia.editoria.cor} comercial anuncio={anuncio} />
                 <div className="mt-40 border-t border-line pt-32">
                   {materia.afiliados ? <AffiliateNotice /> : null}
                   {leia[1] ? <LeiaTambem chamada={leia[1]} className="mt-20" /> : null}
                   <ShareRow titulo={materia.titulo} url={materia.url} />
                 </div>
               </article>
+              {bottom}
               <SponsoredGrid itens={view.patrocinados} />
               <RelatedGrid itens={materia.relacionadas} />
             </div>
@@ -145,11 +165,18 @@ export function ArticleView({ view, preview = false }: { view: MateriaView; prev
                 {materia.divulgacao ? <Disclosure divulgacao={materia.divulgacao} className="mt-16" /> : null}
                 {materia.imagem ? <WideFigure imagem={materia.imagem} capa priority className="mt-24" /> : null}
                 <Lead>{materia.lead}</Lead>
-                <ArticleBody blocos={materia.blocos} cor={materia.editoria.cor} comercial={materia.comercial} />
+                {top}
+                <ArticleBody
+                  blocos={materia.blocos}
+                  cor={materia.editoria.cor}
+                  comercial={materia.comercial}
+                  anuncio={anuncio}
+                />
                 <EndNotes facebook={facebook} x={x} newsletter="/newsletter">
                   <ShareRow titulo={materia.titulo} url={materia.url} />
                 </EndNotes>
               </article>
+              {bottom}
               {materia.proxima ? <NextStory chamada={materia.proxima} /> : null}
               <RelatedGrid itens={materia.relacionadas} />
             </div>

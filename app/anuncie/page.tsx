@@ -23,22 +23,26 @@ export default function AdvertisePage() {
       intro="Formatos, posições e as regras que valem para todo anúncio."
     >
       <h2>Formatos</h2>
+      <p>
+        Os anúncios do site são ofertas da Shopee, escolhidas pelo OpaPreço Ads a partir do assunto da matéria, sempre
+        com o aviso “Link de afiliado”. Ficam em posições fixas:
+      </p>
       <ul>
-        <li>300×250 na coluna lateral da abertura da home e das editorias.</li>
-        <li>300×600 fixo na lateral das listas de notícias e das páginas de oferta.</li>
-        <li>728×90 dentro das matérias, sempre entre dois parágrafos, e na lista da home a cada três notícias.</li>
-        <li>970×250 no meio da home.</li>
+        <li>abaixo do título e da linha fina da matéria;</li>
+        <li>duas dentro do texto, entre parágrafos, com pelo menos três parágrafos entre elas;</li>
+        <li>uma no fim da matéria, antes das notícias relacionadas;</li>
+        <li>uma fixa na lateral das listas de notícias, só no computador.</li>
       </ul>
       <p>
-        Todo espaço é reservado antes de o anúncio carregar, então nenhum anúncio empurra o texto que o leitor está
-        lendo.
+        Todo espaço é reservado antes de o anúncio carregar, então o anúncio que chega não empurra o texto. Quando não
+        há oferta para a página, o espaço reservado fecha.
       </p>
 
       <h2>O que não fazemos</h2>
       <ul>
         <li>Intersticial sobre o conteúdo, incluindo pop-up de newsletter.</li>
-        <li>Anúncio entre o título e o primeiro parágrafo, ou logo depois de uma imagem.</li>
-        <li>Mais de dois anúncios no meio de uma matéria.</li>
+        <li>Anúncio acima do título, ou logo depois de uma imagem.</li>
+        <li>Mais de quatro anúncios numa matéria, ou mais de dois no meio do texto.</li>
         <li>Publicidade em matérias sobre morte, acidente, tragédia ou processo judicial.</li>
         <li>Preço, desconto ou estoque sem dado real, ou contagem regressiva para pressionar a compra.</li>
       </ul>

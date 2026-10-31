@@ -31,7 +31,7 @@ lib/content/         adaptador: domínio do CMS → modelo de tela do kit (docs/
 components/          composições de página (feed, abertura, matéria, institucional)
 packages/tokens/     tokens do kit como tema Tailwind v4 + propriedades --brand*
 packages/ui/         primitivos do kit (HeroCard, OverlayCard, BigCard, SideList, RowCard,
-                     SectionTitle, Pagination, AdSlot…); nenhum hex de marca
+                     SectionTitle, Pagination, OpaPrecoAd…); nenhum hex de marca
 packages/content/    domínio, KalElClient, mappers, fixtures, cache tags, segurança
 packages/seo/        metadata, JSON-LD, sitemaps e RSS
 scripts/             provisionamento do Kal El, importação WordPress, redirects, URLs

@@ -4,6 +4,7 @@ import { fixtureArticles, toSummary, type Article } from '@mn/content';
 import type { Bloco, Chamada } from '@mn/ui';
 
 import {
+  adContext,
   editoriaRef,
   toBlocos,
   toChamada,
@@ -30,37 +31,85 @@ function byTitle(fragment: string): Article {
   return article;
 }
 
-describe('withAds — two 728×90 per article, only between paragraphs', () => {
+describe('withAds — the two OpaPreço slots inside the text', () => {
   const body: Bloco[] = [p('1'), p('2'), p('3'), h('s'), p('4'), p('5'), img, p('6'), p('7'), p('8'), p('9')];
   const out = withAds(body, true);
   const ads = out.map((b, i) => ({ b, i })).filter((x) => x.b.tipo === 'anuncio');
+  const slots = (blocos: Bloco[]) => blocos.flatMap((b) => (b.tipo === 'anuncio' ? [b.slot] : []));
+  /** Paragraphs strictly before block `i`. */
+  const paragraphsBefore = (blocos: Bloco[], i: number) =>
+    blocos.slice(0, i).filter((b) => b.tipo === 'paragrafo').length;
 
-  it('places two', () => {
-    expect(ads).toHaveLength(2);
+  it('places inline-01, then inline-02, once each', () => {
+    expect(slots(out)).toEqual(['article-inline-01', 'article-inline-02']);
   });
 
-  it('puts every slot between two paragraphs — never after an image or a heading', () => {
+  it('puts inline-01 after the second paragraph', () => {
+    expect(paragraphsBefore(out, ads[0]?.i ?? -1)).toBe(2);
+  });
+
+  it('keeps at least three paragraphs between inline-01 and inline-02', () => {
+    const [first, second] = ads;
+    expect(paragraphsBefore(out, second?.i ?? -1) - paragraphsBefore(out, first?.i ?? -1)).toBeGreaterThanOrEqual(3);
+  });
+
+  it('puts every slot between two paragraphs when the text allows', () => {
     for (const { i } of ads) {
       expect(out[i - 1]?.tipo).toBe('paragrafo');
       expect(out[i + 1]?.tipo).toBe('paragrafo');
     }
   });
 
-  it('numbers them in reading order, so their accessible names are unique', () => {
-    expect(ads.map(({ b }) => (b.tipo === 'anuncio' ? b.ordem : 0))).toEqual([1, 2]);
+  it('moves inline-01 after the third paragraph when the second runs into an image', () => {
+    const moved = withAds([p('1'), p('2'), img, p('3'), p('4')], true);
+    expect(moved.map((b) => b.tipo)).toEqual(['paragrafo', 'paragrafo', 'imagem', 'paragrafo', 'anuncio', 'paragrafo']);
   });
 
-  it('never opens the text with an ad', () => {
-    expect(ads[0]?.i).toBeGreaterThan(1);
+  it('places inline-02 only with three paragraphs in between and text after it', () => {
+    expect(slots(withAds([p('1'), p('2'), p('3'), p('4'), p('5')], true))).toEqual(['article-inline-01']);
+    const six = withAds([p('1'), p('2'), p('3'), p('4'), p('5'), p('6')], true);
+    expect(six.map((b) => (b.tipo === 'anuncio' ? b.slot : b.tipo))).toEqual([
+      'paragrafo',
+      'paragrafo',
+      'article-inline-01',
+      'paragrafo',
+      'paragrafo',
+      'paragrafo',
+      'article-inline-02',
+      'paragrafo',
+    ]);
+  });
+
+  it('never opens or closes the text with an ad', () => {
+    expect(slots(withAds([p('1'), p('2')], true))).toEqual([]);
+    expect(withAds([p('1'), p('2'), p('3')], true).at(-1)?.tipo).toBe('paragrafo');
   });
 
   it('places none on an article the brand-safety rule excludes', () => {
     expect(withAds(body, false).some((b) => b.tipo === 'anuncio')).toBe(false);
   });
+});
 
-  it('places fewer, not worse, on a short text', () => {
-    const short = withAds([p('1'), p('2')], true);
-    expect(short.some((b) => b.tipo === 'anuncio')).toBe(false);
+describe('adContext — what the slots tell OpaPreço about the article', () => {
+  const article: Article = {
+    ...byTitle('Resident Evil'),
+    tags: [
+      { id: 't1', slug: 'playstation', name: 'PlayStation' },
+      { id: 't2', slug: 'longform', name: 'longform' },
+      { id: 't3', slug: 'ssd', name: 'SSD' },
+    ],
+  };
+
+  it('sends the category, the topic tags and the id — never a reserved tag', () => {
+    expect(adContext(article, true)).toEqual({
+      ...(article.category ? { secao: article.category.slug } : {}),
+      tags: ['playstation', 'ssd'],
+      conteudo: article.id,
+    });
+  });
+
+  it('is null when brand safety keeps ads off the article', () => {
+    expect(adContext(article, false)).toBeNull();
   });
 });
 

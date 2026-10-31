@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './opapreco';
 
 /**
  * Montserrat is five `next/font/local` calls, one per script, that only work as one family

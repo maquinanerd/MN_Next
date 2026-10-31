@@ -12,3 +12,5 @@ migration-orchestration
 .claude
 # Front-end standalone (kit OpaPreço): projeto próprio, com formatação própria.
 frontend
+# OpaPreço's published script and stylesheet, kept byte for byte for the browser gates.
+tests/e2e/fixtures/opapreco-ads

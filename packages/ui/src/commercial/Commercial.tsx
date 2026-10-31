@@ -1,6 +1,5 @@
 import Link from 'next/link';
 
-import { AdSlot } from '../ads/AdSlot';
 import type { Chamada, Patrocinado, Produto } from '../model';
 import { Photo } from '../primitives/Photo';
 
@@ -135,41 +134,36 @@ export function AffiliateNotice() {
 
 /**
  * SponsoredGrid (kit docs/02 and 05): four 16/9 cards under "Conteúdo patrocinado", each
- * with its partner line and a "Saiba mais" chip, beside a sticky 300×600. Renders nothing
- * without real items — an empty frame would be an ad for nobody.
+ * with its partner line and a "Saiba mais" chip. Renders nothing without real items — an
+ * empty frame would be an ad for nobody.
  */
 export function SponsoredGrid({ itens }: { itens: Patrocinado[] }) {
   if (itens.length === 0) return null;
   return (
     <section aria-label="Conteúdo patrocinado" className="mt-48 border-t border-line pt-32">
-      <div className="grid grid-cols-1 items-start gap-40 desk:grid-cols-[minmax(0,1fr)_300px]">
-        <div>
-          <div className="mb-16 flex items-center justify-between">
-            <span className="text-12 font-bold text-ink-3">Conteúdo patrocinado</span>
-            <span className="text-10 text-muted">Publicidade</span>
-          </div>
-          <div className="grid grid-cols-2 gap-16 tab:gap-20">
-            {itens.map((item) => (
-              <a
-                key={item.id}
-                href={item.href}
-                rel="sponsored nofollow noopener noreferrer"
-                target="_blank"
-                className="flex min-w-0 flex-col gap-8"
-              >
-                <span className="relative block aspect-video overflow-hidden bg-media">
-                  <Photo imagem={item.imagem} uso="card" decorativa />
-                </span>
-                <span className="text-14 leading-[1.3] font-bold tracking-[-0.01em]">{item.titulo}</span>
-                <span className="flex items-center justify-between text-10 text-muted">
-                  <span>{item.parceiro}</span>
-                  <span className="border border-control px-10 py-3 font-bold text-ink">Saiba mais</span>
-                </span>
-              </a>
-            ))}
-          </div>
-        </div>
-        <AdSlot formato="300x600" ordem={3} sticky />
+      <div className="mb-16 flex items-center justify-between">
+        <span className="text-12 font-bold text-ink-3">Conteúdo patrocinado</span>
+        <span className="text-10 text-muted">Publicidade</span>
+      </div>
+      <div className="grid grid-cols-2 gap-16 tab:gap-20">
+        {itens.map((item) => (
+          <a
+            key={item.id}
+            href={item.href}
+            rel="sponsored nofollow noopener noreferrer"
+            target="_blank"
+            className="flex min-w-0 flex-col gap-8"
+          >
+            <span className="relative block aspect-video overflow-hidden bg-media">
+              <Photo imagem={item.imagem} uso="card" decorativa />
+            </span>
+            <span className="text-14 leading-[1.3] font-bold tracking-[-0.01em]">{item.titulo}</span>
+            <span className="flex items-center justify-between text-10 text-muted">
+              <span>{item.parceiro}</span>
+              <span className="border border-control px-10 py-3 font-bold text-ink">Saiba mais</span>
+            </span>
+          </a>
+        ))}
       </div>
     </section>
   );

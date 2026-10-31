@@ -54,8 +54,8 @@ export function ConsentGate() {
     >
       <div className="wrap flex flex-col gap-12 py-16 tab:flex-row tab:items-center tab:justify-between">
         <p className="m-0 max-w-[80ch] text-12 leading-[1.5] text-note">
-          Usamos cookies essenciais para o funcionamento do site. Com a sua autorização, também medimos audiência e
-          exibimos publicidade personalizada. Você pode mudar de ideia a qualquer momento na{' '}
+          Usamos cookies essenciais para o funcionamento do site. Com a sua autorização, também medimos audiência. Você
+          pode mudar de ideia a qualquer momento na{' '}
           <Link href="/politica-de-privacidade" className="underline underline-offset-3">
             política de privacidade
           </Link>

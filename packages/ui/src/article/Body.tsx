@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
-import { AdSlot } from '../ads/AdSlot';
+import { OpaPrecoAd } from '../ads/OpaPrecoAd';
+import type { ContextoDoAnuncio } from '../ads/opapreco';
 import { LeiaTambem, ProductCard } from '../commercial/Commercial';
 import { cx } from '../lib/cx';
 import type { Bloco, Trecho } from '../model';
@@ -69,9 +70,9 @@ function spacing(tipo: Tipo, prev: Tipo | null, afterWide: boolean): string {
     case 'paragrafo':
     case 'lista':
     case 'fonte':
-      return prev === 'subtitulo' || prev === 'citacao' || prev === 'anuncio' || prev === 'relacionadas-inline'
-        ? 'mt-0'
-        : 'mt-[1em]';
+      // After an ad the paragraph keeps its own 1em: it collapses into the ad's 32px margin
+      // while the ad is there, and is the paragraph gap again when the slot finds no ad.
+      return prev === 'subtitulo' || prev === 'citacao' || prev === 'relacionadas-inline' ? 'mt-0' : 'mt-[1em]';
     case 'subtitulo':
       return 'mt-36';
     case 'citacao':
@@ -86,17 +87,20 @@ function spacing(tipo: Tipo, prev: Tipo | null, afterWide: boolean): string {
 /**
  * ArticleBody (kit docs/02): 17px/1.6 paragraphs, justified on desktop and left-aligned
  * at 16px/1.65 on a phone; 22px section headings; the pull quote with a 3px rule in the
- * editoria colour; ads that the adapter has already placed between two paragraphs.
+ * editoria colour; the OpaPreço slots the adapter has already placed between paragraphs.
  */
 export function ArticleBody({
   blocos,
   cor,
   comercial = false,
+  anuncio = null,
 }: {
   blocos: Bloco[];
   /** The editoria's full colour: the quote rule. */
   cor: string;
   comercial?: boolean;
+  /** The article's context for its ad slots; null leaves them out (preview, brand safety). */
+  anuncio?: ContextoDoAnuncio | null;
 }) {
   let prev: Tipo | null = null;
   let afterWide = false;
@@ -259,7 +263,7 @@ export function ArticleBody({
           case 'relacionadas-inline':
             return <RelatedInline key={key} itens={b.itens} imagem={b.imagem} mais={b.mais} />;
           case 'anuncio':
-            return <AdSlot key={key} formato={b.formato} ordem={b.ordem} className="my-32" />;
+            return anuncio ? <OpaPrecoAd key={key} slot={b.slot} contexto={anuncio} className="my-32" /> : null;
           case 'produto':
             return <ProductCard key={key} produto={b.produto} />;
           case 'leia-tambem':

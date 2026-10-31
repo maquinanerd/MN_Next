@@ -1,5 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+
+import { expect, test } from './opapreco';
 
 /**
  * Accessibility gate. @a11y
@@ -51,6 +53,25 @@ test.describe('@a11y axe-core', () => {
     });
   }
 
+  // The default stub answers 204, so the scans above see collapsed slots. These two see the
+  // ads drawn, which is what a reader with an offer gets.
+  for (const [name, path] of [
+    ['matéria padrão com anúncios', '/cinema/o-misterio-de-scarlett-johansson-a-estrela-perdida-da-marvel'],
+    ['home com anúncio', '/'],
+  ] as const) {
+    test(`${name} has no accessibility violations`, async ({ page, opapreco }) => {
+      opapreco.mode = 'ads';
+      await page.goto(path);
+      // Every slot settled: drawn, or collapsed where it asks for nothing (the sidebar on
+      // a phone). The article always has ads to scan.
+      await expect(
+        page.locator('op-slot:not([data-op-estado="pronto"]):not([data-op-estado="colapsado"])'),
+      ).toHaveCount(0);
+      if (path !== '/') await expect(page.locator('op-slot[data-op-estado="pronto"]')).toHaveCount(4);
+      expect(describe(await scan(page))).toEqual([]);
+    });
+  }
+
   test('the open drawer has no violations', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('button', { name: 'Abrir menu' }).click();
@@ -91,11 +112,12 @@ test.describe('@a11y keyboard', () => {
     expect([...outlines].every((s) => !s.startsWith('none'))).toBe(true);
   });
 
-  test('no ad slot ever receives focus', async ({ page }) => {
+  test('a slot that found no ad never receives focus', async ({ page }) => {
     await page.goto('/');
+    await expect(page.locator('op-slot[data-op-estado="colapsado"]').first()).toBeAttached();
     for (let i = 0; i < 40; i += 1) {
       await page.keyboard.press('Tab');
-      expect(await page.evaluate(() => Boolean(document.activeElement?.closest('[data-ad-reserva]')))).toBe(false);
+      expect(await page.evaluate(() => Boolean(document.activeElement?.closest('op-slot')))).toBe(false);
     }
   });
 
