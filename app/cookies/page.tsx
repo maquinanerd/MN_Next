@@ -17,8 +17,8 @@ export async function generateMetadata(): Promise<Metadata> {
 
 /**
  * Lists what the code actually sets — `components/ConsentGate.tsx` and `lib/preview.ts` —
- * what the ad library may set for every reader (`components/Adsense.tsx`), and what Google
- * Analytics sets after an accept (`lib/analytics.ts`).
+ * that the ads set nothing (`components/OpaPrecoAds.tsx`: OpaPreço's requests go without
+ * cookies), and what Google Analytics sets after an accept (`lib/analytics.ts`).
  */
 export default function CookiesPage() {
   return (
@@ -37,16 +37,16 @@ export default function CookiesPage() {
 
       <h2>Publicidade</h2>
       <p>
-        Os anúncios do Google AdSense aparecem para todos os leitores. Sem o seu aceite eles não são personalizados, mas
-        o Google ainda pode gravar cookies próprios (como <code>__gads</code> e <code>__gpi</code>) para limitar a
-        repetição de um anúncio, medir a entrega de forma agregada e combater fraude. Com o aceite, os anúncios também
-        podem ser personalizados.
+        Os anúncios são ofertas da Shopee escolhidas pelo OpaPreço Ads a partir do assunto da página, iguais para todos
+        os leitores. Eles não gravam cookie, e o pedido de anúncio vai sem cookie: leva o endereço e o título da página,
+        a editoria, as tags, o número da matéria e o tamanho da tela. Ao clicar numa oferta, você vai direto para a
+        Shopee, e dali em diante valem os cookies e a política de privacidade da loja.
       </p>
 
       <h2>Dependem do seu consentimento</h2>
       <p>
-        Medição de audiência e publicidade personalizada só começam depois que você aceita. Vídeos incorporados (como os
-        do YouTube) só carregam quando você clica neles.
+        A medição de audiência só começa depois que você aceita. Vídeos incorporados (como os do YouTube) só carregam
+        quando você clica neles.
       </p>
       <ul>
         <li>

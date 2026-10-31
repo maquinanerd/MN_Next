@@ -1,6 +1,5 @@
 import Link from 'next/link';
 
-import { AdSlot } from '../ads/AdSlot';
 import { cx } from '../lib/cx';
 import type { Chamada } from '../model';
 import { Kicker } from '../primitives/Kicker';
@@ -99,16 +98,14 @@ export function VideoCard({
 
 /**
  * SideList — the right-hand column of an opening (kit docs/02): label, 15px… in the
- * prototype 14px headline, time, a 1px rule under each item, no image; closed by the
- * 300×250. On a phone it follows the lead under a rule.
+ * prototype 14px headline, time, a 1px rule under each item, no image. On a phone it
+ * follows the lead under a rule.
  */
 export function SideList({
   itens,
   titulo,
   kicker,
   meta,
-  anuncio = true,
-  ordemAnuncio,
   className,
 }: {
   itens: Chamada[];
@@ -116,9 +113,6 @@ export function SideList({
   titulo?: [string, string];
   kicker: (c: Chamada) => string | undefined;
   meta: (c: Chamada) => string | undefined;
-  anuncio?: boolean;
-  /** Ordinal for the 300×250's accessible name when a page carries two. */
-  ordemAnuncio?: number;
   className?: string;
 }) {
   return (
@@ -147,11 +141,6 @@ export function SideList({
           </article>
         );
       })}
-      {anuncio ? (
-        <div className="pt-20">
-          <AdSlot formato="300x250" {...(ordemAnuncio !== undefined ? { ordem: ordemAnuncio } : {})} />
-        </div>
-      ) : null}
     </div>
   );
 }

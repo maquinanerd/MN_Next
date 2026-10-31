@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { NextConfig } from 'next';
 
 import { GA_CSP, gaMeasurementId } from './lib/analytics';
-import { ADSENSE_CSP, adsenseClient } from './packages/ui/src/ads/adsense';
+import { opaPrecoCsp } from './packages/ui/src/ads/opapreco';
 
 /**
  * Remote image hosts come from MEDIA_ALLOWED_HOSTS only. There is deliberately no
@@ -40,20 +40,22 @@ function allowedImageHosts(): string[] {
  *    `<JsonLd>` and the theme script — escape or are constant. See
  *    `packages/content/src/sanitize.ts`.
  *
- * The ad stack's origins are added to `script-src`, `img-src`, `frame-src` and
- * `connect-src` explicitly, host by host (`ADSENSE_CSP`), and only in a build that has a
- * publisher id — never by relaxing the policy further. Google Analytics' hosts (`GA_CSP`)
- * join the same way, only in a build that has a measurement id.
+ * The ad stack's one origin (`opaPrecoCsp`) is added explicitly to `script-src`,
+ * `style-src`, `connect-src` and `img-src` — the script and its stylesheet, the ad request
+ * and its beacons, the product images — unless the build turns ads off, and never by
+ * relaxing the policy further: OpaPreço Ads frames nothing, so `frame-src` stays the two
+ * players. Google Analytics' hosts (`GA_CSP`) join the same way, only in a build that has
+ * a measurement id.
  *
  * `style-src` allows inline because React writes the `style` attributes this design uses
  * for aspect ratios and ad reservations, and attribute styles have no hash equivalent.
  */
 function contentSecurityPolicy(): string {
   const imageHosts = allowedImageHosts().map((h) => `https://${h}`);
-  // Named hosts, added only by a build that actually serves ads: a portal without a
-  // publisher id keeps the tighter policy, and the list never becomes a wildcard.
-  const ads = adsenseClient() ? ADSENSE_CSP : { script: [], image: [], frame: [], connect: [] };
+  // Named hosts, added only by a build that actually serves them: the list never becomes
+  // a wildcard.
   const ga = gaMeasurementId() ? GA_CSP : { script: [], image: [], connect: [] };
+  const opa = opaPrecoCsp();
   const join = (...lists: readonly (readonly string[])[]) => {
     const hosts = lists.flat();
     return hosts.length ? ` ${hosts.join(' ')}` : '';
@@ -61,15 +63,15 @@ function contentSecurityPolicy(): string {
 
   return [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-inline'${join(ads.script, ga.script)}`,
-    "style-src 'self' 'unsafe-inline'",
-    `img-src 'self' data: blob: ${imageHosts.join(' ')}`.trim() + join(ads.image, ga.image),
+    `script-src 'self' 'unsafe-inline'${join(opa.script, ga.script)}`,
+    `style-src 'self' 'unsafe-inline'${join(opa.style)}`,
+    `img-src 'self' data: blob: ${imageHosts.join(' ')}`.trim() + join(opa.image, ga.image),
     "font-src 'self'",
-    // The RUM beacon and the newsletter post go to this origin; analytics, when configured,
-    // to Google's collection hosts.
-    `connect-src 'self'${join(ads.connect, ga.connect)}`,
+    // The RUM beacon and the newsletter post go to this origin; the ad request and its
+    // beacons to OpaPreço; analytics, when configured, to Google's collection hosts.
+    `connect-src 'self'${join(opa.connect, ga.connect)}`,
     // Only the two players the embed facade can actually open.
-    `frame-src https://www.youtube-nocookie.com https://player.vimeo.com${join(ads.frame)}`,
+    'frame-src https://www.youtube-nocookie.com https://player.vimeo.com',
     "frame-ancestors 'self'",
     "object-src 'none'",
     "base-uri 'self'",

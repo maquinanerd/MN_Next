@@ -38,9 +38,9 @@ describe('id de medição', () => {
 });
 
 describe('Content-Security-Policy', () => {
-  async function policy(id: string, adsense = '') {
+  async function policy(id: string, ads = '') {
     vi.stubEnv('NEXT_PUBLIC_GA_MEASUREMENT_ID', id);
-    vi.stubEnv('NEXT_PUBLIC_ADSENSE_CLIENT', adsense);
+    vi.stubEnv('NEXT_PUBLIC_OPAPRECO_ADS_ENABLED', ads);
     vi.resetModules();
     const config = (await import('../../next.config')).default;
     const headers = await config.headers!();
@@ -65,15 +65,10 @@ describe('Content-Security-Policy', () => {
     expect(csp).toContain("default-src 'self'");
   });
 
-  it('soma os hosts do AdSense e do GA4 na política de produção, que tem os dois', async () => {
-    const csp = await policy('G-CQ0S5G3DY9', 'ca-pub-9994816010226342');
-    expect(csp).toMatch(
-      /script-src[^;]*https:\/\/pagead2\.googlesyndication\.com[^;]*https:\/\/www\.googletagmanager\.com/,
-    );
-    expect(csp).toMatch(
-      /connect-src[^;]*https:\/\/pagead2\.googlesyndication\.com[^;]*https:\/\/\*\.google-analytics\.com/,
-    );
-    expect(csp).toMatch(/frame-src[^;]*https:\/\/googleads\.g\.doubleclick\.net/);
+  it('soma o OpaPreço e o GA4 na política de produção, que tem os dois', async () => {
+    const csp = await policy('G-CQ0S5G3DY9');
+    expect(csp).toMatch(/script-src[^;]*https:\/\/opapreco\.com\.br[^;]*https:\/\/www\.googletagmanager\.com/);
+    expect(csp).toMatch(/connect-src[^;]*https:\/\/opapreco\.com\.br[^;]*https:\/\/\*\.google-analytics\.com/);
     expect(csp).not.toMatch(/script-src[^;]*\*/);
   });
 });
@@ -120,7 +115,8 @@ describe('consentimento', () => {
     expect(consent).toEqual([
       'consent',
       'default',
-      { analytics_storage: 'granted', ad_storage: 'granted', ad_user_data: 'granted', ad_personalization: 'granted' },
+      // Só a medição: os sinais de anúncio ficam negados mesmo com o aceite.
+      { analytics_storage: 'granted', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' },
     ]);
     expect(js![0]).toBe('js');
     expect(config).toEqual(['config', 'G-CQ0S5G3DY9']);

@@ -13,8 +13,9 @@ export { SectionTitle } from './primitives/SectionTitle';
 export { Photo, PlayBadge } from './primitives/Photo';
 export { SearchIcon, MenuIcon } from './primitives/icons';
 
-export { AdSlot } from './ads/AdSlot';
-export { ADSENSE_CSP, adsenseClient, adsenseSlot, adsenseTest } from './ads/adsense';
+export { OpaPrecoAd } from './ads/OpaPrecoAd';
+export { OPAPRECO_SITE_KEY, OPAPRECO_SLOTS, opaPrecoCsp, opaPrecoEnabled, opaPrecoEndpoint } from './ads/opapreco';
+export type { ContextoDoAnuncio, OpaPrecoSlot } from './ads/opapreco';
 export { Pagination, pageItems } from './nav/Pagination';
 
 export { HeroCard, OverlayCard, BigCard, FeatureVideoCard } from './cards/overlay';

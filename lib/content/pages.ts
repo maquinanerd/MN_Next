@@ -11,12 +11,21 @@ import {
   type Tag,
 } from '@mn/content';
 import { isBrandUnsafe } from '@mn/content/kalel/mapper';
-import type { Chamada, Editoria, Filtro, Materia, NestaEditoria, Paginacao, Patrocinado } from '@mn/ui';
+import type {
+  Chamada,
+  ContextoDoAnuncio,
+  Editoria,
+  Filtro,
+  Materia,
+  NestaEditoria,
+  Paginacao,
+  Patrocinado,
+} from '@mn/ui';
 
 import { seoContext } from '../seo-context';
 import { CINERIE_URL, EDITORIAS, NOTICIAS } from './editorias';
 import { PATROCINADOS_DEMO } from './fixtures/patrocinados';
-import { assuntoOf, toChamadas, toMateria } from './map';
+import { adContext, assuntoOf, toChamadas, toMateria } from './map';
 import { optional, repo } from './repo';
 
 /**
@@ -33,7 +42,7 @@ export function agora(): Date {
 
 /** The opening of the home and of an editoria: lead, three overlays, four side items. */
 export const OPENING = 8;
-/** "Mais do Máquina Nerd": nine rows, with a 728×90 after every third (kit docs/03). */
+/** "Mais do Máquina Nerd": nine rows (kit docs/03). */
 export const FEED_PER_PAGE = 9;
 /** "Todas as notícias de …" */
 export const EDITORIA_PER_PAGE = 10;
@@ -87,7 +96,7 @@ export interface HomeView {
 
 /**
  * The home, in the prototype's order (Máquina Nerd Template.dc.html): the opening, then
- * Cinema, Games, a 970×250, Séries e TV with "Últimas de Quadrinhos", Animes, the video
+ * Cinema, Games, Séries e TV with "Últimas de Quadrinhos", Animes, the video
  * band and "Mais do Máquina Nerd". A story is never shown twice above the feed.
  */
 export async function homeView(): Promise<HomeView> {
@@ -216,6 +225,8 @@ export interface MateriaView {
   nav: NestaEditoria;
   patrocinados: Patrocinado[];
   flutuante?: Chamada;
+  /** The page context of the article's OpaPreço slots; null when brand safety keeps ads off. */
+  anuncios: ContextoDoAnuncio | null;
 }
 
 /**
@@ -249,9 +260,10 @@ export async function materiaView(article: Article): Promise<MateriaView | null>
   const assuntoTag = assunto ? article.tags.find((t) => t.name === assunto) : undefined;
   const editoria = article.category ? editoriaFor(article.category) : null;
 
+  const adsPermitidos = !isBrandUnsafe(article.tags);
   const materia = toMateria(article, {
     siteUrl: seoContext().siteUrl,
-    adsPermitidos: !isBrandUnsafe(article.tags),
+    adsPermitidos,
     maisComoEste,
     ...(assuntoTag
       ? { maisLink: { rotulo: `Tudo sobre ${assunto}`, href: `/tag/${assuntoTag.slug}` } }
@@ -290,6 +302,7 @@ export async function materiaView(article: Article): Promise<MateriaView | null>
     // No partner feed exists yet; the demonstration items render in fixture mode only.
     patrocinados: repo().source === 'fixture' && article.layout === 'offer' ? PATROCINADOS_DEMO : [],
     ...(article.layout === 'offer' && (otherOffers[2] ?? others[0]) ? { flutuante: otherOffers[2] ?? others[0] } : {}),
+    anuncios: adContext(article, adsPermitidos),
   };
 }
 

@@ -1,7 +1,9 @@
 import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
-import { expect, test, type APIRequestContext } from '@playwright/test';
+import type { APIRequestContext } from '@playwright/test';
+
+import { OPAPRECO, expect, test } from './opapreco';
 
 /**
  * Behaviour of the surfaces the kit defines (maquina-nerd-kit/docs/03), in fixture mode.
@@ -118,20 +120,28 @@ test.describe('home', () => {
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
   });
 
-  test('the feed carries a 728×90 after every third story', async ({ page }) => {
+  test('the feed carries nothing between its stories, and the sidebar slot beside them', async ({ page }) => {
     await page.goto('/');
     const feed = page.locator('section[aria-labelledby="lista-titulo"]');
     await expect(feed.locator('article')).toHaveCount(9);
-    await expect(feed.getByRole('group', { name: /728 por 90/ })).toHaveCount(2);
+    await expect(feed.locator('op-slot')).toHaveCount(1);
+    await expect(feed.locator('op-slot')).toHaveAttribute('slot-key', 'sidebar');
   });
 
-  test('every ad slot on the page has a unique accessible name', async ({ page }) => {
+  test('the sidebar column exists from 1024px only, where OpaPreço has a sidebar', async ({ page }) => {
     await page.goto('/');
-    const names = await page
-      .locator('[data-ad-reserva]')
-      .evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')));
-    expect(names.length).toBeGreaterThan(4);
-    expect(new Set(names).size).toBe(names.length);
+    const column = page.locator('section[aria-labelledby="lista-titulo"] div:has(> .mn-op)');
+    const desktop = (page.viewportSize()?.width ?? 0) >= 1024;
+    // `display`, not visibility: a sidebar that finds no ad collapses to zero height, and
+    // Playwright counts an empty box as hidden.
+    await expect(column).toHaveCSS('display', desktop ? 'block' : 'none');
+  });
+
+  test('no slot appears twice on a page', async ({ page }) => {
+    await page.goto('/');
+    const keys = await page.locator('op-slot').evaluateAll((els) => els.map((el) => el.getAttribute('slot-key')));
+    expect(keys.length).toBeGreaterThan(0);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 
   test('emits exactly one JSON-LD graph', async ({ page }) => {
@@ -221,14 +231,13 @@ test.describe('article — standard', () => {
     expect(box).toBeGreaterThan(firstP);
   });
 
-  test('the two in-article ads sit between two paragraphs', async ({ page }) => {
+  test('the two in-text slots sit between two paragraphs', async ({ page }) => {
     await page.goto(STANDARD);
-    const neighbours = await page.locator('article [data-ad-reserva]').evaluateAll((slots) =>
-      slots.map((slot) => {
-        const box = slot.parentElement as HTMLElement;
-        return [box.previousElementSibling?.tagName, box.nextElementSibling?.tagName];
-      }),
-    );
+    const neighbours = await page
+      .locator('article .mn-op:has(> op-slot[slot-key^="article-inline"])')
+      .evaluateAll((boxes) =>
+        boxes.map((box) => [box.previousElementSibling?.tagName, box.nextElementSibling?.tagName]),
+      );
     expect(neighbours).toHaveLength(2);
     for (const pair of neighbours) expect(pair).toEqual(['P', 'P']);
   });
@@ -317,18 +326,44 @@ test.describe('article — offer', () => {
 });
 
 test.describe('advertising reserves its space', () => {
-  test('every slot has its dimensions before anything loads, and is never focusable', async ({ page }) => {
-    await page.goto('/');
-    const boxes = await page
-      .locator('[data-ad-reserva]')
-      .evaluateAll((els) =>
-        els.map((el) => ({ h: el.getBoundingClientRect().height, focusable: el.matches('a, button, [tabindex]') })),
-      );
-    expect(boxes.length).toBeGreaterThan(0);
+  test("every article slot has its height before OpaPreço's script runs", async ({ page, context }) => {
+    // Without the script, what is measured is what OpaPreço's stylesheet reserves from the
+    // server HTML alone — the space an ad lands in without moving the text.
+    await context.route(`${OPAPRECO}/v1/ads/sdk/opapreco-ads.js`, (route) => route.abort());
+    await page.goto(STANDARD);
+    const boxes = await page.locator('op-slot').evaluateAll((els) =>
+      els.map((el) => ({
+        slot: el.getAttribute('slot-key'),
+        h: el.getBoundingClientRect().height,
+        focusable: el.matches('a, button, [tabindex]'),
+      })),
+    );
+    expect(boxes.map((b) => b.slot)).toEqual([
+      'article-top',
+      'article-inline-01',
+      'article-inline-02',
+      'article-bottom',
+    ]);
     for (const box of boxes) {
-      expect(box.h).toBeGreaterThanOrEqual(90);
+      expect(box.h, box.slot ?? '').toBeGreaterThanOrEqual(88);
       expect(box.focusable).toBe(false);
     }
+  });
+
+  test('a slot that finds no ad closes up, margin and all', async ({ page }) => {
+    await page.goto(STANDARD);
+    await expect(page.locator('op-slot[data-op-estado="colapsado"]')).toHaveCount(4);
+    // Height and margin together, polled: the slot animates its collapse.
+    const room = () =>
+      page.locator('.mn-op').evaluateAll((els) =>
+        els.map((el) => {
+          const cs = getComputedStyle(el);
+          return (
+            el.getBoundingClientRect().height + Number.parseFloat(cs.marginTop) + Number.parseFloat(cs.marginBottom)
+          );
+        }),
+      );
+    await expect.poll(room).toEqual([0, 0, 0, 0]);
   });
 });
 

@@ -5,7 +5,7 @@ import { rotulo, tempo } from './meta';
 /**
  * The opening shared by the home and every editoria (kit docs/03): the lead across three
  * of the four columns with three overlay cards under it, and the side column with four
- * text items and the 300×250.
+ * text items.
  */
 export function Opening({
   manchete,
@@ -13,7 +13,6 @@ export function Opening({
   lateral,
   now,
   modo,
-  ordemAnuncio,
   headingLevel = 'h2',
 }: {
   manchete: Chamada | null;
@@ -22,7 +21,6 @@ export function Opening({
   now: Date;
   /** `home`: labels are editorias, times carry the editoria; `editoria`: labels are subjects. */
   modo: 'home' | 'editoria';
-  ordemAnuncio?: number;
   headingLevel?: 'h2' | 'h3';
 }) {
   if (!manchete) return null;
@@ -39,12 +37,7 @@ export function Opening({
           </div>
         ) : null}
       </div>
-      <SideList
-        itens={lateral}
-        kicker={label}
-        meta={(c) => tempo(c, now, modo === 'home')}
-        {...(ordemAnuncio !== undefined ? { ordemAnuncio } : {})}
-      />
+      <SideList itens={lateral} kicker={label} meta={(c) => tempo(c, now, modo === 'home')} />
     </section>
   );
 }

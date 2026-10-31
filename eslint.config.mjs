@@ -28,6 +28,8 @@ export default tseslint.config(
       'next-env.d.ts',
       // Front-end standalone do kit OpaPreço: projeto próprio, com lint e build próprios.
       'frontend/**',
+      // O script publicado do OpaPreço Ads, copiado byte a byte para os testes do navegador.
+      'tests/e2e/fixtures/opapreco-ads/**',
     ],
   },
   js.configs.recommended,
@@ -87,16 +89,9 @@ export default tseslint.config(
      * The only places allowed to serialise a string into the DOM:
      *  - RichText renders structured nodes, never a string (kept here for the rule below);
      *  - JsonLd escapes `<`, `>` and `&` before writing the graph;
-     *  - the root layout inlines the pre-paint theme script, which is a constant;
-     *  - `Adsense` inlines the consent flag the ad library reads at boot, also a
-     *    constant, and it has to run before the loader tag that follows it.
+     *  - the root layout inlines the pre-paint theme script, which is a constant.
      */
-    files: [
-      'packages/ui/src/primitives/RichText.tsx',
-      'packages/seo/src/JsonLd.tsx',
-      'app/layout.tsx',
-      'components/Adsense.tsx',
-    ],
+    files: ['packages/ui/src/primitives/RichText.tsx', 'packages/seo/src/JsonLd.tsx', 'app/layout.tsx'],
     rules: { 'react/no-danger': 'off' },
   },
   {

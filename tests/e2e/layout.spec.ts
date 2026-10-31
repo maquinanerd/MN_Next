@@ -1,4 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+
+import { expect, test } from './opapreco';
 
 /**
  * The text column is aligned to the header menu (kit docs/03): it starts under the first

@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import {
-  AdSlot,
   BigCard,
   FeatureVideoCard,
   HeroCard,
@@ -62,7 +61,7 @@ export default async function HomePage() {
       <main id="conteudo" className="wrap pt-20 tab:pt-40">
         <h1 className="sr-only">Máquina Nerd — notícias de cinema, séries, games, quadrinhos e animes</h1>
 
-        <Opening {...home.abertura} now={now} modo="home" ordemAnuncio={1} />
+        <Opening {...home.abertura} now={now} modo="home" />
 
         {home.cinema.length > 0 ? (
           <section aria-labelledby="h-cinema" className={section}>
@@ -94,10 +93,6 @@ export default async function HomePage() {
           </section>
         ) : null}
 
-        <section aria-label="Publicidade" className="mt-36 border-t border-line pt-32 tab:mt-56">
-          <AdSlot formato="970x250" />
-        </section>
-
         {home.series.manchete ? (
           <section aria-labelledby="h-series" className={section}>
             <SectionTitle id="h-series" forte="Notícias" fraco="de Séries e TV" className="mb-28" />
@@ -122,7 +117,6 @@ export default async function HomePage() {
                   itens={home.quadrinhos}
                   kicker={rotulo}
                   meta={(c) => tempo(c, now)}
-                  ordemAnuncio={2}
                 />
               ) : null}
             </div>
@@ -176,8 +170,6 @@ export default async function HomePage() {
           paginacao={home.paginacao}
           hrefPara={(n) => (n === 1 ? '/' : `/page/${n}`)}
           now={now}
-          anunciosACada3
-          primeiraOrdem={3}
         />
       </main>
     </>

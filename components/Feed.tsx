@@ -1,14 +1,23 @@
-import { Fragment } from 'react';
-import { AdSlot, Pagination, RowCard, SectionTitle, type Chamada, type Paginacao } from '@mn/ui';
+import {
+  OpaPrecoAd,
+  Pagination,
+  RowCard,
+  SectionTitle,
+  cx,
+  opaPrecoEnabled,
+  type Chamada,
+  type Paginacao,
+} from '@mn/ui';
 
 import { porQuem, rotulo } from './meta';
 
 /**
- * The long list at the foot of the home and of every editoria: RowCards at the left, a
- * sticky 300×600 at the right, numbered pagination under the list (kit docs/03).
+ * The long list at the foot of the home and of every editoria: RowCards at the left, the
+ * sticky OpaPreço `sidebar` slot at the right, numbered pagination under the list (kit
+ * docs/03).
  *
- * `anunciosACada3` is the home's rule — a 728×90 across the column after every third
- * story, with its own rule under it. The editoria list has none (its prototype has none).
+ * The right column exists from 1024px, OpaPreço's desktop: below that the `sidebar` slot
+ * asks for no ad, so the column would only be a hole, and the list takes the width.
  */
 export function FeedSection({
   titulo,
@@ -18,8 +27,6 @@ export function FeedSection({
   cor,
   textoSobreCor,
   now,
-  anunciosACada3 = false,
-  primeiraOrdem = 1,
   tituloMb = 'mb-28',
   as = 'h2',
   vazio,
@@ -31,14 +38,12 @@ export function FeedSection({
   cor?: string;
   textoSobreCor?: 'light' | 'dark';
   now: Date;
-  anunciosACada3?: boolean;
-  /** First ordinal for this section's ad slots, so every slot on the page has a unique name. */
-  primeiraOrdem?: number;
   tituloMb?: 'mb-28' | 'mb-8';
   as?: 'h1' | 'h2';
   vazio?: React.ReactNode;
 }) {
   const TitleTag = as === 'h1' ? 'h1' : 'h2';
+  const lateral = opaPrecoEnabled();
   return (
     <section aria-labelledby="lista-titulo" className="mt-36 border-t border-line pt-48 pb-64 tab:mt-56">
       {TitleTag === 'h1' ? (
@@ -52,18 +57,11 @@ export function FeedSection({
       ) : (
         <SectionTitle id="lista-titulo" forte={titulo.forte} fraco={titulo.fraco} className={tituloMb} />
       )}
-      <div className="grid grid-cols-1 items-start gap-40 tab:grid-cols-4">
-        <div className="tab:col-span-3">
+      <div className={cx('grid grid-cols-1 items-start gap-40', lateral && 'min-[1024px]:grid-cols-4')}>
+        <div className={cx(lateral && 'min-[1024px]:col-span-3')}>
           {itens.length === 0 && vazio ? vazio : null}
-          {itens.map((c, i) => (
-            <Fragment key={c.id}>
-              <RowCard chamada={c} kicker={rotulo(c)} meta={porQuem(c, now)} />
-              {anunciosACada3 && (i + 1) % 3 === 0 && i < itens.length - 1 ? (
-                <div className="border-b border-line py-24">
-                  <AdSlot formato="728x90" ordem={primeiraOrdem + Math.floor(i / 3)} />
-                </div>
-              ) : null}
-            </Fragment>
+          {itens.map((c) => (
+            <RowCard key={c.id} chamada={c} kicker={rotulo(c)} meta={porQuem(c, now)} />
           ))}
           <Pagination
             paginacao={paginacao}
@@ -72,9 +70,11 @@ export function FeedSection({
             {...(textoSobreCor ? { textoSobreCor } : {})}
           />
         </div>
-        <div className="flex flex-col gap-24 border-t border-line pt-8 tab:sticky tab:top-24 tab:border-t-0 tab:pt-0">
-          <AdSlot formato="300x600" />
-        </div>
+        {lateral ? (
+          <div className="hidden min-[1024px]:sticky min-[1024px]:top-24 min-[1024px]:block">
+            <OpaPrecoAd slot="sidebar" />
+          </div>
+        ) : null}
       </div>
     </section>
   );

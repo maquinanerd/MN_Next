@@ -3,7 +3,7 @@
  *
  * `NEXT_PUBLIC_GA_MEASUREMENT_ID` is the web stream's measurement id (`G-…`). Absent, no
  * analytics code is emitted and no request leaves for Google — the default in development,
- * where a page view would only pollute the property. Like the AdSense ids it is validated
+ * where a page view would only pollute the property. Like every public id it is validated
  * against its shape before it reaches the DOM or the CSP: a typo renders nothing.
  *
  * The id is read with a literal `process.env.NEXT_PUBLIC_*`, the only form Next inlines into
@@ -49,8 +49,13 @@ declare global {
   }
 }
 
+/**
+ * The accept is for audience measurement only. The ad signals stay denied whatever the
+ * answer: the site's ads are OpaPreço's, chosen by the page, and the consent bar and the
+ * privacy policy promise nothing about advertising (DECISIONS §7.29).
+ */
 function consentMode(state: ConsentState): ConsentModeUpdate {
-  return { analytics_storage: state, ad_storage: state, ad_user_data: state, ad_personalization: state };
+  return { analytics_storage: state, ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' };
 }
 
 /**

@@ -25,9 +25,10 @@ export default function PrivacyPage() {
       <h2>O que é coletado sem consentimento</h2>
       <p>
         O necessário para o site funcionar: o cookie que guarda a sua escolha no aviso de privacidade, que não
-        identifica você e não é compartilhado. Além dele, os anúncios do Google AdSense aparecem para todos, sem
-        personalização, e o Google pode gravar cookies próprios para limitar a repetição de anúncios, medir a entrega e
-        combater fraude. A lista completa está em <Link href="/cookies">cookies</Link>.
+        identifica você e não é compartilhado. Os anúncios (ofertas da Shopee, pelo OpaPreço Ads) são escolhidos pelo
+        assunto da página, não por quem lê: o pedido de anúncio vai sem cookie e leva o endereço e o título da página, a
+        editoria, as tags, o número da matéria e o tamanho da tela. A lista completa está em{' '}
+        <Link href="/cookies">cookies</Link>.
       </p>
 
       <h2>O que depende do seu consentimento</h2>
@@ -37,12 +38,11 @@ export default function PrivacyPage() {
           aparelho, a cidade aproximada (o endereço IP não é armazenado), a rolagem até o fim da página, os cliques em
           links para outros sites e os termos buscados na busca do site; e métricas de desempenho agregadas.
         </li>
-        <li>Personalização dos anúncios.</li>
         <li>Conteúdos incorporados de terceiros, como vídeos do YouTube, que só carregam depois de um clique.</li>
       </ul>
       <p>
-        Enquanto você não aceitar, nada disso é executado. Recusar não limita o acesso a nenhuma matéria; os anúncios
-        continuam, sem personalização.
+        Enquanto você não aceitar, nada disso é executado. Recusar não limita o acesso a nenhuma matéria nem muda os
+        anúncios, que nunca usam dados seus.
       </p>
 
       <h2>Newsletter</h2>

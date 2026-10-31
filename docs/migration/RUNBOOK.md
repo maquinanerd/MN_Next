@@ -545,7 +545,8 @@ O que muda, no recurso do portal:
 2. As variáveis já estão em _Environment Variables_ — é de lá que o compose as lia. Com o
    Dockerfile o Coolify as injeta como `ARG` em todas as etapas e como ambiente no
    contêiner, que é o que o build precisa (`NEXT_PUBLIC_SITE_URL`, `KAL_EL_*`, os
-   `NEXT_PUBLIC_ADSENSE_*`). Confira `NEXT_PUBLIC_SITE_URL`: ele entra no build.
+   `NEXT_PUBLIC_OPAPRECO_ADS_*` quando definidos). Confira `NEXT_PUBLIC_SITE_URL`: ele entra
+   no build.
 3. O `HEALTHCHECK` do `Dockerfile` (linha 90) já é o mesmo `/api/health` do compose, então
    a rolagem tem em que se apoiar. O `stop_grace_period: 20s` do compose vira opção do
    recurso; sem ele vale o padrão do Docker, 10s.

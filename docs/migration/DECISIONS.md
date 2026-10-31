@@ -1296,3 +1296,112 @@ que o manifesto de fontes ficava vazio (só no Windows), e faltava um teste que 
 família única — é o `fonts.spec.ts`. A segunda passada pediu que o teste exigisse a
 pré-carga no Linux em vez de aceitar também a lista vazia, e que pulasse folhas de estilo
 de outra origem; os dois entraram, e nada ficou bloqueando.
+
+### 7.29 OpaPreço Ads no lugar do AdSense (2026-10-31)
+
+O site `maquina-nerd` está cadastrado e aprovado para a Shopee no OpaPreço. A partir deste
+build a publicidade do portal é só OpaPreço Ads: ofertas da Shopee escolhidas pelo assunto
+da página, com o aviso "Link de afiliado". O AdSense saiu inteiro (§7.23 fica como
+histórico): script, `ca-pub`, `ads.txt`, `AdSlot`/`AdPush`/`adsense.ts`, os formatos
+`AD_FORMATS`, os hosts do Google na CSP e as seis variáveis `NEXT_PUBLIC_ADSENSE_*` do
+Dockerfile e dos composes. O AdSense não fica como reserva de slot vazio.
+
+**Quem faz o quê.** O OpaPreço decide oferta, componente, preço, link e rastreio; o script
+dele (`https://opapreco.com.br/v1/ads/sdk/opapreco-ads.js`) reserva a altura, pede o
+anúncio, desenha, colapsa quando não há oferta e conta impressão e clique por beacon. O
+portal só diz onde está o slot e de que página: `<op-slot slot-key site-key endpoint
+section tags content-id>` (`packages/ui/src/ads/OpaPrecoAd.tsx`, com o elemento declarado
+em `React.JSX.IntrinsicElements` por `op-slot.d.ts`). Não há `/go/`, redirect nem link em
+volta do slot: o clique vai direto para `s.shopee.com.br`. Nenhum estilo do anúncio é
+sobrescrito, e o pedido não leva cookie nem identificador do leitor.
+
+**Posições, no máximo quatro por matéria.** Nos três layouts (padrão, overlay, oferta):
+`article-top` logo abaixo da linha fina, nunca acima do título; `article-inline-01` depois
+do 2º parágrafo (ou do 3º, quando o 2º encosta numa imagem, intertítulo ou citação);
+`article-inline-02` com pelo menos três parágrafos entre ele e o primeiro, mirando 60% do
+texto e sempre com um parágrafo depois; `article-bottom` depois do texto, antes da próxima
+matéria e das relacionadas. A regra dos dois do meio é `withAds` (`lib/content/map.ts`),
+pura e testada. Brand safety (§ tags sensíveis) e a pré-visualização não pedem anúncio.
+
+**`sidebar` só onde existe barra lateral de desktop.** As matérias não têm coluna à
+direita (o protótipo do layout padrão é trilho do autor · texto · nada), e o quinto slot
+estouraria o máximo de quatro; o `sidebar` ficou no lugar do 300×600 fixo ao lado da lista
+"Mais do Máquina Nerd" (home, editorias, tags, autor, ofertas). A coluna só existe de
+1024 px para cima, que é o desktop do OpaPreço; abaixo disso o slot nem pede anúncio, e a
+lista ocupa a largura em vez de deixar 1/4 vazio no tablet.
+
+**Os blocos sem slot equivalente saíram.** O 970×250 do meio da home, o 728×90 a cada três
+notícias do feed, os 300×250 das colunas laterais da abertura e o 300×600 do grid
+patrocinado não têm posição no OpaPreço (os cinco slots são fixos no contrato v1.1.0).
+Deixar a caixa cinza seria um buraco com "Publicidade" escrito.
+
+**Hidratação.** O script entra por `next/script` `afterInteractive`, não por uma tag
+`async` no HTML. Definido antes da hidratação, o `<op-slot>` já teria o esqueleto do
+OpaPreço dentro quando o React chegasse; o React acharia filhos que não desenhou e o erro de
+hidratação refaria a página inteira no cliente. Com `afterInteractive` o arquivo é
+pré-carregado desde o início e só executa depois do commit da hidratação. O `key` do slot é
+o id da matéria + o slot: o elemento lê os atributos uma vez, ao conectar, então a
+navegação no cliente precisa de um elemento novo para a matéria nova.
+
+**CLS.** A folha de estilo do OpaPreço vai no `<head>` do HTML do servidor (React
+`precedence`) porque é ela que reserva a altura de cada slot por `slot-key` e viewport.
+O espaçamento fica num invólucro (`.mn-op`), que devolve a margem quando o slot colapsa
+(`app/globals.css`), e o parágrafo depois de um anúncio voltou a ter o próprio `1em` — as
+margens colapsam com os 32 px do anúncio enquanto ele existe, e o texto fecha sozinho
+quando não há oferta. `preconnect` com `crossorigin` abre cedo a conexão anônima do pedido
+de anúncio (o slot dá 1,5 s ao servidor antes de colapsar).
+
+**CSP.** `https://opapreco.com.br` em `script-src`, `style-src`, `connect-src` e `img-src`,
+mais `https://cf.shopee.com.br` só em `img-src`: o servidor do OpaPreço aceita servir a foto
+do produto direto do CDN da Shopee quando não a espelhou em `/media` (`opaPrecoCsp`).
+`frame-src` continua com os dois players. Sai da política junto com os slots num build com
+`NEXT_PUBLIC_OPAPRECO_ADS_ENABLED=false`.
+
+**Desligar.** `NEXT_PUBLIC_OPAPRECO_ADS_ENABLED=false` + rebuild tira slots, script,
+folha e CSP. Sem build: "Pausar site" em `/admin/anuncios` no OpaPreço, ou
+`FEATURE_OPAPRECO_ADS_SERVE=false` lá (todo pedido vira 204 e o slot colapsa).
+`NEXT_PUBLIC_OPAPRECO_ADS_ENDPOINT` existe para um servidor local no loopback, porque o
+OpaPreço responde 403 a qualquer origem fora de maquinanerd.com.br; qualquer valor que não
+seja https volta ao padrão.
+
+**Textos.** `/cookies`, `/politica-de-privacidade`, o aviso de consentimento e `/anuncie`
+diziam AdSense e publicidade personalizada. Agora dizem o que é: anúncio escolhido pela
+página, sem cookie, e o clique leva à Shopee, onde vale a política da loja.
+
+**Testes.** `tests/unit/opapreco-ads.test.ts` (configuração, marcação do slot, CSP) e
+`tests/unit/content-adapter.test.ts` (as posições). No navegador, `tests/e2e/opapreco.ts`
+responde por `opapreco.com.br` em todos os specs: o script e a folha são cópias byte a byte
+das publicadas em 31/10/2026 (`tests/e2e/fixtures/opapreco-ads/`) e `/v1/ads/serve`
+responde 204 por padrão, o estado determinístico das capturas. `tests/e2e/opapreco.spec.ts`
+liga anúncios com o formato real do contrato e confere posições, `data-op-estado`, links
+da Shopee, aviso de afiliado, CLS, beacon de clique, o corpo do pedido e a navegação no
+cliente.
+
+**Revisão independente (31/10/2026).** O Codex CLI respondeu 401 (sem `codex login`); a
+revisão foi feita por um agente separado, só leitura, sobre o diff. O que mudou por ela:
+`img-src` com o CDN da Shopee (acima); o aceite do aviso de privacidade passou a conceder ao
+GA4 só `analytics_storage`, com `ad_storage`, `ad_user_data` e `ad_personalization` sempre
+negados, porque o aviso e a política não falam mais de publicidade; os textos de cookies e
+privacidade listam o que o pedido de anúncio leva (endereço e título da página, editoria,
+tags, número da matéria, tamanho da tela); o teste "sem cookie" planta um cookie na origem
+do OpaPreço para poder falhar; e o gate de acessibilidade varre a matéria e a home com os
+anúncios desenhados (axe sem violações em 390 e 1440 px).
+
+O que ficou, com o motivo:
+
+- **A folha do OpaPreço bloqueia a primeira pintura de toda página.** Foi pedido assim (no
+  layout global) e é ela que reserva a altura no HTML do servidor; copiar as regras de
+  reserva para o portal faria duas fontes da mesma medida. O risco: se `opapreco.com.br`
+  travar sem recusar a conexão, a página espera a folha. Ela é servida pelo Cloudflare com
+  `max-age=14400`, então o leitor recorrente já a tem em cache.
+- **O slot sem oferta fecha depois de reservado, e o texto sobe.** É o desenho do script do
+  OpaPreço (o colapso é estilo dele, que o portal não sobrescreve). Medido com a resposta
+  204 instantânea: CLS 0,002–0,006 nas matérias padrão e overlay e 0,02 (390 px) / 0,05
+  (1440 px) na de oferta, que não tem capa e põe o `article-top` acima da dobra. Com
+  anúncio, CLS ≈ 0. Abaixo de 0,1 ("bom" no Core Web Vitals), acima da meta de 0,02 do guia
+  do OpaPreço. Corrigir é do lado dele (não colapsar um slot já pintado na tela).
+- **O pedido leva `page.url` com a query string** (`utm_*`, `fbclid`…), porque o script usa
+  `location.href`. Também é do lado do OpaPreço (mandar só a canônica, ou origem + caminho).
+- **Sem oferta no `sidebar`, a coluna da direita fica vazia no desktop.** Antes era a caixa
+  cinza do AdSense no mesmo lugar; expandir a lista quando o slot colapsa moveria a lista
+  na horizontal, um deslocamento maior que o vazio.

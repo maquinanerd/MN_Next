@@ -106,6 +106,16 @@
   }
 }
 
+/*
+ * OpaPreço slots (packages/ui/src/ads/OpaPrecoAd.tsx). The wrapper holds the margin around
+ * the ad; a slot that finds no ad collapses to zero height and its margin goes with it, so
+ * the text closes up as if the slot had never been there. The ad itself is styled by
+ * OpaPreço's stylesheet alone.
+ */
+.mn-op:has(> op-slot[data-op-estado='colapsado']) {
+  margin: 0;
+}
+
 /* Institutional prose: the article's reading measure and headings, nothing more. */
 .mn-prose {
   font-size: 16px;

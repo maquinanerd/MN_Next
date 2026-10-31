@@ -4,10 +4,10 @@ import { baseMetadata } from '@mn/seo';
 
 import { montserratVariable } from './fonts/montserrat';
 import './globals.css';
-import { Adsense } from '../components/Adsense';
 import { Analytics } from '../components/Analytics';
 import { Footer } from '../components/Chrome';
 import { ConsentGate } from '../components/ConsentGate';
+import { OpaPrecoAds } from '../components/OpaPrecoAds';
 import { WebVitals } from '../components/WebVitals';
 import { seoContext } from '../lib/seo-context';
 
@@ -51,7 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ConsentGate />
         <WebVitals />
         <Analytics />
-        <Adsense />
+        <OpaPrecoAds />
       </body>
     </html>
   );

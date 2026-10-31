@@ -33,13 +33,3 @@ export const SIZES = {
 } as const;
 
 export type ImageRole = keyof typeof SIZES;
-
-/** Ad formats in use (kit docs/05). The reserved box keeps these dimensions even empty. */
-export const AD_FORMATS = {
-  '728x90': { width: 728, height: 90 },
-  '300x250': { width: 300, height: 250 },
-  '300x600': { width: 300, height: 600 },
-  '970x250': { width: 970, height: 250 },
-} as const;
-
-export type AdFormato = keyof typeof AD_FORMATS;
