@@ -87,8 +87,13 @@ export function Discount({ offer, withReference = true }: { offer: OfferData; wi
   );
 }
 
-export function ariaLabelFor(offer: OfferData, disclosure: string): string {
-  return `${offer.productTitle} por ${formatBRL(offer.currentPrice)} na ${offer.merchant}. ${disclosure}.`;
+/**
+ * Nome acessível da oferta (spec §5): "{título} por {preço} na Shopee. Link de afiliado."
+ * O texto do CTA visível vai no fim, para quem aciona o link por comando de voz (WCAG 2.5.3).
+ */
+export function ariaLabelFor(offer: OfferData, disclosure: string, cta?: string): string {
+  const base = `${offer.productTitle} por ${formatBRL(offer.currentPrice)} na ${offer.merchant}. ${disclosure}.`;
+  return cta ? `${base} ${cta}.` : base;
 }
 
 /** "Shopee · Preço verificado há 12 min" */

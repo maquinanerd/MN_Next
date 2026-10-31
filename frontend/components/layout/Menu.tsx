@@ -87,6 +87,7 @@ export function MobileDrawer({ items, active }: { items: NavItem[]; active?: Nav
               href={item.href}
               onClick={close}
               aria-current={current ? "page" : undefined}
+              aria-label={item.key === "mais" ? "Mais seções do Máquina Nerd" : undefined}
               className="flex h-12 items-center border-b border-[#F0F0F0] text-[15px] font-semibold"
               style={{ color: current ? "#B00710" : "#111" }}
             >

@@ -19,6 +19,7 @@ export async function generateMetadata({ searchParams }: { searchParams: SP }): 
   const q = termo(await searchParams);
   return {
     title: q ? `Busca: ${q}` : "Busca",
+    description: "Busque notícias, críticas e reportagens no Máquina Nerd.",
     // Página de resultados não entra no índice (conteúdo duplicado e infinito).
     robots: { index: false, follow: true },
     alternates: { canonical: "/busca" },
@@ -70,8 +71,9 @@ async function Resultados({ searchParams }: { searchParams: SP }) {
       </p>
       {r.itens.length ? (
         <div className="max-w-[1000px]">
-          {r.itens.map((c) => (
-            <RowCard key={c.id} chamada={c} agora={r.agora} />
+          <h2 className="sr-only">Resultados</h2>
+          {r.itens.map((c, i) => (
+            <RowCard key={c.id} chamada={c} agora={r.agora} eager={i === 0} />
           ))}
           <Pagination
             atual={r.pagina}

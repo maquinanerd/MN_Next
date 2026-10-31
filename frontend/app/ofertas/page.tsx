@@ -17,7 +17,7 @@ export default async function OfertasPage() {
     <InstitutionalPage titulo="Ofertas" intro="Matérias de ofertas com links de afiliado, sempre identificados.">
       <div className="max-w-[1000px] text-sm">
         {itens.length ? (
-          itens.map((c) => <RowCard key={c.id} chamada={c} agora={agora} rotulo="assunto" />)
+          itens.map((c, i) => <RowCard key={c.id} chamada={c} agora={agora} rotulo="assunto" eager={i === 0} />)
         ) : (
           <p>Nenhuma oferta publicada no momento.</p>
         )}

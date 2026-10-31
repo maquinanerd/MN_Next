@@ -21,7 +21,7 @@ export function ProductCompactV1({
   return (
     <OfferLink
       href={offer.href}
-      ariaLabel={ariaLabelFor(offer, disclosure)}
+      ariaLabel={ariaLabelFor(offer, disclosure, offer.ctaShort ?? "Ver oferta")}
       component="product_compact_v1"
       className="op-offer op-boxed op-compact"
       checkedAt={offer.checkedAt}

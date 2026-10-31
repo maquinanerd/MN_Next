@@ -127,4 +127,5 @@ export const NAV: NavItem[] = [
   { key: "mais", label: "Mais", href: "/mais", cor: "#B8B8B8", textoSobreCor: "dark" },
 ];
 
-export const ON_COLOR = { light: "#FFFFFF", dark: "#111111" } as const;
+/** Preto puro sobre a cor cheia: com #111 o roxo de Cinema dá 4,37:1; com #000, 4,87:1. */
+export const ON_COLOR = { light: "#FFFFFF", dark: "#000000" } as const;

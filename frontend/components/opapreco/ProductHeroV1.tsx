@@ -26,7 +26,7 @@ export function ProductHeroV1({
   return (
     <OfferLink
       href={offer.href}
-      ariaLabel={ariaLabelFor(offer, disclosure)}
+      ariaLabel={ariaLabelFor(offer, disclosure, offer.cta ?? `Ver oferta na ${offer.merchant}`)}
       component="product_hero_v1"
       className="op-offer op-boxed op-hero"
       checkedAt={offer.checkedAt}

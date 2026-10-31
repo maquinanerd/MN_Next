@@ -63,7 +63,7 @@ export function ProductGridV1({
           <li key={o.offerId}>
             <OfferLink
               href={o.href}
-              ariaLabel={ariaLabelFor(o, affiliateDisclosure)}
+              ariaLabel={ariaLabelFor(o, affiliateDisclosure, o.ctaShort ?? "Ver oferta")}
               className="op-offer op-boxed op-grid__item"
               checkedAt={o.checkedAt}
               expiresAt={expiresAt}

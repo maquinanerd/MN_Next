@@ -24,6 +24,7 @@ export function EditoriaNav({ active, tema = "light" }: { active?: NavKey; tema?
             href={item.href}
             className="mn-nav-item"
             aria-current={current && tema === "light" ? "page" : undefined}
+            aria-label={item.key === "mais" ? "Mais seções do Máquina Nerd" : undefined}
             style={style}
           >
             <span className="mn-nav-fill" aria-hidden="true" />

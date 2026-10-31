@@ -103,11 +103,12 @@ export function AuthorRail({ materia }: { materia: Materia }) {
       <div className="mb-4 text-base font-extrabold tracking-[-.02em] uppercase">
         NESTA<span className="font-light"> EDITORIA</span>
       </div>
-      <nav aria-label="Nesta editoria" className="flex flex-col gap-2.5">
+      <nav aria-label="Nesta editoria" className="flex flex-col gap-2.5 leading-[1.35]">
         <Link href={`/${ed.slug}`} className="font-bold" style={{ color: ed.corTexto }}>
           {ed.nome}
         </Link>
-        <div className="ml-4 flex flex-col gap-2 border-y border-mn-line py-2.5 text-[11px] text-mn-muted">
+        {/* 10px entre os assuntos (8px no protótipo): alvos de toque com 24px de passo (WCAG 2.5.8). */}
+        <div className="ml-4 flex flex-col gap-2.5 border-y border-mn-line py-2.5 text-[11px] text-mn-muted">
           <Link href={`/${ed.slug}`}>Todos</Link>
           {ed.assuntos.slice(1).map((a) => (
             <Link

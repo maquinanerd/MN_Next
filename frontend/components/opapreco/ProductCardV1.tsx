@@ -19,7 +19,7 @@ export function ProductCardV1({
   return (
     <OfferLink
       href={offer.href}
-      ariaLabel={ariaLabelFor(offer, disclosure)}
+      ariaLabel={ariaLabelFor(offer, disclosure, offer.cta ?? `Ver oferta na ${offer.merchant}`)}
       component="product_card_v1"
       className="op-offer op-boxed op-card"
       checkedAt={offer.checkedAt}

@@ -26,7 +26,7 @@ export function ProductCard({ produto }: { produto: Produto }) {
       <div className="flex min-w-0 flex-col gap-2.5">
         {/* Disclosure em 11px (o protótipo usa 10px): nenhum aviso de afiliado abaixo de 11px. */}
         <span className="text-[11px] font-bold tracking-[.04em] text-mn-ink-3 uppercase">Oferta · link de afiliado</span>
-        <h3 className="m-0 text-[17px] leading-[1.25] font-extrabold tracking-[-.02em]">{produto.nome}</h3>
+        <p className="m-0 text-[17px] leading-[1.25] font-extrabold tracking-[-.02em] text-mn-ink">{produto.nome}</p>
         <p className="m-0 text-[13px] leading-normal text-[#555]">{produto.descricao}</p>
         {produto.precoAtual && (
           <div className="mt-1 flex flex-wrap items-baseline gap-2.5">
@@ -54,7 +54,8 @@ export function ProductCard({ produto }: { produto: Produto }) {
               }`}
             >
               <span>{o.loja}</span>
-              {o.preco && <span className="font-semibold opacity-85">{o.preco}</span>}
+              {/* Sem a opacidade de 85% do protótipo: branco translúcido sobre o vermelho dava 3,75:1. */}
+              {o.preco && <span className="font-semibold">{o.preco}</span>}
               <span aria-hidden="true">↗</span>
             </a>
           ))}

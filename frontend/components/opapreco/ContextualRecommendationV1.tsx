@@ -37,7 +37,7 @@ export function ContextualRecommendationV1({
       {contextNote && <p className="op-ctx__note">{contextNote}</p>}
       <OfferLink
         href={offer.href}
-        ariaLabel={ariaLabelFor(offer, disclosure)}
+        ariaLabel={ariaLabelFor(offer, disclosure, offer.cta ?? `Ver oferta na ${offer.merchant}`)}
         className="op-offer op-ctx__row"
         checkedAt={offer.checkedAt}
         expiresAt={expiresAt}

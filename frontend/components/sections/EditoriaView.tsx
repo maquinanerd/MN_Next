@@ -8,7 +8,9 @@ import { Abertura } from "@/components/sections/Abertura";
 import { Feed } from "@/components/sections/Feed";
 import { Section } from "@/components/sections/Section";
 import { pageHref } from "@/components/ui/Pagination";
+import { JsonLd } from "@/components/ui/JsonLd";
 import { SectionTitle } from "@/components/ui/SectionTitle";
+import { breadcrumbLd } from "@/lib/seo/jsonld";
 
 /**
  * Página de editoria (protótipo Categorias), uma implementação para as sete: cabeçalho
@@ -27,6 +29,13 @@ export function EditoriaView({ data, assuntoSlug }: { data: EditoriaData; assunt
 
   return (
     <>
+      <JsonLd
+        data={breadcrumbLd([
+          { nome: "Máquina Nerd", path: "/" },
+          { nome: editoria.nome, path: raiz },
+          ...(assunto && assuntoSlug ? [{ nome: assunto, path: `${raiz}/assunto/${assuntoSlug}` }] : []),
+        ])}
+      />
       <SiteHeader active={editoria.slug} />
       <main id="conteudo" className="mn-wrap pt-8 mob:pt-5">
         <div className="mb-7 flex flex-wrap items-end justify-between gap-6 border-b border-mn-line pb-5">
@@ -58,6 +67,7 @@ export function EditoriaView({ data, assuntoSlug }: { data: EditoriaData; assunt
 
         {abertura && (
           <>
+            <h2 className="sr-only">Destaques de {editoria.nome}</h2>
             <Abertura
               dados={abertura}
               agora={agora}

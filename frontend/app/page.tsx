@@ -8,8 +8,10 @@ import { Abertura } from "@/components/sections/Abertura";
 import { Feed } from "@/components/sections/Feed";
 import { Section } from "@/components/sections/Section";
 import { VideoRail } from "@/components/sections/VideoRail";
+import { JsonLd } from "@/components/ui/JsonLd";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { getFeed, getHome } from "@/lib/content";
+import { organizationLd, websiteLd } from "@/lib/seo/jsonld";
 import { SITE } from "@/lib/site";
 
 export const metadata: Metadata = {
@@ -31,10 +33,13 @@ export default async function Home() {
   const [big1, big2] = home.cinema.grandes;
   return (
     <>
+      <JsonLd data={organizationLd()} />
+      <JsonLd data={websiteLd()} />
       <SiteHeader active="noticias" />
       <main id="conteudo" className="mn-wrap pt-10 mob:pt-5">
         <h1 className="sr-only">Máquina Nerd: notícias de cinema, séries e TV, games, quadrinhos e animes</h1>
 
+        <h2 className="sr-only">Destaques</h2>
         {/* 1. Abertura: manchete + três overlays + lateral com chamadas e card OpaPreço (games). */}
         <Abertura
           dados={home.abertura}

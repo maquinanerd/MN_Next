@@ -21,7 +21,7 @@ export function PriceDropV1({
   if (!offer.priceDrop || !hasValidPriceDrop(offer)) return null;
   const { from, percent, since } = offer.priceDrop;
   const disclosure = offer.affiliateDisclosure ?? "Link de afiliado";
-  const label = `Preço caiu ${percent}%: ${offer.productTitle}, de ${formatBRL(from)} por ${formatBRL(offer.currentPrice)} na ${offer.merchant}. ${disclosure}.`;
+  const label = `Preço caiu ${percent}%: ${offer.productTitle}, de ${formatBRL(from)} por ${formatBRL(offer.currentPrice)} na ${offer.merchant}. ${disclosure}. ${offer.cta ?? "Conferir preço"}.`;
   return (
     <OfferLink
       href={offer.href}

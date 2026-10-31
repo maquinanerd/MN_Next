@@ -236,6 +236,10 @@
     flex: none;
     padding-top: 20px;
   }
+  /* Slot que colapsou (204): sem respiro sobrando no rodapé da lateral. */
+  .mn-fit-slot:empty {
+    display: none;
+  }
   @media (max-width: 1180px) {
     .mn-fit-slot {
       display: none;
@@ -301,10 +305,14 @@
   .mn-body + .mn-body {
     margin-top: 20px;
   }
+  /* Link no meio do texto: cor da editoria e sublinhado (só a cor não distingue; WCAG 1.4.1). */
   .mn-body a,
   .mn-lead a,
   .mn-inline-link {
     color: var(--mn-link, var(--color-mn-red-text));
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
   }
   @media (max-width: 760px) {
     .mn-body {
