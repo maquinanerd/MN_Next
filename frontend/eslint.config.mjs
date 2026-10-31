@@ -13,6 +13,19 @@ const eslintConfig = defineConfig([
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_", ignoreRestSiblings: true },
       ],
+      // O `next/font/google` baixa a fonte durante o `next build`, e um download que falha
+      // derruba o build. A fonte vem dos arquivos do repositório (app/fonts).
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "next/font/google",
+              message: "As fontes vêm dos arquivos do repositório (app/fonts, next/font/local).",
+            },
+          ],
+        },
+      ],
     },
   },
   globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts"]),

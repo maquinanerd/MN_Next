@@ -1,16 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Montserrat } from "next/font/google";
 import { DemoBanner } from "@/components/layout/DemoBanner";
 import { isDemo } from "@/lib/mode";
 import { SITE } from "@/lib/site";
+// Fonte variável do repositório (app/fonts): cobre de 300 (parte leve dos títulos de seção) a 800.
+import { montserratVariable } from "./fonts/montserrat";
 import "./globals.css";
-
-// Fonte variável: um arquivo cobre de 300 (parte leve dos títulos de seção) a 800.
-const montserrat = Montserrat({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-montserrat",
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.url),
@@ -34,7 +28,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="pt-BR" className={montserrat.variable}>
+    <html lang="pt-BR" className={montserratVariable}>
       <body>
         <a
           href="#conteudo"

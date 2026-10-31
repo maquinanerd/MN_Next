@@ -139,6 +139,7 @@ SEO fica em 61 porque, em demonstração, todas as páginas saem com `noindex` d
 - Texto do corpo sem hifenização (o protótipo pede `hyphens: auto`), como já decidido no portal ("texto justificado, sem hifenização").
 - 20px entre parágrafos seguidos (o protótipo não tem dois parágrafos colados).
 - A Montserrat 300 é carregada de fato: o protótipo pede peso 300 na parte leve dos títulos, mas não carrega esse peso e o navegador desenhava 400.
+- A Montserrat vem de `frontend/app/fonts` (`next/font/local`), não do Google Fonts: o download do `next/font/google` no build falhava de vez em quando e derrubava o build (foi o que reprovou o e2e deste PR na raiz, corrigido pelo PR #24). São os mesmos arquivos do Google, byte a byte; o menu mede os mesmos 798,27px em 1440. Diferente da raiz, cada escrita fica com a família que o `next/font` gera e o `--font-sans` empilha as cinco: renomeá-las para `Montserrat` por `declarations`, como na raiz, deixa a página inteira na fonte de fallback com Turbopack. O ESLint do front recusa `next/font/google`.
 - Botões de compartilhar: "G" envia por e-mail (o protótipo não define); o nome acessível começa pelo glifo visível.
 - Coluna do autor com 10px entre os assuntos (8px no protótipo), para os alvos de toque terem 24px de passo.
 - Faixa "Demonstração" de 28px no topo enquanto houver fixtures (doc 04: marcar a página, não o conteúdo).

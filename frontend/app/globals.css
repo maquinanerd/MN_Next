@@ -16,7 +16,10 @@
 @custom-variant mob (@media (max-width: 760px));
 
 @theme {
-  --font-sans: var(--font-montserrat), "Helvetica Neue", Arial, sans-serif;
+  /* Montserrat do repositório (app/fonts/montserrat.ts): uma família por escrita, latin primeiro. */
+  --font-sans:
+    var(--font-mn-latin), var(--font-mn-latin-ext), var(--font-mn-vietnamese), var(--font-mn-cyrillic),
+    var(--font-mn-cyrillic-ext), "Montserrat Fallback", "Helvetica Neue", Arial, sans-serif;
 
   /* Marca (docs/01-tokens.md) */
   --color-mn-red: #e30613;

@@ -1,0 +1,12 @@
+/*
+ * Arial ajustada à Montserrat Regular, com os números que o `next/font/google` gerava para
+ * esta família (`adjustFontFallback`). O motivo de estar escrita à mão está em montserrat.ts.
+ */
+@font-face {
+  font-family: "Montserrat Fallback";
+  src: local("Arial");
+  ascent-override: 85.79%;
+  descent-override: 22.25%;
+  line-gap-override: 0%;
+  size-adjust: 112.83%;
+}
