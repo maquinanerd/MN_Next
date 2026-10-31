@@ -275,15 +275,16 @@
     --w: calc(min(100cqw, 1500px) - 136px);
     --area: calc(var(--w) - var(--mn-logo-w) - 193px);
     --nav-left: calc(68px + var(--mn-logo-w) + 64px + max(0px, (var(--area) - var(--mn-nav-w)) / 2));
-    width: min(var(--mn-nav-w), var(--area));
+    /* Como no protótipo: a largura natural da nav, mesmo quando ela rola (limitada à coluna). */
+    width: var(--mn-nav-w);
     max-width: 100%;
     margin-left: max(0px, calc(var(--nav-left) - var(--mn-col-left, 337px)));
   }
   @media (max-width: 1180px) {
     .mn-art-col {
-      --area: calc(var(--w) - var(--mn-logo-w) - 165px);
+      /* Nav alinhada à esquerda, logo com 12px de margem. */
       --nav-left: calc(68px + var(--mn-logo-w) + 36px);
-      width: min(var(--mn-nav-w-sm), var(--area));
+      width: var(--mn-nav-w-sm);
     }
   }
   @media (max-width: 900px) {
