@@ -4,6 +4,7 @@ import { HeroCard } from "@/components/cards/HeroCard";
 import { OverlayCard } from "@/components/cards/OverlayCard";
 import { SideList } from "@/components/cards/SideList";
 import type { LabelModo } from "@/components/ui/EditoriaLabel";
+import type { MetaModo } from "@/components/ui/Meta";
 import { FitSidebar } from "@/components/ui/FitSidebar";
 
 /**
@@ -14,14 +15,20 @@ export function Abertura({
   dados,
   agora,
   rotulo = "editoria",
+  rotuloLateral,
+  metaLateral,
   lateralTitulo,
+  lateralLabel = "Mais chamadas",
   slot,
   eager = false,
 }: {
   dados: AberturaData;
   agora: string;
   rotulo?: LabelModo;
+  rotuloLateral?: LabelModo;
+  metaLateral?: MetaModo;
   lateralTitulo?: ReactNode;
+  lateralLabel?: string;
   slot?: ReactNode;
   eager?: boolean;
 }) {
@@ -38,9 +45,14 @@ export function Abertura({
         )}
       </div>
       {dados.lateral.length > 0 && (
-        <FitSidebar slot={slot} label="Mais chamadas">
+        <FitSidebar slot={slot} label={lateralLabel}>
           {lateralTitulo}
-          <SideList itens={dados.lateral} agora={agora} rotulo={rotulo} />
+          <SideList
+            itens={dados.lateral}
+            agora={agora}
+            rotulo={rotuloLateral ?? rotulo}
+            meta={metaLateral ?? (rotuloLateral === "assunto" ? "tempo" : "tempo-editoria")}
+          />
         </FitSidebar>
       )}
     </div>

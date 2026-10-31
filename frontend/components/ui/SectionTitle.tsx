@@ -17,7 +17,7 @@ export function SectionTitle({
   forte: string;
   leve?: string;
   id?: string;
-  as?: "h2" | "h3";
+  as?: "h1" | "h2" | "h3";
   tamanho?: "secao" | "materia" | "mais";
   acao?: { href: string; label: string };
   className?: string;
