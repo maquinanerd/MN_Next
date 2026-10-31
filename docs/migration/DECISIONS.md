@@ -1225,3 +1225,74 @@ desiste.
   mesmo salto, em vez de 404.
 - Matéria sem meta description e sem resumo (parte do acervo importado) usa o primeiro
   parágrafo, cortado em 160 caracteres, em vez de sair com a descrição vazia.
+
+### 7.28 A Montserrat sai do repositório, não do Google Fonts (2026-10-30)
+
+Em 2026-10-30 o CI caiu três vezes no mesmo ponto: o `next build` busca a Montserrat em
+`fonts.googleapis.com` (era `next/font/google` no `app/layout.tsx`) e a busca falhou com
+`An error occurred in next/font` / `Cannot read properties of null (reading '1')`,
+derrubando a11y, e2e e a imagem de contêiner até alguém reexecutar. O deploy do Coolify
+faz o mesmo download no build, então a mesma falha impediria um deploy.
+
+**O que mudou.** A fonte vem de `app/fonts/`, por `next/font/local`
+(`app/fonts/montserrat.ts`). Os cinco `.woff2` são exatamente os que o Google servia ao
+`next/font/google` (Montserrat v31, byte a byte; em `/_next/static/media/` o hash no nome
+é o mesmo, só cai o sufixo `-s`, que o Next acrescenta quando ele mesmo gera o fallback):
+um arquivo variável por escrita — latin, latin-ext, vietnamese, cyrillic, cyrillic-ext. O build anterior já hospedava os cinco; `subsets`
+só escolhia quais pré-carregar. A licença é a SIL OFL 1.1 (`app/fonts/OFL.txt`).
+
+**Por que cinco chamadas.** O Google declara cada arquivo com o seu `unicode-range`, e é
+isso que faz o navegador baixar só o arquivo do caractere que aparece. O `next/font/local`
+aceita um `unicode-range` por chamada, então cada escrita é uma chamada, todas com a mesma
+família `Montserrat` (o Next 15 não troca o nome da família por um hash). Elas vêm na ordem
+do Google: onde duas faixas dividem um caractere (U+0304, U+0308, U+0329…), vale a face
+declarada por último, que é a latin. Latin e latin-ext seguem marcadas para pré-carga,
+como antes. As cinco declaram a mesma `--font-montserrat` e as cinco classes vão no
+`<html>`: é isso que põe o `@font-face` de cada escrita na página, em qualquer ordem.
+
+**Pesos.** O Google declarava seis faces por arquivo (300 a 800), todas apontando para o
+mesmo arquivo variável; aqui é uma face com a faixa `300 800`. Para os pesos que o sistema
+usa (300, 400, 500, 600, 700, 800) o resultado é o mesmo: o eixo `wght` recebe o peso
+pedido. Um peso intermediário, que o código não usa, sairia no valor exato em vez de
+arredondar para a face mais próxima.
+
+**Fallback.** `Montserrat Fallback` (Arial com `size-adjust`) é declarado à mão em
+`app/fonts/montserrat-fallback.css`, com os números que o `next/font/google` gerava
+(ascent 85,79 %, descent 22,25 %, line-gap 0 %, size-adjust 112,83 %). O
+`adjustFontFallback` do `next/font/local` mede o arquivo com o fontkit, e a instância
+padrão do arquivo variável é a Thin: daria size-adjust de 110,19 %, um Arial mais estreito
+que o de hoje enquanto a fonte carrega e nos caracteres que a Montserrat não tem.
+
+**Como foi verificado.**
+
+- Build do zero com cada processo Node do build (22) registrando toda resolução de DNS e
+  conexão de rede e recusando `fonts.googleapis.com`/`fonts.gstatic.com`: passou, sem
+  nenhuma conexão de rede. O CSS gerado tem as cinco faces com os mesmos arquivos e as
+  mesmas faixas do build anterior, e o mesmo fallback.
+- Comparação pixel a pixel, tolerância zero, das 48 capturas da suíte visual (12
+  superfícies × 4 larguras) entre o build anterior e o novo: 47 idênticas. A outra
+  (`materia-oferta`, 1440) difere só na foto do produto, que varia do mesmo jeito entre
+  duas execuções do build anterior.
+- `pnpm test:visual` contra as baselines do repositório: 68 de 68; `pnpm test:e2e` (com
+  a11y): 378 passaram, nenhum falhou.
+
+**Pré-carga.** O Next só preenche o manifesto de fontes quando o caminho do loader tem
+barras `/`: num build no Windows nenhuma fonte é pré-carregada, antes e agora; no Linux (CI
+e Coolify) vão no `<link rel="preload">` os arquivos latin e latin-ext, como antes. Sem o
+sufixo `-s`, a página deixa de levar `<meta name="next-size-adjust">`, uma marca que o Next
+põe para as estatísticas do Google e que não muda nada na página.
+
+**Para não voltar.** O ESLint recusa `import … from 'next/font/google'`
+(`no-restricted-imports`). `tests/e2e/fonts.spec.ts` confere que a família `Montserrat`
+desenha as cinco escritas, que `--font-montserrat` é `Montserrat, Montserrat Fallback` e
+que só latin e latin-ext são pré-carregadas: a suíte visual não veria uma escrita sumir,
+porque os fixtures são texto latino, e a família única depende de o Next não trocar o nome
+da família por hash.
+
+**Revisão.** O Codex CLI respondeu 401 (login vencido); a revisão foi feita por um agente
+independente, sem acesso às minhas conclusões. Nenhum achado bloqueante; os três de baixa
+gravidade foram aceitos: o texto desta seção dizia que os nomes dos arquivos não mudavam e
+que o manifesto de fontes ficava vazio (só no Windows), e faltava um teste que protegesse a
+família única — é o `fonts.spec.ts`. A segunda passada pediu que o teste exigisse a
+pré-carga no Linux em vez de aceitar também a lista vazia, e que pulasse folhas de estilo
+de outra origem; os dois entraram, e nada ficou bloqueando.
