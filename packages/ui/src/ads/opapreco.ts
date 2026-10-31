@@ -31,13 +31,27 @@ const DEFAULT_ENDPOINT = 'https://opapreco.com.br';
 /** Where a Shopee product photo lives when OpaPreço has not mirrored it. */
 const SHOPEE_IMAGES = 'https://cf.shopee.com.br';
 
-/** The five slots OpaPreço knows; its script collapses an `<op-slot>` named anything else. */
+/**
+ * The slots the portal uses; OpaPreço's script collapses an `<op-slot>` named anything
+ * it does not know.
+ *
+ * OpaPreço gives each slot of a page its own place in that page's ranking, so two slots
+ * never show the same offer — and one slot used twice would. The side columns of the list
+ * pages therefore take slots of their own besides `sidebar` (beside "Mais do Máquina
+ * Nerd"): `home-01` under the home opening's side list, `home-02` under "Últimas de
+ * Quadrinhos", `listing-01` under an editoria opening's side list. Those three come with
+ * OpaPreço's contract v1.2.0, which serves each the template registered for it in
+ * OpaPreço's panel; until the script knows them they collapse at once, without a request.
+ */
 export const OPAPRECO_SLOTS = [
   'article-top',
   'article-inline-01',
   'article-inline-02',
   'article-bottom',
   'sidebar',
+  'home-01',
+  'home-02',
+  'listing-01',
 ] as const;
 
 export type OpaPrecoSlot = (typeof OPAPRECO_SLOTS)[number];

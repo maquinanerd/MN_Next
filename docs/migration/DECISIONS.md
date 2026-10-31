@@ -1405,3 +1405,62 @@ O que ficou, com o motivo:
 - **Sem oferta no `sidebar`, a coluna da direita fica vazia no desktop.** Antes era a caixa
   cinza do AdSense no mesmo lugar; expandir a lista quando o slot colapsa moveria a lista
   na horizontal, um deslocamento maior que o vazio.
+
+### 7.30 "Mais do Máquina Nerd" sem repetir a home, e anúncio nas colunas laterais (2026-10-31)
+
+**A lista não repete o que já está na home.** Ela lia as nove matérias seguintes à abertura
+(`listLatest` com `skip: 8`), e as seções do meio (Cinema, Games, Séries e TV, Quadrinhos,
+Animes, Vídeos) mostram justamente as mais novas de cada editoria. Na produção de 31/10, a
+manchete de Séries ("Dark Matter"), um destaque ("The Hunting Wives") e outras apareciam de
+novo na lista; nas fixtures, as nove se repetiam. Agora a home lê uma janela de 9 + 26 depois
+da abertura (26 é o máximo que as seções tomam: 6 + 4 + 4 + 4 + 3 + 5), pula o que já está na
+página e fica com as nove primeiras que sobram (`feedSemRepetir`, `lib/content/pages.ts`). A
+página 2 começa na matéria seguinte à última que a home leu (`feedLidas`), e por isso
+`/page/{n}` chama `homeView()` (leituras em cache) para saber onde a home parou: nenhuma
+matéria se repete entre a home e a página 2, e nenhuma some. A fronteira é aproximada:
+`feedLidas` conta matérias já mapeadas e o `skip` conta linhas do Kal El (uma linha sem URL
+pública a recua uma posição), as duas páginas revalidam em tempos diferentes (60 s e 120 s) e
+uma seção que falhou ao carregar muda o que a home pulou. Por isso a página 2 também tira as
+matérias que a lista da home mostra: o erro pode pular matérias por um minuto, nunca
+repeti-las. Testes: `tests/unit/home-feed.test.ts` e "the home feed repeats no story shown
+above it" em `tests/e2e/surfaces.spec.ts`.
+
+**Anúncio no vão das colunas laterais.** Embaixo das quatro manchetes da coluna lateral da
+abertura (home e editorias) e de "Últimas de Quadrinhos" sobrava um vão de ~260 px no
+desktop, onde antes ficava o 300×250 do AdSense (§7.29 o tirou por falta de slot equivalente).
+O `sidebar` não serve para isso: o OpaPreço escolhe a oferta pela URL canônica da página
+mais o deslocamento do slot (`servir.ts`), então dois `sidebar` na mesma página mostrariam a
+mesma oferta. O contrato v1.2.0 do OpaPreço, em preparo no repositório dele (branch
+`claude/ads-slots-home-listagem-detalhe`, ainda não publicada em 31/10), cria slots fora do
+artigo com faixa própria, e o portal usa três: `home-01` (lateral da abertura da home), `home-02` (lateral de
+"Últimas de Quadrinhos") e `listing-01` (lateral da abertura das editorias, com
+`section=<slug>`). O componente é `AnuncioDaLateral` (`components/Opening.tsx`): só aparece a
+partir de 1024 px, com `mt-24` que some quando o slot colapsa (`.mn-op`).
+
+Enquanto o script publicado for o v1.1.0, as três chaves fecham na hora, sem pedido e sem
+vão. O anúncio aparece sem deploy do portal quando (1) o OpaPreço publicar o v1.2.0 e (2) o
+site `maquina-nerd` tiver `home-01`, `home-02` e `listing-01` cadastrados no painel, com
+`product_card_v1`, o mesmo card do `sidebar`. Duas consequências conhecidas, ambas do lado do
+OpaPreço: o v1.2.0 reserva a altura da grade (372 px) nessas chaves até o card ser desenhado,
+e depois a coluna encolhe uns 40 px; e fora da tabela o servidor não tem a regra "só desktop"
+do `sidebar`, então abaixo de 1024 px o pedido sai para um invólucro escondido. Com o card
+(vertical, ~330 px numa coluna de 250 px), a coluna lateral fica mais alta que a manchete com
+os três cards, e a seção cresce uns 100 a 150 px no desktop: o vão sai da direita e fica,
+menor, embaixo dos cards da esquerda.
+
+**Antes de cadastrar os três slots no painel do OpaPreço.** A coluna lateral passa a ditar a
+altura da abertura, que está na primeira dobra. Se o v1.2.0 reservar a grade (372 px) e o
+pedido voltar 204, a seção encolhe ~136 px depois de pintada, e tudo abaixo sobe. Com anúncio,
+encolhe ~40 px. Isso é CLS na primeira dobra, que nos slots de artigo não existe com anúncio
+(§7.29). A cópia do script em `tests/e2e/fixtures/opapreco-ads/` é a v1.1.0 e não mede isso.
+Para ligar: trocar a cópia pela v1.2.0 publicada e medir a altura da abertura, com anúncio e
+com 204. Se o deslocamento passar de 0,02, há duas saídas. A primeira é o OpaPreço reservar
+nessas chaves a altura do card. A segunda é o cadastro usar um formato que caiba no vão.
+"close without a request while the script does not know them" (`tests/e2e/opapreco.spec.ts`)
+garante que, até lá, as chaves fecham sem pedido.
+
+**Revisão (2026-10-31).** O Codex CLI recusou todos os modelos com o login atual (conta
+ChatGPT: "not supported when using Codex with a ChatGPT account"). A revisão foi feita por um
+agente separado, só leitura, sobre os dois diffs. Dela vieram a proteção da página 2 contra
+repetição, o invólucro de "Últimas de Quadrinhos" só com a lista (vazio, somava um espaço no
+celular), o comentário sobre 761–1023 px, os testes mais fortes e a condição acima.

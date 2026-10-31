@@ -91,7 +91,14 @@ export function EditoriaPage({ view, page }: { view: EditoriaView; page: number 
           ) : null}
         </div>
 
-        {view.abertura ? <Opening {...view.abertura} now={now} modo="editoria" /> : null}
+        {view.abertura ? (
+          <Opening
+            {...view.abertura}
+            now={now}
+            modo="editoria"
+            anuncio={{ slot: 'listing-01', contexto: { secao: category.slug } }}
+          />
+        ) : null}
 
         <FeedSection
           titulo={{ forte: 'Todas', fraco: `as notícias de ${editoria.nome}` }}

@@ -201,3 +201,23 @@ test.describe('the sidebar slot', () => {
     }
   });
 });
+
+test.describe('the side-list slots', () => {
+  // `home-01`, `home-02` and `listing-01` come with OpaPreço's contract v1.2.0. The script
+  // published today (the copy in fixtures/) does not know them: they must close at once,
+  // margin and all, without asking OpaPreço for anything (DECISIONS §7.30).
+  test('close without a request while the script does not know them', async ({ page, opapreco }) => {
+    for (const [path, keys] of [
+      ['/', ['home-01', 'home-02']],
+      ['/cinema', ['listing-01']],
+    ] as const) {
+      await page.goto(path);
+      for (const key of keys) {
+        await expect(page.locator(`op-slot[slot-key="${key}"]`)).toHaveAttribute('data-op-estado', 'colapsado');
+        await expect(page.locator(`.mn-op:has(> op-slot[slot-key="${key}"])`)).toHaveCSS('margin-top', '0px');
+      }
+    }
+    const keys = new Set(opapreco.requests.map((r) => r.body.slotKey));
+    for (const key of ['home-01', 'home-02', 'listing-01']) expect(keys.has(key)).toBe(false);
+  });
+});

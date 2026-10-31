@@ -13,7 +13,7 @@ import { JsonLd, buildGraph, collectionNode } from '@mn/seo';
 
 import { Header } from '../components/Chrome';
 import { FeedSection } from '../components/Feed';
-import { Opening } from '../components/Opening';
+import { AnuncioDaLateral, Opening } from '../components/Opening';
 import { data, rotulo, rotuloComposto, tempo } from '../components/meta';
 import { EDITORIAS, agora, homeView } from '../lib/content';
 import { seoContext } from '../lib/seo-context';
@@ -61,7 +61,7 @@ export default async function HomePage() {
       <main id="conteudo" className="wrap pt-20 tab:pt-40">
         <h1 className="sr-only">Máquina Nerd — notícias de cinema, séries, games, quadrinhos e animes</h1>
 
-        <Opening {...home.abertura} now={now} modo="home" />
+        <Opening {...home.abertura} now={now} modo="home" anuncio={{ slot: 'home-01' }} />
 
         {home.cinema.length > 0 ? (
           <section aria-labelledby="h-cinema" className={section}>
@@ -112,12 +112,15 @@ export default async function HomePage() {
                 </div>
               </div>
               {home.quadrinhos.length > 0 ? (
-                <SideList
-                  titulo={['Últimas de', `${EDITORIAS.quadrinhos.nome}:`]}
-                  itens={home.quadrinhos}
-                  kicker={rotulo}
-                  meta={(c) => tempo(c, now)}
-                />
+                <div>
+                  <SideList
+                    titulo={['Últimas de', `${EDITORIAS.quadrinhos.nome}:`]}
+                    itens={home.quadrinhos}
+                    kicker={rotulo}
+                    meta={(c) => tempo(c, now)}
+                  />
+                  <AnuncioDaLateral slot="home-02" />
+                </div>
               ) : null}
             </div>
           </section>
