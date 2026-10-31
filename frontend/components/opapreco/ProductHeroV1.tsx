@@ -2,6 +2,7 @@ import type { OfferData } from "@/lib/ads/types";
 import { checkedLabel, eyebrowFor, formatBRL, isLowest30d } from "@/lib/ads/rules";
 import { OfferLink, type EstadoForcado } from "./OfferLink";
 import { CtaLabel, Discount, OfferHead, OfferImage, ariaLabelFor } from "./parts";
+import { Verificado } from "./Verificado";
 
 /** 5.3 — topo da matéria (desktop/tablet). Vertical abaixo de 600px de contêiner. */
 export function ProductHeroV1({
@@ -16,8 +17,8 @@ export function ProductHeroV1({
   estado?: EstadoForcado;
 }) {
   const disclosure = offer.affiliateDisclosure ?? "Link de afiliado";
-  const monitor = [
-    checkedLabel(offer.checkedAt, Date.parse(servedAt)),
+  const checked = checkedLabel(offer.checkedAt, Date.parse(servedAt));
+  const resto = [
     isLowest30d(offer) ? "menor preço dos últimos 30 dias" : null,
     `${offer.isOfficialStore ? "loja oficial na " : ""}${offer.merchant}`,
   ]
@@ -26,7 +27,7 @@ export function ProductHeroV1({
   return (
     <OfferLink
       href={offer.href}
-      ariaLabel={ariaLabelFor(offer, disclosure, offer.cta ?? `Ver oferta na ${offer.merchant}`)}
+      ariaLabel={ariaLabelFor(offer, disclosure, offer.cta ?? `Ver oferta na ${offer.merchant}`, { menor30d: true })}
       component="product_hero_v1"
       className="op-offer op-boxed op-hero"
       checkedAt={offer.checkedAt}
@@ -52,7 +53,15 @@ export function ProductHeroV1({
             </svg>
             Preço monitorado pelo OpaPreço
           </span>
-          <span>{monitor.charAt(0).toUpperCase() + monitor.slice(1)}</span>
+          <span>
+            {checked ? (
+              <>
+                <Verificado checkedAt={offer.checkedAt} inicial={checked} /> · {resto}
+              </>
+            ) : (
+              resto.charAt(0).toUpperCase() + resto.slice(1)
+            )}
+          </span>
         </span>
         <span className="op-cta op-cta--primary">
           <CtaLabel label={offer.cta ?? `Ver oferta na ${offer.merchant}`} />

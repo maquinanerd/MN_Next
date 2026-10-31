@@ -1,7 +1,7 @@
 import type { OfferData } from "@/lib/ads/types";
 import { eyebrowFor, formatBRL } from "@/lib/ads/rules";
 import { OfferLink, type EstadoForcado } from "./OfferLink";
-import { CtaLabel, Discount, OfferHead, OfferImage, ariaLabelFor, metaLine } from "./parts";
+import { CtaLabel, Discount, MetaLine, OfferHead, OfferImage, ariaLabelFor } from "./parts";
 
 /** 5.1 — meio de artigo e laterais. Horizontal ≥ 480px de contêiner; vertical abaixo (sidebar de 300px). */
 export function ProductCardV1({
@@ -36,7 +36,9 @@ export function ProductCardV1({
         </span>
         <span className="op-card__foot">
           <span className="op-meta">
-            <span className="op-on">{metaLine(offer, servedAt)}</span>
+            <span className="op-on">
+              <MetaLine offer={offer} servedAt={servedAt} />
+            </span>
             <span className="op-off">Preço deixou de ser válido</span>
           </span>
           <span className="op-cta op-cta--primary">

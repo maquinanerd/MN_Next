@@ -130,3 +130,41 @@ describe("formatação", () => {
     expect(hasValidPriceDrop({ currentPrice: 329.9, priceDrop: { from: 399.9, percent: 18 } })).toBe(true);
   });
 });
+
+describe("achados da revisão", () => {
+  const base = offer(fixtures.offers.noDiscount as RawOffer);
+  const single = (o: Record<string, unknown>, component = "product_card_v1") =>
+    resolveResponse(response(component, { offer: o }), NOW);
+  const render = (r: ReturnType<typeof single>) => {
+    if (r.status !== 200 || r.render.component === "product_grid_v1") throw new Error("esperava oferta única");
+    return r.render.offer;
+  };
+
+  it("percentual que os preços não sustentam não vira desconto", () => {
+    const o = render(single({ ...base, currentPrice: 97, referencePrice: 100, discountPercent: 40 }));
+    expect(o.discountPercent).toBeUndefined();
+  });
+
+  it("queda com percentual inflado não renderiza", () => {
+    const r = single({ ...base, currentPrice: 100, priceDrop: { from: 102, percent: 18 } }, "price_drop_v1");
+    expect(r.status).toBe(204);
+  });
+
+  it("selo sem prova vira 'Oferta verificada'", () => {
+    expect(render(single({ ...base, eyebrow: "Menor preço recente" })).eyebrow).toBe("Oferta verificada");
+    expect(render(single({ ...base, eyebrow: "Boa oportunidade" })).eyebrow).toBe("Oferta verificada");
+    const hero = offer(fixtures.offers.hero as RawOffer);
+    expect(render(single({ ...hero, eyebrow: "Menor preço recente" })).eyebrow).toBe("Menor preço recente");
+  });
+
+  it("link afiliado precisa ser https", () => {
+    expect(single({ ...base, href: "http://example.com/aff/x" }).status).toBe(204);
+    expect(single({ ...base, href: "data:text/html,oi" }).status).toBe(204);
+  });
+
+  it("grade: oferta fora do contrato sai sozinha e 3 viram 2", () => {
+    const ok = ["withDiscount", "noDiscount", "verticalImage"].map((k) => offer(fixtures.offers[k as keyof typeof fixtures.offers] as RawOffer));
+    const r = resolveResponse(response("product_grid_v1", { offers: [...ok, { lixo: true }] }), NOW);
+    expect(r.status === 200 && r.render.component === "product_grid_v1" && r.render.offers.length).toBe(2);
+  });
+});

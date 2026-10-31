@@ -1,7 +1,7 @@
 import type { OfferData } from "@/lib/ads/types";
 import { formatBRL } from "@/lib/ads/rules";
 import { OfferLink, type EstadoForcado } from "./OfferLink";
-import { CtaLabel, Discount, OfferImage, ariaLabelFor, metaLine } from "./parts";
+import { CtaLabel, Discount, MetaLine, OfferImage, ariaLabelFor } from "./parts";
 
 /**
  * 5.6 — formato prioritário (article-inline-01). `<aside>` sem caixa, entre réguas, sem
@@ -51,7 +51,9 @@ export function ContextualRecommendationV1({
               <span className="op-price">{formatBRL(offer.currentPrice)}</span>
               <Discount offer={offer} />
             </span>
-            <span className="op-meta">{metaLine(offer, servedAt, true)}</span>
+            <span className="op-meta">
+              <MetaLine offer={offer} servedAt={servedAt} lower />
+            </span>
           </span>
         </span>
         <span className="op-cta op-cta--primary">

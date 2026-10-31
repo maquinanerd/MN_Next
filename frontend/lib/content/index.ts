@@ -57,10 +57,8 @@ export async function getOfertasLista() {
   return adapter().ofertas();
 }
 
+/** Busca é dinâmica e sem cache: cada termo iria para o cache compartilhado e envelheceria lá. */
 export async function searchContent(q: string, pagina: number) {
-  "use cache";
-  cacheLife("minutes");
-  cacheTag("busca");
   return adapter().busca(q, pagina);
 }
 

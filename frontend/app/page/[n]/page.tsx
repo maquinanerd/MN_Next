@@ -10,7 +10,8 @@ type Props = { params: Promise<{ n: string }> };
 
 function parsePagina(n: string): number | null {
   const pagina = Number(n);
-  return /^\d+$/.test(n) && Number.isInteger(pagina) && pagina >= 2 ? pagina : null;
+  // Só a forma canônica: /page/02 não é uma segunda URL da página 2.
+  return /^[1-9]\d*$/.test(n) && pagina >= 2 ? pagina : null;
 }
 
 export async function generateStaticParams() {

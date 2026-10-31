@@ -2,16 +2,9 @@ import type { CSSProperties } from "react";
 import type { OfferData } from "@/lib/ads/types";
 import { formatBRL } from "@/lib/ads/rules";
 import { OfferLink, type EstadoForcado } from "./OfferLink";
+import { gridFootLabel } from "@/lib/ads/labels";
 import { CtaLabel, Discount, OfferImage, ariaLabelFor } from "./parts";
-
-function footLine(offers: OfferData[], servedAt: string): string {
-  const now = Date.parse(servedAt);
-  const oldest = Math.max(...offers.map((o) => Math.max(0, Math.floor((now - Date.parse(o.checkedAt)) / 60_000))));
-  const merchant = offers[0]?.merchant ?? "Shopee";
-  if (oldest < 1) return `Preços na ${merchant}, verificados agora.`;
-  if (oldest < 60) return `Preços na ${merchant}, verificados há até ${oldest} min.`;
-  return `Preços na ${merchant}, verificados há até ${Math.floor(oldest / 60)} h.`;
-}
+import { Verificado } from "./Verificado";
 
 /**
  * 5.4 — faixa de ofertas (2 a 4; menos de 2 não renderiza). `<section>` + `<ul>`, um tab
@@ -82,7 +75,13 @@ export function ProductGridV1({
           </li>
         ))}
       </ul>
-      <span className="op-grid__foot">{footLine(list, servedAt)}</span>
+      <span className="op-grid__foot">
+        <Verificado
+          checkedAt={list.map((o) => o.checkedAt)}
+          inicial={gridFootLabel(list.map((o) => o.checkedAt), list[0]!.merchant, Date.parse(servedAt))}
+          grade={{ merchant: list[0]!.merchant }}
+        />
+      </span>
     </section>
   );
 }

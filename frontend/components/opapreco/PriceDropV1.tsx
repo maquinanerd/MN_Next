@@ -1,7 +1,7 @@
 import type { OfferData } from "@/lib/ads/types";
 import { formatBRL, hasValidPriceDrop } from "@/lib/ads/rules";
 import { OfferLink, type EstadoForcado } from "./OfferLink";
-import { CtaLabel, OfferImage, metaLine } from "./parts";
+import { CtaLabel, MetaLine, OfferImage } from "./parts";
 
 /**
  * 5.5 — só com queda comprovada (≥ 5%), no máximo um por página. A queda é dita por texto,
@@ -53,13 +53,15 @@ export function PriceDropV1({
           <span className="op-title op-clamp-2">{offer.productTitle}</span>
           <span className="op-drop__prices">
             <span>
-              de <s aria-label={`Preço anterior ${formatBRL(from)}`}>{formatBRL(from)}</s>
+              de <s>{formatBRL(from)}</s>
             </span>
             <span>
               por <span className="op-price">{formatBRL(offer.currentPrice)}</span>
             </span>
           </span>
-          <span className="op-meta">{metaLine(offer, servedAt)}</span>
+          <span className="op-meta">
+            <MetaLine offer={offer} servedAt={servedAt} />
+          </span>
           <span className="op-cta op-cta--primary">
             <CtaLabel label={offer.cta ?? "Conferir preço"} />
           </span>

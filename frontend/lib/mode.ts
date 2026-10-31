@@ -15,9 +15,25 @@ export function contentSource(): ContentSource {
   return process.env.MN_CONTENT_SOURCE === "cms" ? "cms" : "fixtures";
 }
 
+/**
+ * Endereço do ad server, só se for uma URL https válida. Configurado errado, os slots
+ * colapsam (falha silenciosa da spec §1.6) em vez de derrubar a página.
+ */
+export function adServerUrl(): URL | null {
+  const raw = process.env.OPAPRECO_AD_SERVER_URL;
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 export function adsSource(): AdsSource {
   if (process.env.OPAPRECO_MODE === "off") return "off";
-  return process.env.OPAPRECO_AD_SERVER_URL ? "live" : "fixtures";
+  if (!process.env.OPAPRECO_AD_SERVER_URL) return "fixtures";
+  return adServerUrl() ? "live" : "off";
 }
 
 export function isDemo(): boolean {

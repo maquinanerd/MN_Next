@@ -1,6 +1,6 @@
 import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
-import { adsSource } from "../mode";
+import { adServerUrl, adsSource } from "../mode";
 import { SITE } from "../site";
 import { fixtureResponse } from "./fixtures";
 import { resolveResponse } from "./rules";
@@ -15,7 +15,7 @@ function logEmpty(slot: SlotId, reason: string): void {
   console.warn(JSON.stringify({ evt: "opapreco_slot_vazio", slot, reason }));
 }
 
-async function fetchLive(base: string, slot: SlotId, ctx: SlotContext, now: () => number): Promise<AdResult> {
+async function fetchLive(base: URL, slot: SlotId, ctx: SlotContext, now: () => number): Promise<AdResult> {
   const url = new URL("/v1/ad", base);
   url.searchParams.set("publisher", process.env.OPAPRECO_PUBLISHER ?? "maquinanerd");
   url.searchParams.set("slot", SLOTS[slot].server);
@@ -43,27 +43,43 @@ async function fetchLive(base: string, slot: SlotId, ctx: SlotContext, now: () =
 }
 
 /**
+ * No máximo um price_drop_v1 por página (spec §6): só a posição article-drop o exibe; nas
+ * outras, a mesma oferta vira product_card_v1.
+ */
+function umaQuedaPorPagina(slot: SlotId, result: AdResult): AdResult {
+  if (result.status !== 200 || result.render.component !== "price_drop_v1" || slot === "article-drop") return result;
+  return { ...result, render: { component: "product_card_v1", offer: result.render.offer } };
+}
+
+/**
  * Pede ao ad server o anúncio de uma posição e devolve o resultado já filtrado pelas
  * regras (lib/ads/rules.ts). Erro, timeout de 1,5 s, corpo fora do contrato ou 204 viram
  * `{ status: 204 }`: o slot colapsa sem mensagem.
  *
  * A resposta fica em cache por alguns minutos por posição e contexto (o anúncio é
- * contextual, não pessoal), o que mantém as páginas estáticas e o "verificado há X min"
- * coerente com o instante em que foi montado. A impressão é contada no cliente.
+ * contextual, não pessoal), o que mantém as páginas estáticas. A impressão é contada e o
+ * "verificado há X min" é recalculado no navegador.
  */
 export async function fetchSlot(slot: SlotId, ctx: SlotContext): Promise<AdResult> {
   "use cache";
-  cacheLife("minutes");
+  // Revalida a cada minuto e nunca serve uma resposta com mais de 15 min: o rótulo
+  // "verificado há X min" é recalculado no navegador, mas o anúncio em si não envelhece muito.
+  // `stale` fica em 5 min de propósito: abaixo disso o Next 16 tira o slot do HTML estático
+  // (vira esqueleto + streaming) e a troca empurra o layout.
+  cacheLife({ stale: 300, revalidate: 60, expire: 900 });
   cacheTag("opapreco", `opapreco:${slot}`);
   const source = adsSource();
-  if (source === "off") return { status: 204 };
+  if (source === "off") {
+    if (process.env.OPAPRECO_AD_SERVER_URL && !adServerUrl()) logEmpty(slot, "url_do_ad_server_invalida");
+    return { status: 204 };
+  }
   if (source === "fixtures") {
     const now = Date.now();
     const raw = fixtureResponse(slot, ctx, now);
     if (raw === null) return { status: 204 };
-    const result = resolveResponse(raw, now);
+    const result = umaQuedaPorPagina(slot, resolveResponse(raw, now));
     // Demonstração não conta impressão.
     return result.status === 200 ? { ...result, impressionUrl: undefined } : result;
   }
-  return fetchLive(process.env.OPAPRECO_AD_SERVER_URL!, slot, ctx, () => Date.now());
+  return umaQuedaPorPagina(slot, await fetchLive(adServerUrl()!, slot, ctx, () => Date.now()));
 }

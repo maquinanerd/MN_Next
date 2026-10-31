@@ -25,8 +25,9 @@ export function placeInlineSlots(blocos: Bloco[], layout: Layout): Map<number, S
     paragrafos.push({ index, numero: n, candidato: !!next && (next.tipo === "paragrafo" || next.tipo === "subtitulo") });
   });
 
+  // O contextual precisa de texto depois dele: com o 2º parágrafo no fim, não entra.
   const segundo = paragrafos.find((p) => p.numero === 2);
-  if (!segundo) return out;
+  if (!segundo || !blocos[segundo.index + 1]) return out;
   out.set(segundo.index, "article-inline-01");
 
   let ultimo = 2;

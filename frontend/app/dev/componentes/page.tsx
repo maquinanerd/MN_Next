@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { isDemo } from "@/lib/mode";
 import type { ReactNode } from "react";
 import { BigCard } from "@/components/cards/BigCard";
 import { OverlayCard } from "@/components/cards/OverlayCard";
@@ -28,6 +30,8 @@ function Bloco({ titulo, children }: { titulo: string; children: ReactNode }) {
 }
 
 export default async function ComponentesPage() {
+  // Vitrine interna: com CMS e ad server ligados, não existe em produção.
+  if (!isDemo()) notFound();
   const home = await getHome();
   const feed = await getFeed(1);
   const { agora } = home;

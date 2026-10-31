@@ -64,7 +64,18 @@ export function newsArticleLd(m: Materia, path: string) {
   };
 }
 
-/** `<script type="application/ld+json">` seguro: escapa `<` para não fechar a tag. */
+const ESCAPES: Record<string, string> = {
+  "<": "\\u003c",
+  ">": "\\u003e",
+  "&": "\\u0026",
+  "\u2028": "\\u2028",
+  "\u2029": "\\u2029",
+};
+
+/**
+ * `<script type="application/ld+json">` seguro: `<`, `>` e `&` viram escapes Unicode, então
+ * um título vindo do CMS com `</script>` não fecha a tag; U+2028/U+2029 também.
+ */
 export function jsonLdScript(data: unknown): { __html: string } {
-  return { __html: JSON.stringify(data).replace(/</g, "\u003c") };
+  return { __html: JSON.stringify(data).replace(/[<>&\u2028\u2029]/g, (c) => ESCAPES[c] ?? c) };
 }

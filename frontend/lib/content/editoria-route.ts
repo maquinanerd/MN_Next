@@ -8,7 +8,8 @@ import { assuntoBySlug, EDITORIA_SLUGS, getEditoria, slugify } from "./editorias
 
 export function parsePagina(n: string | undefined): number | null {
   if (n === undefined) return 1;
-  return /^\d+$/.test(n) && Number(n) >= 2 ? Number(n) : null;
+  // Só a forma canônica: /cinema/page/02 não é uma segunda URL da página 2.
+  return /^[1-9]\d*$/.test(n) && Number(n) >= 2 ? Number(n) : null;
 }
 
 export async function loadEditoria(slug: string, n?: string, assuntoSlug?: string) {

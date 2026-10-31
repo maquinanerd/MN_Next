@@ -45,6 +45,7 @@ describe("posição dos anúncios no corpo", () => {
 
   it("texto curto: só o que cabe", () => {
     expect(placeInlineSlots([p("1")], "padrao").size).toBe(0);
-    expect(Object.keys(positions([p("1"), p("2")], "padrao"))).toEqual(["article-inline-01"]);
+    expect(Object.keys(positions([p("1"), p("2")], "padrao"))).toEqual([]);
+    expect(Object.keys(positions([p("1"), p("2"), p("3")], "padrao"))).toEqual(["article-inline-01"]);
   });
 });

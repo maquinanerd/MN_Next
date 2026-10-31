@@ -66,13 +66,14 @@ export function Feed({
         {antesDaPaginacao}
         <Pagination atual={pagina} total={totalPaginas} base={base} cor={cor} textoSobreCor={textoSobreCor} />
       </div>
-      <aside aria-label="Ofertas" className="flex flex-col gap-6 self-stretch lt1024:hidden">
+      {/* Coluna só de layout (sem landmark): se os slots colapsarem, não sobra região vazia. */}
+      <div className="flex flex-col gap-6 self-stretch lt1024:hidden">
         <div className="sticky top-6 flex flex-col gap-6">
           {Array.from({ length: fixos }, (_, index) => (
             <OpaSlot key={index} id={sticky} ctx={{ ...ctx, index }} orientacao="narrow" />
           ))}
         </div>
-      </aside>
+      </div>
     </div>
   );
 }

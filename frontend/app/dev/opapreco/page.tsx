@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { isDemo } from "@/lib/mode";
 import { cacheLife } from "next/cache";
 import type { ReactNode } from "react";
 import { SiteFooter } from "@/components/layout/SiteFooter";
@@ -109,6 +111,8 @@ function Larguras({ children }: { children: (largura: number) => ReactNode }) {
 }
 
 export default async function OpaPrecoPage() {
+  // Vitrine interna: com CMS e ad server ligados, não existe em produção.
+  if (!isDemo()) notFound();
   const v = await vitrine();
   const { servedAt } = v;
   return (

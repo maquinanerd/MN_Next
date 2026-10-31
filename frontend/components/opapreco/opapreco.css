@@ -280,6 +280,21 @@
     flex-basis: 100%;
     height: 180px;
   }
+  /*
+   * "Preço verificado agora" cabe numa linha e "… há 12 min" pode quebrar em duas; como o
+   * rótulo é recalculado no navegador, as duas linhas ficam reservadas (sem salto de layout).
+   */
+  .op-card__foot .op-meta {
+    min-height: 32px;
+  }
+}
+/* Lateral estreita (coluna de 1/4 entre 1024 e ~1200px): o CTA quebra em vez de vazar do card. */
+@container (max-width: 259px) {
+  .op-card .op-cta {
+    white-space: normal;
+    text-align: center;
+    padding: 8px 12px;
+  }
 }
 
 /* ---- 5.2 product_compact_v1 ---- */
@@ -389,6 +404,10 @@
   color: var(--op-text-2);
   font-size: var(--op-fs-meta);
   line-height: 16px;
+}
+/* Linha de verificação recalculada no navegador: duas linhas reservadas. */
+.op-monitor > span:last-child {
+  min-height: 32px;
 }
 .op-monitor__title {
   display: flex;
@@ -670,6 +689,9 @@
 @container (max-width: 519px) {
   .op-ctx__row .op-cta {
     flex-basis: 100%;
+  }
+  .op-ctx__info .op-meta {
+    min-height: 32px;
   }
 }
 

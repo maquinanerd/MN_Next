@@ -7,6 +7,12 @@ import { z } from "zod";
  * sem prova passam pelo esquema e são tratados pelas regras (lib/ads/rules.ts), que
  * escondem o desconto ou devolvem 204 conforme a spec.
  */
+/** Só https: o ad server não pode mandar o leitor nem o navegador para http:, data: etc. */
+const httpsUrl = z
+  .string()
+  .url()
+  .refine((s) => s.startsWith("https://"), "precisa ser https");
+
 export const OfferSchema = z
   .object({
     offerId: z.string().min(1),
@@ -14,24 +20,24 @@ export const OfferSchema = z
     // URL absoluta do ad server; caminho local só nas fixtures de demonstração.
     productImage: z
       .string()
-      .refine((s) => s.startsWith("https://") || s.startsWith("http://") || s.startsWith("/"), "URL de imagem inválida")
+      .refine((s) => s.startsWith("https://") || s.startsWith("/"), "imagem precisa ser https")
       .nullable()
       .optional(),
     imageRatio: z.enum(["square", "vertical", "horizontal"]).optional(),
     currentPrice: z.number().positive(),
     referencePrice: z.number().positive().optional(),
-    discountPercent: z.number().int().min(0).max(100).optional(),
+    discountPercent: z.number().int().min(0).max(90).optional(),
     currency: z.literal("BRL").optional(),
     merchant: z.literal("Shopee"),
     isOfficialStore: z.boolean().optional(),
     checkedAt: z.string().datetime({ offset: true }),
-    href: z.string().url(),
+    href: httpsUrl,
     cta: z.string().max(28).optional(),
     ctaShort: z.string().max(14).optional(),
     eyebrow: z.enum(["Oferta verificada", "Menor preço recente", "Boa oportunidade"]).optional(),
     affiliateDisclosure: z.enum(["Link de afiliado", "Oferta afiliada", "Links de afiliado"]).optional(),
     priceDrop: z
-      .object({ from: z.number().positive(), percent: z.number().int().min(0), since: z.string().max(32).optional() })
+      .object({ from: z.number().positive(), percent: z.number().int().min(0).max(90), since: z.string().max(32).optional() })
       .strict()
       .optional(),
     historicalPrice: z.object({ lowest30d: z.number().positive().optional() }).strict().optional(),
@@ -61,11 +67,13 @@ const SingleProps = z.object({ offer: OfferSchema }).strict();
 const ContextualProps = z
   .object({ offer: OfferSchema, context: z.string().min(1).max(90), contextNote: z.string().max(140).optional() })
   .strict();
+// Cada oferta da grade é validada uma a uma nas regras: uma oferta fora do contrato sai,
+// as outras ficam.
 const GridProps = z
-  .object({ heading: z.string().max(48).optional(), offers: z.array(OfferSchema).min(2).max(4) })
+  .object({ heading: z.string().max(48).optional(), offers: z.array(z.unknown()).min(2).max(4) })
   .strict();
 
-const Tracking = z.object({ impressionUrl: z.string().url(), viewUrl: z.string().url().optional() });
+const Tracking = z.object({ impressionUrl: httpsUrl, viewUrl: httpsUrl.optional() });
 const Common = {
   requestId: z.string(),
   slot: z.enum(SERVER_SLOTS),
