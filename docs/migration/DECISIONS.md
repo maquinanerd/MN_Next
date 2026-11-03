@@ -1451,21 +1451,48 @@ reserva e o esqueleto do card. `viewports="desktop"` faz o script colapsar sem p
 1024 px, onde o portal esconde o invólucro, e é declarado no HTML porque o script pode rodar antes
 de o CSS valer. `--op-reserva` (`.mn-op-lateral`, `app/globals.css`) diz quanto reservar. O
 `?v=1.3` no endereço do script e da folha faz as páginas novas carregarem o arquivo que entende
-isso, sem esperar o cache de 1 h do Cloudflare e de 4 h do navegador.
+isso, sem esperar o cache de 1 h do Cloudflare e de 4 h do navegador. O valor novo só vale se ninguém
+pedir esse endereço antes de o OpaPreço estar no ar: um teste de acessibilidade sem o stub baixou
+`?v=1.3.0` às 15:37, antes do fim do deploy, e o Cloudflare guardou o arquivo antigo nele. Por isso o
+valor publicado é `?v=1.3`, e o teste agora passa pelo stub.
 
-**Por que a reserva não é a altura do card.** O card é mais alto que o vão embaixo da lista (257 px
-em 1440, 66 px em 1024), então, com anúncio, a abertura cresce: 181 px em 1440 e ~404 px em 1024. É
+**Por que a reserva não é a altura do card.** O card é mais alto que o vão embaixo da lista (~265 px
+em 1440, ~76 px em 1024), então, com anúncio, a abertura cresce: 173 px em 1440 e 396 px em 1024. É
 isso que move a página, e só conta como deslocamento o que está na tela. Reservar o card inteiro zera
-o caso com anúncio, mas um 204 puxa a página de volta os 404 px: em 1024×900, CLS ~0,047. Não reservar
-nada troca os dois casos de lugar. Por isso a reserva fica entre os dois: 200 px até 1279, 300 px até
-1439 e 350 px daí em diante. Isso basta para tirar da tela o que vem depois da abertura antes de o
-anúncio chegar, e é pouco para um 204 mover muito. O valor depende da altura da janela: numa janela
-de 1024 de largura muito alta (iPad Pro em pé, 1024×1366), nenhuma reserva fica abaixo de 0,02, porque
-a seguinte aparece inteira na tela.
+o caso com anúncio, mas um 204 puxa a página de volta os 396 px: em 1024×900, a conta dá CLS ~0,04.
+Não reservar nada troca os dois casos de lugar. Por isso a reserva fica entre os dois: 200 px até
+1279, 300 px até 1439 e 350 px daí em diante. Isso basta para tirar da tela o que vem depois da
+abertura antes de o anúncio chegar, e é pouco para um 204 mover muito. O valor depende da altura da
+janela: em 1024×1366 (iPad Pro em pé), a seguinte aparece inteira na tela e o CLS passa de 0,02.
+
+**Medido em produção em 03/11/2026**, depois do deploy (portal `c7072bc`, OpaPreço `d96e284`).
+Chromium pelo Playwright, sem clique, com o beacon de impressão respondido localmente, para a medição
+não contar impressão. "Com anúncio" usa as respostas reais do OpaPreço; "sem oferta" responde 204 a
+`/v1/ads/serve` no navegador, com o portal, o script e a folha reais. `/games` deu os mesmos números de
+`/cinema`. Em todas as janelas de desktop, os slots ficaram em `pronto` com o card, e nenhuma oferta se
+repetiu, contando o `sidebar`.
+
+| Janela    | Home, com anúncio | Home, sem oferta | `/cinema`, com anúncio | `/cinema`, sem oferta |
+| --------- | ----------------- | ---------------- | ---------------------- | --------------------- |
+| 1920×1080 | 0,0021            | 0,0029           | 0,0005                 | 0,0017                |
+| 1440×1000 | 0,0009            | 0,0052           | 0,0000                 | 0,0019                |
+| 1440×900  | 0,0000            | 0,0013           | 0,0000                 | 0,0010                |
+| 1366×768  | 0,0000            | 0,0010           | 0,0000                 | 0,0006                |
+| 1280×800  | 0,0000            | 0,0011           | 0,0000                 | 0,0008                |
+| 1024×900  | 0,0000            | 0,0091           | 0,0000                 | 0,0025                |
+| 1024×768  | 0,0000            | 0,0008           | 0,0000                 | 0,0004                |
+| 1024×1366 | **0,0581**        | **0,0314**       | **0,0486**             | **0,0272**            |
+
+Em 1023×800, 768×1024 e 390×844, na home, em `/cinema` e em `/games`: nenhum pedido a
+`/v1/ads/serve` (nem o do `sidebar`), slot em `colapsado`, invólucro escondido, CLS 0. Matéria, em 1440
+e 390: três slots, todos em `pronto`, sem repetição, CLS 0. Na Cinerie, em 1440 e 390, as três grades
+da página inicial ficam em `pronto`, com altura e CLS iguais com o script antigo e o novo.
 
 **Consequências que ficam.** Com anúncio, a coluna lateral é mais alta que a manchete e os cards, e
-sobra um vão embaixo dos cards da esquerda (~181 px em 1440, ~404 px em 1024). É o card pedido numa
-coluna estreita; só um formato menor resolveria. Sem oferta, a coluna fica como antes, com o vão à
+sobra um vão embaixo dos cards da esquerda: na abertura, 173 px em 1440, 281 px em 1280 e 396 px em
+1024; ao lado de "Últimas de Quadrinhos", 243, 351 e 466 px. É o card pedido numa coluna estreita, de
+438 a 472 px. Esticar os cards da esquerda fecharia o vão, mas move a manchete quando o anúncio chega ou
+falta, e o CLS passa de 0,02. Só um formato mais baixo resolve. Sem oferta, a coluna fica como antes, com o vão à
 direita. Se o script falhar e a folha carregar, a reserva fica vazia, como em todo slot do portal. O
 `sidebar` das editorias agora leva a mesma `section` do `listing-01`: o OpaPreço calcula o ranking
 da página uma vez para todos os slots, com o contexto de quem pede primeiro.
