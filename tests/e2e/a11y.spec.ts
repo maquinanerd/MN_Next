@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 
-import { expect, test } from './opapreco';
+import { expect, stubOpaPreco, test } from './opapreco';
 
 /**
  * Accessibility gate. @a11y
@@ -177,6 +177,9 @@ test.describe('@a11y touch targets', () => {
 test.describe('@a11y motion', () => {
   test('reduced motion switches off the nav transition', async ({ browser }) => {
     const context = await browser.newContext({ reducedMotion: 'reduce' });
+    // Um contexto criado aqui não passa pelo fixture automático: sem isto, o teste baixa o
+    // script real do OpaPreço, e um `?v=` novo fica no Cloudflare com a versão de antes do deploy.
+    await stubOpaPreco(context);
     const page = await context.newPage();
     await page.goto('/cinema');
     const duration = await page
