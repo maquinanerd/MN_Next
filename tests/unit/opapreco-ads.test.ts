@@ -86,6 +86,15 @@ describe('OpaPrecoAd', () => {
     );
   });
 
+  it('diz ao script o template cadastrado e onde o slot aparece, quando precisa', () => {
+    withEnv({});
+    const html = render({ slot: 'home-01', template: 'product_card_v1', viewports: 'desktop' });
+    expect(html).toBe(
+      '<div class="mn-op"><op-slot slot-key="home-01" site-key="maquina-nerd" endpoint="https://opapreco.com.br" ' +
+        'template="product_card_v1" viewports="desktop"></op-slot></div>',
+    );
+  });
+
   it('não envolve o slot em link, nem leva nada do leitor', () => {
     withEnv({});
     const html = render({ slot: 'article-top', contexto: { secao: 'cinema', conteudo: '1' } });

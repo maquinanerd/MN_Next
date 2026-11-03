@@ -6,6 +6,7 @@ import {
   cx,
   opaPrecoEnabled,
   type Chamada,
+  type ContextoDoAnuncio,
   type Paginacao,
 } from '@mn/ui';
 
@@ -30,6 +31,7 @@ export function FeedSection({
   tituloMb = 'mb-28',
   as = 'h2',
   vazio,
+  anuncio,
 }: {
   titulo: { forte: string; fraco?: string };
   itens: Chamada[];
@@ -41,6 +43,12 @@ export function FeedSection({
   tituloMb?: 'mb-28' | 'mb-8';
   as?: 'h1' | 'h2';
   vazio?: React.ReactNode;
+  /**
+   * What the `sidebar` tells OpaPreço about the page. OpaPreço ranks a page once for all its
+   * slots, from whichever slot asks first: where another slot says the section, this one
+   * has to say it too, or the ranking depends on which request arrives first.
+   */
+  anuncio?: ContextoDoAnuncio;
 }) {
   const TitleTag = as === 'h1' ? 'h1' : 'h2';
   const lateral = opaPrecoEnabled();
@@ -72,7 +80,7 @@ export function FeedSection({
         </div>
         {lateral ? (
           <div className="hidden min-[1024px]:sticky min-[1024px]:top-24 min-[1024px]:block">
-            <OpaPrecoAd slot="sidebar" />
+            <OpaPrecoAd slot="sidebar" {...(anuncio ? { contexto: anuncio } : {})} />
           </div>
         ) : null}
       </div>

@@ -11,8 +11,8 @@ import { test as base, type BrowserContext } from '@playwright/test';
  * `test` from this file):
  *
  *  - the script and the stylesheet are the copies in `fixtures/opapreco-ads/`, taken from
- *    production on 31/10/2026, so the reserved heights the screenshots show do not move
- *    when OpaPreço ships a new build;
+ *    production on 03/11/2026 (contract v1.3.0), so the reserved heights the screenshots
+ *    show do not move when OpaPreço ships a new build;
  *  - `/v1/ads/serve` answers 204 (`no_candidates`) by default: every slot collapses, the
  *    deterministic state the visual baselines and the layout tests rest on. A test that
  *    wants ads sets `opapreco.mode = 'ads'` and gets real-shaped responses, one component
@@ -29,7 +29,7 @@ const SCRIPT = readFileSync(path.join(FIXTURES, 'opapreco-ads.js'));
 const STYLESHEET = readFileSync(path.join(FIXTURES, 'opapreco-ads.css'));
 const PHOTO = readFileSync(path.join(__dirname, '..', '..', 'public', 'fixtures', 'cover-01.jpg'));
 
-/** The body of `POST /v1/ads/serve` (OpaPreço contract v1.1.0). */
+/** The body of `POST /v1/ads/serve` (OpaPreço contract v1.3.0). */
 export interface AdRequest {
   siteKey: string;
   slotKey: string;
@@ -112,10 +112,10 @@ export async function stubOpaPreco(context: BrowserContext): Promise<OpaPrecoStu
   // Registered first, so it only answers what the routes below do not: nothing else on
   // OpaPreço's origin may reach the network.
   await context.route(`${OPAPRECO}/**`, (route) => route.fulfill({ status: 404, headers: cors }));
-  await context.route(`${OPAPRECO}/v1/ads/sdk/opapreco-ads.js`, (route) =>
+  await context.route(`${OPAPRECO}/v1/ads/sdk/opapreco-ads.js*`, (route) =>
     route.fulfill({ status: 200, contentType: 'text/javascript; charset=utf-8', body: SCRIPT, headers: cors }),
   );
-  await context.route(`${OPAPRECO}/v1/ads/sdk/opapreco-ads.css`, (route) =>
+  await context.route(`${OPAPRECO}/v1/ads/sdk/opapreco-ads.css*`, (route) =>
     route.fulfill({ status: 200, contentType: 'text/css; charset=utf-8', body: STYLESHEET, headers: cors }),
   );
   await context.route(`${OPAPRECO}/media/**`, (route) =>

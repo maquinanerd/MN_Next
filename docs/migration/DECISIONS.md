@@ -1437,30 +1437,46 @@ artigo com faixa própria, e o portal usa três: `home-01` (lateral da abertura 
 `section=<slug>`). O componente é `AnuncioDaLateral` (`components/Opening.tsx`): só aparece a
 partir de 1024 px, com `mt-24` que some quando o slot colapsa (`.mn-op`).
 
-Enquanto o script publicado for o v1.1.0, as três chaves fecham na hora, sem pedido e sem
-vão. O anúncio aparece sem deploy do portal quando (1) o OpaPreço publicar o v1.2.0 e (2) o
-site `maquina-nerd` tiver `home-01`, `home-02` e `listing-01` cadastrados no painel, com
-`product_card_v1`, o mesmo card do `sidebar`. Duas consequências conhecidas, ambas do lado do
-OpaPreço: o v1.2.0 reserva a altura da grade (372 px) nessas chaves até o card ser desenhado,
-e depois a coluna encolhe uns 40 px; e fora da tabela o servidor não tem a regra "só desktop"
-do `sidebar`, então abaixo de 1024 px o pedido sai para um invólucro escondido. Com o card
-(vertical, ~330 px numa coluna de 250 px), a coluna lateral fica mais alta que a manchete com
-os três cards, e a seção cresce uns 100 a 150 px no desktop: o vão sai da direita e fica,
-menor, embaixo dos cards da esquerda.
+**No ar em 03/11/2026: o contrato v1.3.0 do OpaPreço.** O v1.2.0 foi publicado em 03/11 (PR #144 de
+lá) e, em vez de fechar as três chaves, passou a reservá-las. O OpaPreço não tinha como saber do
+card: `home-*` e `listing-*` são grade na Cinerie. Numa coluna estreita, o script reservava 682 px
+e desenhava o esqueleto da grade, muito mais alto que isso, antes de colapsar. Os ~40 px e ~136 px
+previstos em 31/10 estavam errados, porque contavam um card de ~330 px e a reserva de 372 px da
+folha. Medido em 03/11, o `sidebar` tem 438 px na coluna de 292 px (1440) e 470 px na de 188 px
+(1024).
 
-**Antes de cadastrar os três slots no painel do OpaPreço.** A coluna lateral passa a ditar a
-altura da abertura, que está na primeira dobra. Se o v1.2.0 reservar a grade (372 px) e o
-pedido voltar 204, a seção encolhe ~136 px depois de pintada, e tudo abaixo sobe. Com anúncio,
-encolhe ~40 px. Isso é CLS na primeira dobra, que nos slots de artigo não existe com anúncio
-(§7.29). A cópia do script em `tests/e2e/fixtures/opapreco-ads/` é a v1.1.0 e não mede isso.
-Para ligar: trocar a cópia pela v1.2.0 publicada e medir a altura da abertura, com anúncio e
-com 204. Se o deslocamento passar de 0,02, há duas saídas. A primeira é o OpaPreço reservar
-nessas chaves a altura do card. A segunda é o cadastro usar um formato que caiba no vão.
-"close without a request while the script does not know them" (`tests/e2e/opapreco.spec.ts`)
-garante que, até lá, as chaves fecham sem pedido.
+O cadastro foi por migração (0035 do OpaPreço), com `product_card_v1`, o card do `sidebar`, só no
+site `maquina-nerd`. O slot passou a dizer ao script o que a chave não diz. `template` escolhe a
+reserva e o esqueleto do card. `viewports="desktop"` faz o script colapsar sem pedir abaixo de
+1024 px, onde o portal esconde o invólucro, e é declarado no HTML porque o script pode rodar antes
+de o CSS valer. `--op-reserva` (`.mn-op-lateral`, `app/globals.css`) diz quanto reservar. O
+`?v=1.3` no endereço do script e da folha faz as páginas novas carregarem o arquivo que entende
+isso, sem esperar o cache de 1 h do Cloudflare e de 4 h do navegador.
+
+**Por que a reserva não é a altura do card.** O card é mais alto que o vão embaixo da lista (257 px
+em 1440, 66 px em 1024), então, com anúncio, a abertura cresce: 181 px em 1440 e ~404 px em 1024. É
+isso que move a página, e só conta como deslocamento o que está na tela. Reservar o card inteiro zera
+o caso com anúncio, mas um 204 puxa a página de volta os 404 px: em 1024×900, CLS ~0,047. Não reservar
+nada troca os dois casos de lugar. Por isso a reserva fica entre os dois: 200 px até 1279, 300 px até
+1439 e 350 px daí em diante. Isso basta para tirar da tela o que vem depois da abertura antes de o
+anúncio chegar, e é pouco para um 204 mover muito. O valor depende da altura da janela: numa janela
+de 1024 de largura muito alta (iPad Pro em pé, 1024×1366), nenhuma reserva fica abaixo de 0,02, porque
+a seguinte aparece inteira na tela.
+
+**Consequências que ficam.** Com anúncio, a coluna lateral é mais alta que a manchete e os cards, e
+sobra um vão embaixo dos cards da esquerda (~181 px em 1440, ~404 px em 1024). É o card pedido numa
+coluna estreita; só um formato menor resolveria. Sem oferta, a coluna fica como antes, com o vão à
+direita. Se o script falhar e a folha carregar, a reserva fica vazia, como em todo slot do portal. O
+`sidebar` das editorias agora leva a mesma `section` do `listing-01`: o OpaPreço calcula o ranking
+da página uma vez para todos os slots, com o contexto de quem pede primeiro.
 
 **Revisão (2026-10-31).** O Codex CLI recusou todos os modelos com o login atual (conta
 ChatGPT: "not supported when using Codex with a ChatGPT account"). A revisão foi feita por um
 agente separado, só leitura, sobre os dois diffs. Dela vieram a proteção da página 2 contra
 repetição, o invólucro de "Últimas de Quadrinhos" só com a lista (vazio, somava um espaço no
 celular), o comentário sobre 761–1023 px, os testes mais fortes e a condição acima.
+
+**Revisão (2026-11-03).** O Codex CLI continua recusando os modelos com esse login, então a revisão
+foi de novo por um agente separado, só leitura, sobre os dois diffs. Dela vieram as três chaves no
+seed do OpaPreço (a suíte apaga o banco, e os testes novos falhariam), a regra de que a trava contra
+oferta repetida ignora slot vencido e tenta de novo em 60 s, e a medição em mais tamanhos de janela.

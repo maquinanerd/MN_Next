@@ -26,6 +26,9 @@
 
 export const OPAPRECO_SITE_KEY = 'maquina-nerd';
 
+/** The OpaPreço contract the slots below rely on (`template`, `viewports`, `--op-reserva`). */
+export const OPAPRECO_SDK_VERSION = '1.3';
+
 const DEFAULT_ENDPOINT = 'https://opapreco.com.br';
 
 /** Where a Shopee product photo lives when OpaPreço has not mirrored it. */
@@ -39,9 +42,10 @@ const SHOPEE_IMAGES = 'https://cf.shopee.com.br';
  * never show the same offer — and one slot used twice would. The side columns of the list
  * pages therefore take slots of their own besides `sidebar` (beside "Mais do Máquina
  * Nerd"): `home-01` under the home opening's side list, `home-02` under "Últimas de
- * Quadrinhos", `listing-01` under an editoria opening's side list. Those three come with
- * OpaPreço's contract v1.2.0, which serves each the template registered for it in
- * OpaPreço's panel; until the script knows them they collapse at once, without a request.
+ * Quadrinhos", `listing-01` under an editoria opening's side list. Those three are
+ * registered for this site with `product_card_v1`, the `sidebar` card, while the same keys
+ * are grids elsewhere; so the slot says so in `template`, and says in `viewports` that it
+ * only shows on a desktop (`AnuncioDaLateral`, DECISIONS §7.30).
  */
 export const OPAPRECO_SLOTS = [
   'article-top',
