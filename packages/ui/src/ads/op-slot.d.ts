@@ -16,6 +16,10 @@ declare module 'react' {
         /** Comma-separated tag slugs. */
         tags?: string;
         'content-id'?: string;
+        /** The template registered for the slot in OpaPreço, when it is not the key's default. */
+        template?: 'product_card_v1';
+        /** Where the slot shows: OpaPreço's script asks for no ad anywhere else. */
+        viewports?: 'desktop';
       };
     }
   }

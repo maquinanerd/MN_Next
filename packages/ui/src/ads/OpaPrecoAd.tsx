@@ -31,10 +31,16 @@ import {
 export function OpaPrecoAd({
   slot,
   contexto,
+  template,
+  viewports,
   className,
 }: {
   slot: OpaPrecoSlot;
   contexto?: ContextoDoAnuncio;
+  /** The template registered for this slot, when it is not the key's default. */
+  template?: 'product_card_v1';
+  /** Where this slot shows. Anywhere else, OpaPreço's script asks for no ad. */
+  viewports?: 'desktop';
   className?: string;
 }) {
   if (!opaPrecoEnabled()) return null;
@@ -50,6 +56,8 @@ export function OpaPrecoAd({
         {...(contexto?.secao ? { section: contexto.secao } : {})}
         {...(tags ? { tags } : {})}
         {...(contexto?.conteudo ? { 'content-id': contexto.conteudo } : {})}
+        {...(template ? { template } : {})}
+        {...(viewports ? { viewports } : {})}
       />
     </div>
   );

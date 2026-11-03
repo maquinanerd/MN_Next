@@ -109,6 +109,7 @@ export function EditoriaPage({ view, page }: { view: EditoriaView; page: number 
           cor={editoria.corFundoTexto}
           textoSobreCor={editoria.textoSobreCor}
           now={now}
+          anuncio={{ secao: category.slug }}
           vazio={
             view.abertura?.manchete ? null : (
               <EmptyState

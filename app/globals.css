@@ -116,6 +116,28 @@
   margin: 0;
 }
 
+/*
+ * The side-column slots (AnuncioDaLateral), which OpaPreço's stylesheet and script reserve
+ * by this variable. The card is taller than the room under the side list, so an ad makes
+ * the opening taller, and that opening is in the first fold. Reserving the whole card would
+ * make a 204 pull the page up by all of it; reserving nothing would make an ad push it
+ * down. These heights sit between the two: enough to take what follows off the screen
+ * before the ad lands, little enough for a 204 to stay small. Measured in DECISIONS §7.30.
+ */
+.mn-op-lateral {
+  --op-reserva: 200px;
+}
+@media (min-width: 1280px) {
+  .mn-op-lateral {
+    --op-reserva: 300px;
+  }
+}
+@media (min-width: 1440px) {
+  .mn-op-lateral {
+    --op-reserva: 350px;
+  }
+}
+
 /* Institutional prose: the article's reading measure and headings, nothing more. */
 .mn-prose {
   font-size: 16px;

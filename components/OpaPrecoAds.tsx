@@ -1,6 +1,6 @@
 import Script from 'next/script';
 import { preconnect } from 'react-dom';
-import { OPAPRECO_SITE_KEY, opaPrecoEnabled, opaPrecoEndpoint } from '@mn/ui/ads/opapreco';
+import { OPAPRECO_SDK_VERSION, OPAPRECO_SITE_KEY, opaPrecoEnabled, opaPrecoEndpoint } from '@mn/ui/ads/opapreco';
 
 /**
  * OpaPreço Ads' script and stylesheet, once for the whole site (root layout).
@@ -17,6 +17,9 @@ import { OPAPRECO_SITE_KEY, opaPrecoEnabled, opaPrecoEndpoint } from '@mn/ui/ads
  *  - The ad request is a credential-less CORS fetch, which cannot reuse the stylesheet's
  *    connection; `preconnect` opens the anonymous one early, inside the 1.5 s the slot
  *    gives the server before it collapses.
+ *  - `?v=` names the contract the portal's slots rely on. OpaPreço's address does not
+ *    change between versions and Cloudflare keeps it for an hour, the browser for four: a
+ *    new value makes pages with the new slots load the file that understands them.
  *
  * Renders nothing when `NEXT_PUBLIC_OPAPRECO_ADS_ENABLED=false`.
  */
@@ -27,11 +30,15 @@ export function OpaPrecoAds() {
 
   return (
     <>
-      <link rel="stylesheet" href={`${endpoint}/v1/ads/sdk/opapreco-ads.css`} precedence="default" />
+      <link
+        rel="stylesheet"
+        href={`${endpoint}/v1/ads/sdk/opapreco-ads.css?v=${OPAPRECO_SDK_VERSION}`}
+        precedence="default"
+      />
       <Script
         id="opapreco-ads"
         strategy="afterInteractive"
-        src={`${endpoint}/v1/ads/sdk/opapreco-ads.js`}
+        src={`${endpoint}/v1/ads/sdk/opapreco-ads.js?v=${OPAPRECO_SDK_VERSION}`}
         data-endpoint={endpoint}
         data-site-key={OPAPRECO_SITE_KEY}
       />

@@ -13,11 +13,21 @@ export interface AnuncioLateral {
  * 300×250 was: the side list is shorter than the lead and its cards, and the column under
  * it would otherwise stay empty. From 1024px only, OpaPreço's desktop, like the `sidebar`
  * card: on a phone the side list sits under the lead, and between 761 and 1023px the
- * column is too narrow for the card. A slot with no offer collapses and gives the margin
- * back (`.mn-op`).
+ * column is too narrow for the card. `viewports` keeps OpaPreço's script from asking for an
+ * ad there, and `template` makes it wait with the card's skeleton, not the grid's these keys
+ * have by default. How much room the slot holds while it waits is `.mn-op-lateral` in
+ * globals.css. A slot with no offer collapses and gives the margin back (`.mn-op`).
  */
 export function AnuncioDaLateral({ slot, contexto }: AnuncioLateral) {
-  return <OpaPrecoAd slot={slot} {...(contexto ? { contexto } : {})} className="mt-24 hidden min-[1024px]:block" />;
+  return (
+    <OpaPrecoAd
+      slot={slot}
+      {...(contexto ? { contexto } : {})}
+      template="product_card_v1"
+      viewports="desktop"
+      className="mn-op-lateral mt-24 hidden min-[1024px]:block"
+    />
+  );
 }
 
 /**

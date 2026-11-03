@@ -355,7 +355,7 @@ test.describe('advertising reserves its space', () => {
   test("every article slot has its height before OpaPreço's script runs", async ({ page, context }) => {
     // Without the script, what is measured is what OpaPreço's stylesheet reserves from the
     // server HTML alone — the space an ad lands in without moving the text.
-    await context.route(`${OPAPRECO}/v1/ads/sdk/opapreco-ads.js`, (route) => route.abort());
+    await context.route(`${OPAPRECO}/v1/ads/sdk/opapreco-ads.js*`, (route) => route.abort());
     await page.goto(STANDARD);
     const boxes = await page.locator('op-slot').evaluateAll((els) =>
       els.map((el) => ({

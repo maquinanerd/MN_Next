@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 
-import { expect, test } from './opapreco';
+import { expect, OPAPRECO, test } from './opapreco';
 
 /**
  * OpaPreço Ads on the portal, with real-shaped ads (`opapreco.ts` answers for the origin).
@@ -203,21 +203,102 @@ test.describe('the sidebar slot', () => {
 });
 
 test.describe('the side-list slots', () => {
-  // `home-01`, `home-02` and `listing-01` come with OpaPreço's contract v1.2.0. The script
-  // published today (the copy in fixtures/) does not know them: they must close at once,
-  // margin and all, without asking OpaPreço for anything (DECISIONS §7.30).
-  test('close without a request while the script does not know them', async ({ page, opapreco }) => {
-    for (const [path, keys] of [
-      ['/', ['home-01', 'home-02']],
-      ['/cinema', ['listing-01']],
-    ] as const) {
+  // `home-01`, `home-02` and `listing-01` take the `sidebar` card in OpaPreço's registry, in
+  // a column that only shows from 1024px (DECISIONS §7.30).
+  const SIDE_SLOTS = [
+    ['/', ['home-01', 'home-02']],
+    ['/cinema', ['listing-01']],
+  ] as const;
+
+  test('fill with the card on a desktop, and ask for nothing below it', async ({ page, opapreco }) => {
+    const desktop = viewportOf(page) === 'desktop';
+    for (const [path, keys] of SIDE_SLOTS) {
+      await page.goto(path);
+      for (const key of keys) {
+        const slot = page.locator(`op-slot[slot-key="${key}"]`);
+        await expect(slot).toHaveAttribute('template', 'product_card_v1');
+        await expect(slot).toHaveAttribute('viewports', 'desktop');
+        await expect(slot).toHaveAttribute('data-op-estado', desktop ? 'pronto' : 'colapsado');
+        if (desktop) await expect(slot.locator('.op-card')).toHaveCount(1);
+        else await expect(slot).toHaveText('');
+      }
+    }
+    const asked = opapreco.requests.map((r) => r.body.slotKey);
+    for (const key of ['home-01', 'home-02', 'listing-01']) {
+      expect(asked.filter((k) => k === key).length, key).toBe(desktop ? 1 : 0);
+    }
+  });
+
+  test('the card fits its column, at any desktop width', async ({ page }) => {
+    test.skip(viewportOf(page) !== 'desktop', 'the column only shows from 1024px');
+    await page.goto('/');
+    const slot = page.locator('op-slot[slot-key="home-01"]');
+    await expect(slot).toHaveAttribute('data-op-estado', 'pronto');
+    const box = await slot.evaluate((el) => {
+      const card = el.querySelector('.op-card')?.getBoundingClientRect();
+      const right = Math.max(...[...el.querySelectorAll('.op-card *')].map((c) => c.getBoundingClientRect().right));
+      return { cardRight: card?.right ?? 0, right, column: el.parentElement?.getBoundingClientRect().right ?? 0 };
+    });
+    expect(box.right).toBeLessThanOrEqual(box.cardRight);
+    expect(box.cardRight).toBeLessThanOrEqual(box.column + 0.5);
+  });
+
+  test('hold the room the column sets, from the server HTML', async ({ page, context }) => {
+    // Without the script, what is measured is the stylesheet with `--op-reserva` alone.
+    await context.route(`${OPAPRECO}/v1/ads/sdk/opapreco-ads.js*`, (route) => route.abort());
+    await page.goto('/');
+    const width = page.viewportSize()?.width ?? 0;
+    const height = await page
+      .locator('op-slot[slot-key="home-01"]')
+      .evaluate((el) => el.getBoundingClientRect().height);
+    expect(height).toBe(width < 1024 ? 0 : width < 1280 ? 200 : width < 1440 ? 300 : 350);
+  });
+
+  test('a slot with no offer closes up, and takes its margin with it', async ({ page, opapreco }) => {
+    opapreco.mode = 'empty';
+    for (const [path, keys] of SIDE_SLOTS) {
       await page.goto(path);
       for (const key of keys) {
         await expect(page.locator(`op-slot[slot-key="${key}"]`)).toHaveAttribute('data-op-estado', 'colapsado');
-        await expect(page.locator(`.mn-op:has(> op-slot[slot-key="${key}"])`)).toHaveCSS('margin-top', '0px');
+        const box = page.locator(`.mn-op:has(> op-slot[slot-key="${key}"])`);
+        await expect(box).toHaveCSS('margin-top', '0px');
+        await expect.poll(() => box.evaluate((el) => el.getBoundingClientRect().height)).toBe(0);
       }
     }
-    const keys = new Set(opapreco.requests.map((r) => r.body.slotKey));
-    for (const key of ['home-01', 'home-02', 'listing-01']) expect(keys.has(key)).toBe(false);
   });
+
+  for (const mode of ['ads', 'empty'] as const) {
+    test(`the opening stays put with ${mode === 'ads' ? 'an ad' : 'no offer'}`, async ({ page, opapreco }) => {
+      test.skip(viewportOf(page) !== 'desktop', 'the column only shows from 1024px');
+      opapreco.mode = mode;
+      await page.addInitScript(() => {
+        const self = window as unknown as { shift: number };
+        self.shift = 0;
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries() as (PerformanceEntry & { value: number; hadRecentInput: boolean })[]) {
+            if (!entry.hadRecentInput) self.shift += entry.value;
+          }
+        }).observe({ type: 'layout-shift', buffered: true });
+      });
+      // The project's own size, and the common screens of its reservation tier: what the
+      // room is worth depends on how much of the page below the fold the window shows.
+      const own = page.viewportSize() ?? { width: 0, height: 0 };
+      const sizes =
+        own.width >= 1440
+          ? [own, { width: 1920, height: 1080 }, { width: 1366, height: 768 }, { width: 1280, height: 800 }]
+          : [own, { width: 1024, height: 768 }];
+      for (const size of sizes) {
+        await page.setViewportSize(size);
+        for (const [path, keys] of SIDE_SLOTS) {
+          await page.goto(path);
+          const slot = page.locator(`op-slot[slot-key="${keys[0]}"]`);
+          await expect(slot).toHaveAttribute('data-op-estado', mode === 'ads' ? 'pronto' : 'colapsado');
+          // The slot animates its collapse; the shifts go on being counted until it ends.
+          await page.waitForTimeout(400);
+          const shift = await page.evaluate(() => (window as unknown as { shift: number }).shift);
+          expect(shift, `${path} em ${size.width}x${size.height}`).toBeLessThanOrEqual(0.02);
+        }
+      }
+    });
+  }
 });
