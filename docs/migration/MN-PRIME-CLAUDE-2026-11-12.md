@@ -123,7 +123,13 @@ Claude), rodou às 10:36 e levou menos de um minuto:
 - **Russell Brand saiu duas vezes**, como `a4ccd041` (docuseries) e `908627b6`
   (documentário). Eram eventos diferentes no RSS Prime, e os títulos não são parecidos o
   bastante para a checagem de matéria repetida. Teria saído duas vezes também sem a
-  falha. Vale despublicar uma delas no CMS.
+  falha. Às 11:05 a versão "docuseries" (`a4ccd041`) foi despublicada no CMS, com o
+  motivo no histórico do artigo. Às 11:07 o endereço dela já dava 404 e tinha saído da
+  home e do `news-sitemap.xml`. A "documentário" (`908627b6`) segue no ar.
+  - **Resíduo:** o robô guarda o endereço de cada matéria publicada para sugerir links
+    internos e não confere depois se ela continua no ar. Uma matéria nova sobre Russell
+    Brand pode linkar para o endereço retirado até ele sair da lista, que guarda as
+    200 mais recentes (uns dois dias no ritmo atual).
 - **As 3 de fonte legada continuam sem envio.** Foram escritas e pagas, e a entrega
   recusa qualquer matéria sem `event_key`. Isso já acontecia antes da troca para o Claude.
 - **Ficaram de fora as falhas mais antigas, da era Gemini** (pelo menos 30, de 11/11),
@@ -131,51 +137,51 @@ Claude), rodou às 10:36 e levou menos de um minuto:
 
 ## Matéria por matéria
 
-| #   | Brasília    | Matéria                                                           | Situação                                                 |
-| --- | ----------- | ----------------------------------------------------------------- | -------------------------------------------------------- |
-| 1   | 11/11 21:23 | Sky deixa Fing no Reino Unido após acusações contra Walliams      | publicada `0e7dcde5`                                     |
-| 2   | 11/11 21:27 | Andy Tennant dirige The Fun Lady com Jessica Alba no elenco       | falhou (8 MB) → **reenviada** `d5948c04`                 |
-| 3   | 11/11 21:32 | In the Grey chega ao topo do Starz após fracasso nos cinemas      | publicada `cba6f7c6`                                     |
-| 4   | 11/11 21:36 | Steve Downes critica série de Halo por afastamento dos games      | falhou (8 MB) → **reenviada** `bbbf128d`                 |
-| 5   | 11/11 21:40 | Total Recall com Colin Farrell chega ao 2º lugar no Prime Video   | falhou (8 MB) → **reenviada** `74b7fb40`                 |
-| 6   | 11/11 22:24 | Andy Serkis dirige e conclui filmagens de The Hunt for Gollum     | publicada (atualização) `52ded210`                       |
-| 7   | 11/11 22:28 | Resident Evil se aproxima da bilheteria de No Time to Die         | publicada `182786e9`                                     |
-| 8   | 11/11 22:32 | Henry Cavill retorna com bigode de Missão: Impossível em anúncio  | falhou (8 MB) → **reenviada** `44e593a8`                 |
-| 9   | 11/11 22:36 | Netflix prepara docuseries sobre Russell Brand após condenação    | falhou (8 MB) → **reenviada** `a4ccd041`                 |
-| 10  | 11/11 22:40 | Paapa Essiedu reafirma apoio a direitos trans sem citar Rowling   | falhou (8 MB) → **reenviada** `e88e4b4b`                 |
-| 11  | 11/11 22:44 | The Crow de 2024 ganha público no Tubi após fracasso nos cinemas  | falhou (8 MB) → **reenviada** `df1e1c13`                 |
-| 12  | 11/11 23:28 | Arnold Vosloo confirma retorno como Imhotep em novo The Mummy     | publicada (atualização) `204058ac`                       |
-| 13  | 11/11 23:33 | Heritage Auctions leiloa réplica de guitarra de Marty McFly       | falhou (8 MB) → **reenviada** `a3e3d581`                 |
-| 14  | 11/11 23:37 | Anthony Clark, comediante e ator de Yes, Dear, morre aos 62 anos  | falhou (8 MB) → não reenviada: o assunto já está no site |
-| 15  | 11/11 23:41 | Netflix marca estreia de The Take para 15 de janeiro de 2027      | falhou (8 MB) → **reenviada** `8f9e8419`                 |
-| 16  | 11/11 23:45 | Scrubs retoma Dr. Acula em fantasia de JD no episódio 8           | publicada `15ffd94d`                                     |
-| 17  | 11/11 23:49 | Cry Macho entra no ranking dos mais vistos da Netflix nos EUA     | falhou (8 MB) → **reenviada** `563e91a3`                 |
-| 18  | 11/11 23:54 | Constantine 2 ganha nova esperança após saída de James Gunn       | falhou (8 MB) → não reenviada: o assunto já está no site |
-| 19  | 12/11 00:23 | Maya Hawke e Harry Melling estrelam filme produzido por Ari Aster | falhou (8 MB) → **reenviada** `42e35d9f`                 |
-| 20  | 12/11 00:27 | Digger cai para 48 salas e acumula US$ 50 milhões no mundo        | publicada `df218b5a`                                     |
-| 21  | 12/11 00:31 | Anthony Clark, comediante de Yes, Dear, morre aos 62 anos         | falhou (8 MB) → **reenviada** `6f4d9048`                 |
-| 22  | 12/11 01:24 | Lionsgate adquire Wet com Connor Storrie e Rebecca Ferguson       | falhou (8 MB) → **reenviada** `eea38203`                 |
-| 23  | 12/11 01:34 | Constantine 2 ganha novo fôlego após saída de Gunn da DC Studios  | falhou (8 MB) → não reenviada: o assunto já está no site |
-| 24  | 12/11 01:39 | The Rings of Power revela os planos de Sauron na 3ª temporada     | não enviada (fonte legada)                               |
-| 25  | 12/11 01:43 | Priyanka Chopra Jonas troca armas por palavras em Bluefly         | falhou (8 MB) → **reenviada** `afa2cc56`                 |
-| 26  | 12/11 01:54 | Jamie Dornan diz que chorou ao ser escalado como Aragorn          | falhou (8 MB) → não reenviada: o assunto já está no site |
-| 27  | 12/11 02:23 | Black Doves revela Kestrel como nova ameaça na 2ª temporada       | falhou (8 MB) → **reenviada** `6b5b51bd`                 |
-| 28  | 12/11 03:25 | Lawrence vê nova chance para Constantine 2 após saída de Gunn     | publicada (atualização) `2b055026`                       |
-| 29  | 12/11 03:29 | Fred Baillif estreia drama sobre assistentes sociais em Tallinn   | publicada `a53311a1`                                     |
-| 30  | 12/11 03:33 | Guy Ritchie tem filme sobre rei Arthur no Top 10 da Netflix       | falhou (8 MB) → **reenviada** `6c48a7bf`                 |
-| 31  | 12/11 03:37 | South Park leva Tweek e Craig a uma paródia de Heated Rivalry     | publicada `26046d01`                                     |
-| 32  | 12/11 03:42 | Netflix estreia East of Eden, nova adaptação de Steinbeck         | publicada `f9d09eb3`                                     |
-| 33  | 12/11 03:45 | Nathaniel Buzolic acusa coestrela de vetá-lo em eventos de fãs    | publicada `9c984d75`                                     |
-| 34  | 12/11 03:50 | The Wolverine chega ao top 10 de filmes mais vistos da HBO Max    | não enviada (fonte legada)                               |
-| 35  | 12/11 07:23 | Gal Gadot se emociona ao alertar sobre antissemitismo em gala     | falhou (8 MB) → **reenviada** `e69976cf`                 |
-| 36  | 12/11 07:26 | Nicole Kidman recebe César honorário da Academia francesa         | falhou (8 MB) → **reenviada** `cfde2f5c`                 |
-| 37  | 12/11 07:30 | Netflix prepara documentário sobre Russell Brand após condenação  | falhou (8 MB) → **reenviada** `908627b6`                 |
-| 38  | 12/11 07:34 | Blade Runner 2099 estreia em 25 de novembro no Prime Video        | falhou (8 MB) → **reenviada** `29fef968`                 |
-| 39  | 12/11 07:38 | Golshifteh Farahani protagoniza suspense sobre o Talibã em Kabul  | falhou (8 MB) → **reenviada** `b5239f44`                 |
-| 40  | 12/11 07:42 | Henry Cavill não descarta voltar como Superman após saída de Gunn | publicada `df3dc1bd`                                     |
-| 41  | 12/11 08:23 | Tinker Tailor Soldier Spy volta ao streaming no BBC iPlayer       | publicada `5c7f94d4`                                     |
-| 42  | 12/11 08:27 | The Counselor ganha reavaliação 13 anos após fracasso comercial   | não enviada (fonte legada)                               |
-| 43  | 12/11 08:32 | Gang Dong-won e Kim Go-eun estrelam drama de época da Netflix     | falhou (8 MB) → **reenviada** `406c6d66`                 |
-| 44  | 12/11 08:36 | Black Doves chega a 3,8 milhões de visualizações na Netflix       | publicada `3ac8dda6`                                     |
-| 45  | 12/11 08:39 | Frankie Muniz recebe alta após acidente de carro em Daytona       | falhou (8 MB) → **reenviada** `991c68f8`                 |
-| 46  | 12/11 09:25 | Andy Serkis conclui filmagens de The Hunt for Gollum na direção   | falhou (8 MB) → **reenviada** `52ded210`                 |
+| #   | Brasília    | Matéria                                                           | Situação                                                       |
+| --- | ----------- | ----------------------------------------------------------------- | -------------------------------------------------------------- |
+| 1   | 11/11 21:23 | Sky deixa Fing no Reino Unido após acusações contra Walliams      | publicada `0e7dcde5`                                           |
+| 2   | 11/11 21:27 | Andy Tennant dirige The Fun Lady com Jessica Alba no elenco       | falhou (8 MB) → **reenviada** `d5948c04`                       |
+| 3   | 11/11 21:32 | In the Grey chega ao topo do Starz após fracasso nos cinemas      | publicada `cba6f7c6`                                           |
+| 4   | 11/11 21:36 | Steve Downes critica série de Halo por afastamento dos games      | falhou (8 MB) → **reenviada** `bbbf128d`                       |
+| 5   | 11/11 21:40 | Total Recall com Colin Farrell chega ao 2º lugar no Prime Video   | falhou (8 MB) → **reenviada** `74b7fb40`                       |
+| 6   | 11/11 22:24 | Andy Serkis dirige e conclui filmagens de The Hunt for Gollum     | publicada (atualização) `52ded210`                             |
+| 7   | 11/11 22:28 | Resident Evil se aproxima da bilheteria de No Time to Die         | publicada `182786e9`                                           |
+| 8   | 11/11 22:32 | Henry Cavill retorna com bigode de Missão: Impossível em anúncio  | falhou (8 MB) → **reenviada** `44e593a8`                       |
+| 9   | 11/11 22:36 | Netflix prepara docuseries sobre Russell Brand após condenação    | falhou (8 MB) → reenviada `a4ccd041` → despublicada (repetida) |
+| 10  | 11/11 22:40 | Paapa Essiedu reafirma apoio a direitos trans sem citar Rowling   | falhou (8 MB) → **reenviada** `e88e4b4b`                       |
+| 11  | 11/11 22:44 | The Crow de 2024 ganha público no Tubi após fracasso nos cinemas  | falhou (8 MB) → **reenviada** `df1e1c13`                       |
+| 12  | 11/11 23:28 | Arnold Vosloo confirma retorno como Imhotep em novo The Mummy     | publicada (atualização) `204058ac`                             |
+| 13  | 11/11 23:33 | Heritage Auctions leiloa réplica de guitarra de Marty McFly       | falhou (8 MB) → **reenviada** `a3e3d581`                       |
+| 14  | 11/11 23:37 | Anthony Clark, comediante e ator de Yes, Dear, morre aos 62 anos  | falhou (8 MB) → não reenviada: o assunto já está no site       |
+| 15  | 11/11 23:41 | Netflix marca estreia de The Take para 15 de janeiro de 2027      | falhou (8 MB) → **reenviada** `8f9e8419`                       |
+| 16  | 11/11 23:45 | Scrubs retoma Dr. Acula em fantasia de JD no episódio 8           | publicada `15ffd94d`                                           |
+| 17  | 11/11 23:49 | Cry Macho entra no ranking dos mais vistos da Netflix nos EUA     | falhou (8 MB) → **reenviada** `563e91a3`                       |
+| 18  | 11/11 23:54 | Constantine 2 ganha nova esperança após saída de James Gunn       | falhou (8 MB) → não reenviada: o assunto já está no site       |
+| 19  | 12/11 00:23 | Maya Hawke e Harry Melling estrelam filme produzido por Ari Aster | falhou (8 MB) → **reenviada** `42e35d9f`                       |
+| 20  | 12/11 00:27 | Digger cai para 48 salas e acumula US$ 50 milhões no mundo        | publicada `df218b5a`                                           |
+| 21  | 12/11 00:31 | Anthony Clark, comediante de Yes, Dear, morre aos 62 anos         | falhou (8 MB) → **reenviada** `6f4d9048`                       |
+| 22  | 12/11 01:24 | Lionsgate adquire Wet com Connor Storrie e Rebecca Ferguson       | falhou (8 MB) → **reenviada** `eea38203`                       |
+| 23  | 12/11 01:34 | Constantine 2 ganha novo fôlego após saída de Gunn da DC Studios  | falhou (8 MB) → não reenviada: o assunto já está no site       |
+| 24  | 12/11 01:39 | The Rings of Power revela os planos de Sauron na 3ª temporada     | não enviada (fonte legada)                                     |
+| 25  | 12/11 01:43 | Priyanka Chopra Jonas troca armas por palavras em Bluefly         | falhou (8 MB) → **reenviada** `afa2cc56`                       |
+| 26  | 12/11 01:54 | Jamie Dornan diz que chorou ao ser escalado como Aragorn          | falhou (8 MB) → não reenviada: o assunto já está no site       |
+| 27  | 12/11 02:23 | Black Doves revela Kestrel como nova ameaça na 2ª temporada       | falhou (8 MB) → **reenviada** `6b5b51bd`                       |
+| 28  | 12/11 03:25 | Lawrence vê nova chance para Constantine 2 após saída de Gunn     | publicada (atualização) `2b055026`                             |
+| 29  | 12/11 03:29 | Fred Baillif estreia drama sobre assistentes sociais em Tallinn   | publicada `a53311a1`                                           |
+| 30  | 12/11 03:33 | Guy Ritchie tem filme sobre rei Arthur no Top 10 da Netflix       | falhou (8 MB) → **reenviada** `6c48a7bf`                       |
+| 31  | 12/11 03:37 | South Park leva Tweek e Craig a uma paródia de Heated Rivalry     | publicada `26046d01`                                           |
+| 32  | 12/11 03:42 | Netflix estreia East of Eden, nova adaptação de Steinbeck         | publicada `f9d09eb3`                                           |
+| 33  | 12/11 03:45 | Nathaniel Buzolic acusa coestrela de vetá-lo em eventos de fãs    | publicada `9c984d75`                                           |
+| 34  | 12/11 03:50 | The Wolverine chega ao top 10 de filmes mais vistos da HBO Max    | não enviada (fonte legada)                                     |
+| 35  | 12/11 07:23 | Gal Gadot se emociona ao alertar sobre antissemitismo em gala     | falhou (8 MB) → **reenviada** `e69976cf`                       |
+| 36  | 12/11 07:26 | Nicole Kidman recebe César honorário da Academia francesa         | falhou (8 MB) → **reenviada** `cfde2f5c`                       |
+| 37  | 12/11 07:30 | Netflix prepara documentário sobre Russell Brand após condenação  | falhou (8 MB) → **reenviada** `908627b6`                       |
+| 38  | 12/11 07:34 | Blade Runner 2099 estreia em 25 de novembro no Prime Video        | falhou (8 MB) → **reenviada** `29fef968`                       |
+| 39  | 12/11 07:38 | Golshifteh Farahani protagoniza suspense sobre o Talibã em Kabul  | falhou (8 MB) → **reenviada** `b5239f44`                       |
+| 40  | 12/11 07:42 | Henry Cavill não descarta voltar como Superman após saída de Gunn | publicada `df3dc1bd`                                           |
+| 41  | 12/11 08:23 | Tinker Tailor Soldier Spy volta ao streaming no BBC iPlayer       | publicada `5c7f94d4`                                           |
+| 42  | 12/11 08:27 | The Counselor ganha reavaliação 13 anos após fracasso comercial   | não enviada (fonte legada)                                     |
+| 43  | 12/11 08:32 | Gang Dong-won e Kim Go-eun estrelam drama de época da Netflix     | falhou (8 MB) → **reenviada** `406c6d66`                       |
+| 44  | 12/11 08:36 | Black Doves chega a 3,8 milhões de visualizações na Netflix       | publicada `3ac8dda6`                                           |
+| 45  | 12/11 08:39 | Frankie Muniz recebe alta após acidente de carro em Daytona       | falhou (8 MB) → **reenviada** `991c68f8`                       |
+| 46  | 12/11 09:25 | Andy Serkis conclui filmagens de The Hunt for Gollum na direção   | falhou (8 MB) → **reenviada** `52ded210`                       |
