@@ -71,9 +71,19 @@ não existe. O merge foi às 09:23 e o deploy terminou às 09:25.
 - **A falha das 09:25 (Andy Serkis) ainda é do código antigo.** O código novo acrescenta
   à mensagem a chamada que passou do limite ("em GET …"), e essa mensagem não tem esse
   final. A entrega aconteceu segundos antes de o contêiner novo entrar no ar.
-- **09:28: a primeira entrega do código novo foi publicada.** É "Jamie Dornan admite que
-  chorou ao ser escalado como Aragorn" (`2c56d00f`). O mesmo assunto tinha falhado duas
-  vezes antes, em 11/11 às 16:36 e em 12/11 às 01:54.
+- **Das 09:28 às 09:40, as 4 entregas do código novo foram publicadas, sem nenhuma
+  falha.** Antes da correção, cerca de 6 em cada 10 falhavam.
+
+| Brasília    | Matéria                                                       | Situação             |
+| ----------- | ------------------------------------------------------------- | -------------------- |
+| 12/11 09:28 | Jamie Dornan admite que chorou ao ser escalado como Aragorn   | publicada `2c56d00f` |
+| 12/11 09:33 | Jamie Dornan vive Aragorn como Strider em The Hunt for Gollum | publicada `da384d9d` |
+| 12/11 09:37 | The Chosen ganha especial de Natal na Fox em 14 de dezembro   | publicada `17399c9a` |
+| 12/11 09:40 | Henry Cavill confirma série de Warhammer 40k no Prime Video   | publicada `e2575316` |
+
+As duas de Jamie Dornan usam as tags de Aragorn e The Hunt for Gollum, que antes
+derrubavam a entrega. O assunto da primeira tinha falhado duas vezes, em 11/11 às 16:36 e
+em 12/11 às 01:54.
 
 ## O que não volta sozinho
 
