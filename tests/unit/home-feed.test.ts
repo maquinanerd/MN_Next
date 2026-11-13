@@ -44,7 +44,6 @@ function acimaDoFeed(home: Awaited<ReturnType<typeof homeView>>): string[] {
     home.series.manchete,
     ...home.series.destaques,
     ...home.quadrinhos,
-    ...home.animes,
     home.videos.destaque,
     ...home.videos.clipes,
   ].flatMap((c) => (c ? [c.id] : []));

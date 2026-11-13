@@ -9,7 +9,7 @@ type Heading = 'h2' | 'h3';
 
 /**
  * The card with the image above the text: 3/2 image, label, 14px headline, excerpt, time.
- * Used by "Notícias de cinema", Games and "Animes | Especiais".
+ * Used by "Notícias de cinema" and Games on the home.
  *
  * The image link is a duplicate of the headline link, so it is taken out of the tab order
  * and the accessibility tree: one card, one link, one name.

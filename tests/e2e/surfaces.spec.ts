@@ -99,7 +99,7 @@ test.describe('header', () => {
 });
 
 test.describe('home', () => {
-  test('the sections come in the prototype order', async ({ page }) => {
+  test('the sections come in the prototype order, Animes aside (§7.31)', async ({ page }) => {
     await page.goto('/');
     const titles = (await page.locator('main h2').allInnerTexts()).map((t) =>
       t.toLowerCase().replace(/\s+/g, ' ').trim(),
@@ -108,7 +108,6 @@ test.describe('home', () => {
       'notícias de cinema',
       'games',
       'notícias de séries e tv',
-      'animes | especiais',
       'vídeo em destaque',
       'mais do máquina nerd',
     ];
@@ -118,6 +117,25 @@ test.describe('home', () => {
       titles.join(' / '),
     ).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+
+  test('has no Animes band, while the menu still leads to /animes', async ({ page }, info) => {
+    await page.goto('/');
+    const titles = (await page.locator('main h2').allInnerTexts()).map((t) => t.toLowerCase());
+    expect(
+      titles.filter((t) => t.includes('animes')),
+      titles.join(' / '),
+    ).toEqual([]);
+    await expect(page.locator('#h-animes')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Ver Animes' })).toHaveCount(0);
+    if (info.project.name === 'mobile-390') {
+      await page.getByRole('button', { name: 'Abrir menu' }).click();
+      const drawer = page.getByRole('navigation', { name: 'Menu de editorias' });
+      await expect(drawer.getByRole('link', { name: 'Animes' })).toHaveAttribute('href', '/animes');
+    } else {
+      const nav = page.getByRole('navigation', { name: 'Editorias' });
+      await expect(nav.getByRole('link', { name: 'Animes' })).toHaveAttribute('href', '/animes');
+    }
   });
 
   test('the feed carries nothing between its stories, and the sidebar slot beside them', async ({ page }) => {

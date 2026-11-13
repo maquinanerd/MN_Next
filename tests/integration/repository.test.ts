@@ -314,7 +314,7 @@ describe('KalElContentRepository resilience', () => {
 describe('FixtureContentRepository', () => {
   const repo = new FixtureContentRepository();
 
-  it('fills every section the home prototype has', async () => {
+  it('fills every section the home has', async () => {
     const latest = await repo.listLatest(1, { perPage: 8 });
     expect(latest.items).toHaveLength(8);
     const needs: Record<string, number> = {
@@ -322,7 +322,6 @@ describe('FixtureContentRepository', () => {
       'series-e-tv': 4,
       games: 4,
       quadrinhos: 4,
-      animes: 3,
       videos: 5,
     };
     for (const [slug, n] of Object.entries(needs)) {
