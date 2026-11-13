@@ -44,6 +44,8 @@ overlays, lateral com quatro chamadas e 300×250), "Notícias de Cinema", "Games
 970×250, "Notícias de Séries e TV" com "Últimas de Quadrinhos", "Animes | Especiais",
 "Vídeo em destaque", "Mais do Máquina Nerd" com 728×90 a cada três e 300×600 sticky,
 paginação e rodapé. No celular, a mesma ordem em coluna única, sem rolagem horizontal.
+Desde 13/11/2026, "Animes | Especiais" não está mais na home, por decisão do dono. Animes
+continua no menu (DECISIONS §7.31), e as capturas de referência da home foram refeitas sem a faixa.
 
 **Editoria.** Título na cor de texto da editoria, filtros de assunto à direita, abertura
 igual à da home, "Todas as notícias de Cinema" em RowCards com 300×600, paginação. A lista

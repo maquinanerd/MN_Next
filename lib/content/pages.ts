@@ -47,9 +47,10 @@ export const FEED_PER_PAGE = 9;
 /**
  * How far past those nine the home reads: the sections between the opening and the feed
  * show the newest story of each editoria, so the newest stories after the opening are
- * often already on the page. The most those sections take is 6 + 4 + 4 + 4 + 3 + 5.
+ * often already on the page. The most those sections take is 6 + 4 + 4 + 4 + 5
+ * (Cinema, Séries e TV, Games, Quadrinhos, Vídeos).
  */
-const FEED_FOLGA = 26;
+const FEED_FOLGA = 23;
 /** "Todas as notícias de …" */
 export const EDITORIA_PER_PAGE = 10;
 
@@ -112,7 +113,6 @@ export interface HomeView {
   games: Chamada[];
   series: { manchete: Chamada | null; destaques: Chamada[] };
   quadrinhos: Chamada[];
-  animes: Chamada[];
   videos: { destaque: Chamada | null; clipes: Chamada[] };
   feed: Chamada[];
   paginacao: Paginacao;
@@ -124,18 +124,18 @@ export interface HomeView {
 
 /**
  * The home, in the prototype's order (Máquina Nerd Template.dc.html): the opening, then
- * Cinema, Games, Séries e TV with "Últimas de Quadrinhos", Animes, the video
- * band and "Mais do Máquina Nerd". A story is never shown twice on the home: the feed
- * skips what the sections above it already show.
+ * Cinema, Games, Séries e TV with "Últimas de Quadrinhos", the video band and "Mais do
+ * Máquina Nerd". The prototype's Animes band is not on the home (DECISIONS §7.31): an
+ * anime story shows in the opening or the feed like any other. A story is never shown
+ * twice on the home: the feed skips what the sections above it already show.
  */
 export async function homeView(): Promise<HomeView> {
-  const [latest, cinema, series, games, quadrinhos, animes, videos, janela] = await Promise.all([
+  const [latest, cinema, series, games, quadrinhos, videos, janela] = await Promise.all([
     repo().listLatest(1, { perPage: OPENING }),
     section('cinema', 14),
     section('series-e-tv', 12),
     section('games', 10),
     section('quadrinhos', 10),
-    section('animes', 10),
     section('videos', 10),
     repo().listLatest(1, { skip: OPENING, perPage: FEED_PER_PAGE + FEED_FOLGA }),
   ]);
@@ -146,7 +146,6 @@ export async function homeView(): Promise<HomeView> {
   const cinemaItems = take(cinema, used, 6);
   const gamesItems = take(games, used, 4);
   const quadrinhosItems = take(quadrinhos, used, 4);
-  const animesItems = take(animes, used, 3);
   const videoItems = take(videos, used, 5);
   const feed = feedSemRepetir(toChamadas(janela.items), used);
 
@@ -158,7 +157,6 @@ export async function homeView(): Promise<HomeView> {
     games: gamesItems,
     series: { manchete: seriesItems[0] ?? null, destaques: seriesItems.slice(1, 4) },
     quadrinhos: quadrinhosItems,
-    animes: animesItems,
     videos: { destaque: videoItems[0] ?? null, clipes: videoItems.slice(1, 5) },
     feed: feed.itens,
     paginacao: {

@@ -543,7 +543,7 @@ a regra corrigiu, o anúncio caindo entre o 1º e o 2º parágrafo de um texto c
 | Ícone de play em todo card de Games                  | só em vídeo                                 | ícone sem função (regra do kit)                      |
 | Abas "Recomendados / Mais vistos / Recentes"         | só "Recentes"                               | não há dado de audiência; não se inventa             |
 | Setas ‹ › na faixa de vídeo                          | ausentes                                    | ícone sem função                                     |
-| "Ver Especiais" na seção "Animes \| Especiais"       | "Ver Animes"                                | o botão levaria a outra editoria que não a dos cards |
+| "Ver Especiais" na seção "Animes \| Especiais"       | "Ver Animes" (seção fora da home, §7.31)    | o botão levaria a outra editoria que não a dos cards |
 | Glifo de menu na faixa de editoria (≤900px) sem ação | abre "Nesta editoria" (`<details>`, sem JS) | ícone sem função                                     |
 | Sem assinatura no celular                            | linha de autor abaixo do título até 900px   | a assinatura sumiria no mobile                       |
 | Capa overlay `100vh`                                 | `clamp(360px, 62vh, 640px)` (doc 02)        | retrato de tela inteira é vetado no mobile (doc 06)  |
@@ -1507,3 +1507,22 @@ celular), o comentário sobre 761–1023 px, os testes mais fortes e a condiçã
 foi de novo por um agente separado, só leitura, sobre os dois diffs. Dela vieram as três chaves no
 seed do OpaPreço (a suíte apaga o banco, e os testes novos falhariam), a regra de que a trava contra
 oferta repetida ignora slot vencido e tenta de novo em 60 s, e a medição em mais tamanhos de janela.
+
+### 7.31 A faixa de Animes sai da home; Animes fica no menu (2026-11-13)
+
+**Decisão do dono.** A home não mostra mais a faixa "Animes | Especiais", que o protótipo
+(`Máquina Nerd Template.dc.html`) põe entre "Notícias de Séries e TV" e "Vídeo em destaque".
+Animes continua no menu do cabeçalho e no menu da gaveta, na mesma posição, e `/animes`
+continua no ar como qualquer editoria. É um desvio intencional do protótipo, só na home.
+
+**O que mudou.** A seção saiu de `app/page.tsx`, e `homeView()` (`lib/content/pages.ts`) não lê
+mais a editoria nem reserva as três matérias dela. Sem a reserva, uma matéria de anime entra na
+abertura ou em "Mais do Máquina Nerd" como qualquer outra: tirar só o bloco do JSX esconderia três
+matérias novas de anime da home inteira, porque a lista pula o que as seções acima já tomaram.
+A janela da lista caiu de 9 + 26 para 9 + 23, o máximo que as seções restantes tomam
+(6 + 4 + 4 + 4 + 5).
+
+**Testes.** `tests/unit/home-feed.test.ts` deixa de contar Animes entre o que está acima da lista;
+`tests/e2e/surfaces.spec.ts` tira "animes | especiais" da ordem da home e ganha "has no Animes band,
+while the menu still leads to /animes", que confere a ausência da faixa e o link do menu (cabeçalho
+no desktop, gaveta no celular).

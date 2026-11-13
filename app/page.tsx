@@ -19,7 +19,9 @@ import { EDITORIAS, agora, homeView } from '../lib/content';
 import { seoContext } from '../lib/seo-context';
 
 /**
- * Home (Máquina Nerd Template.dc.html), in the prototype's order.
+ * Home (Máquina Nerd Template.dc.html), in the prototype's order, without its
+ * "Animes | Especiais" band: the owner took it off the home on 2026-11-13 (DECISIONS §7.31).
+ * Animes stays in the menu and at `/animes`.
  *
  * ISR at 60 seconds plus `revalidateTag('home')` on publication: the tag makes a new
  * story appear at once, the window bounds staleness if a webhook is ever lost.
@@ -122,23 +124,6 @@ export default async function HomePage() {
                   <AnuncioDaLateral slot="home-02" />
                 </div>
               ) : null}
-            </div>
-          </section>
-        ) : null}
-
-        {home.animes.length > 0 ? (
-          <section aria-labelledby="h-animes" className={section}>
-            <SectionTitle
-              id="h-animes"
-              forte="Animes"
-              fraco="| Especiais"
-              acao={{ rotulo: 'Ver Animes', href: EDITORIAS.animes.href }}
-              className="mb-28"
-            />
-            <div className={`${scroller} tab:grid-cols-3`}>
-              {home.animes.map((c) => (
-                <StandardCard key={c.id} chamada={c} kicker={rotuloComposto(c)} meta={data(c)} />
-              ))}
             </div>
           </section>
         ) : null}
