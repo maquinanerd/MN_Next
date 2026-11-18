@@ -98,9 +98,15 @@ export async function POST(request: Request): Promise<Response> {
     for (const slug of relations.categories) tags.add(categoryTag(slug));
     for (const slug of relations.tags) tags.add(tagTag(slug));
     for (const slug of relations.authors) tags.add(authorTag(slug));
+    // A desk or author newer than the cached taxonomy: without this the article renders
+    // without it until the taxonomy's hour runs out (DECISIONS §7.33).
+    if (relations.staleTaxonomy) tags.add(TAG.taxonomy);
   } else {
     // Without the relations, purge every editoria: a listing showing yesterday's front
-    // page is worse than a handful of extra ISR rebuilds.
+    // page is worse than a handful of extra ISR rebuilds. Not the taxonomy: the CMS is
+    // failing right now, and purging it would take the stale copy away from every page of
+    // the site — tag, author and offer archives included — so that each next visit renders
+    // against a CMS that may still fail (DECISIONS §7.33).
     for (const desk of EDITORIA_SLUGS) tags.add(categoryTag(desk));
   }
 

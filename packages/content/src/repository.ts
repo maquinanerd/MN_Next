@@ -71,6 +71,13 @@ export interface ArticleRelations {
   categories: string[];
   tags: string[];
   authors: string[];
+  /**
+   * The article names a desk or author the cached taxonomy does not know yet — one
+   * created in the CMS after the list was cached. The webhook then purges the taxonomy
+   * too; otherwise the page would drop that byline or desk for up to the taxonomy's own
+   * window (an hour).
+   */
+  staleTaxonomy?: boolean;
 }
 
 /**

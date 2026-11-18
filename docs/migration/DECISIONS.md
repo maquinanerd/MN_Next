@@ -1594,4 +1594,146 @@ Cinerie (o MN-Prime tem a dele: o teto da rota é por chave). São de runtime; u
 **Achado de passagem (fora deste PR).** O transporte do Kal El (`kalel/transport.ts`) manda um
 `x-correlation-id` aleatório em toda leitura com `next.tags`, o que, pela mesma regra do Next,
 torna cada leitura do Kal El um erro de cache de dados. Mudar isso muda o comportamento de cache do
-site inteiro e fica para uma tarefa própria, com medição.
+site inteiro e fica para uma tarefa própria, com medição — feita em §7.33.
+
+### 7.33 As leituras do Kal El passam a acertar o cache de dados (2026-11-18)
+
+**Defeito.** O transporte (`packages/content/src/kalel/transport.ts`) mandava
+`x-correlation-id: randomUUID()` em toda leitura, inclusive nas que pedem cache
+(`next: { tags, revalidate }`). O Next 15.5.4 monta a chave do cache de dados com a URL **e os
+cabeçalhos** (`generateCacheKey` em `next/dist/server/lib/incremental-cache/index.js` só tira
+`traceparent` e `tracestate`). Com um id novo por chamada, nenhuma leitura do Kal El jamais
+acertou o cache: toda renderização e toda regeneração ISR relia tudo do CMS, e cada leitura
+gravava mais uma entrada no LRU de 256 MB que as páginas dividem com os fetches
+(`next-cache-handler.mjs`). Nem dentro de uma mesma renderização havia reaproveitamento: a
+deduplicação de fetch do Next fica desligada porque o transporte passa um `signal`, então o que
+podia unir a leitura de `generateMetadata` e a da página era o cache de dados — e no build cada
+matéria era lida duas vezes. É a explicação mais provável para a proporção de 28/09 (RUNBOOK
+§4.5.3: 1.388 arquivos de fetch contra 114 de página nos dois primeiros minutos, perto de 1.100
+arquivos por minuto), que não dá para reconferir em produção, porque o cache agora vive só em
+memória.
+
+**Correção.** `readCorrelationId`: numa leitura com cache, o id é `kalel-` + 16 hex do sha256 de
+`GET <URL completa>` — o mesmo pedido, o mesmo id, a mesma chave. Numa leitura `no-store` (busca,
+preview, a matéria lida por `relationsFor`), que nunca chega ao cache, continua um id por chamada
+(ou o que a rota passar). Um id passado pelo chamador numa leitura com cache é ignorado: ele
+dividiria o cache de novo. O Kal El não usa esse cabeçalho — gera o próprio id de pedido
+(`genReqId: () => requestId()` em `apps/api/src/app.ts` do repositório `kal-el`) —, então o único
+leitor do id é o log do portal, e nele o mesmo endereço ter o mesmo id ainda liga
+`kalel.read.error` e `discovery.degraded` à leitura que falhou. É a mesma regra que a ficha da
+Cinerie já seguia (§7.32, id derivado do corpo).
+
+**Medição.** O Kal El falso (`tests/fake-kalel`) com um contador de pedidos, o portal em
+`CONTENT_SOURCE=kalel` apontado para ele (`pnpm build` e `next start`, ambiente igual ao de
+`playwright.kalel.config.ts`), e as mesmas visitas nas duas versões. Antes: `ef84ea9`. Depois:
+`25306cb` com este PR (o PR #34, da ficha, entrou no meio; ele não lê o Kal El, e na mesma base
+`ef84ea9` o build com a correção fez 319 leituras).
+
+| Leituras ao Kal El                                    | Antes | Depois |
+| ----------------------------------------------------- | ----: | -----: |
+| `pnpm build` inteiro                                  | 1.507 |    321 |
+| `/legado/<slug>`, 1ª visita (rota `force-dynamic`)    |     6 |      6 |
+| o mesmo `/legado/<slug>`, 2ª visita                   |     6 |      0 |
+| 5 matérias fora do pré-render, em sequência           |   151 |     52 |
+| webhook `article.updated` + matéria e home, 1ª rodada |    86 |     20 |
+| o mesmo, 2ª rodada (mesmas tags revalidadas de novo)  |    86 |      5 |
+| home depois de vencida a janela de 60 s (regeneração) |    47 |      2 |
+
+No build, `categories` caiu de 267 leituras para 4 (uma por processo de build); `authors`,
+`entities` e `media`, de 195 para 4, 4 e 78.
+
+**O que passa a valer.** Antes, a única janela que contava era a da página: cada regeneração
+relia tudo. Agora contam também as janelas de cada leitura (`REVALIDATE`) e as tags do webhook.
+
+- **Webhook.** Conferido nas duas rodadas da medição: depois da entrega, a primeira visita à
+  matéria e à home já traz o título novo (`x-nextjs-cache: MISS`, renderização bloqueante). Uma
+  tag revalidada faz a entrada de fetch dela voltar vazia (não velha) e a página com a tag
+  renderizar de novo. A segunda rodada importa por um detalhe do Next 15.5.4: o
+  `revalidateTag` do cache em arquivo só grava a **primeira** data de cada tag
+  (`if (!tagsManifest.has(tag))` em `file-system-cache.js`); quem atualiza a data nas entregas
+  seguintes é o `expireTags` do handler padrão de `use cache`, chamado pelo mesmo
+  `revalidateTags` e escrevendo no mesmo manifesto. O `next start` só liga esses handlers porque
+  `experimental.cacheHandlers` tem valor por padrão (`loadCustomCacheHandlers` em
+  `next-server.js`). `tests/unit/next-cache-handler.test.ts` ("revalidating the same tag again")
+  fixa as duas coisas: que o padrão existe e que o `next.config.ts` não o tira, e que, com o
+  handler padrão, a segunda entrega invalida o que foi guardado depois da primeira — sem ele, o
+  teste falha.
+- **Janelas.** Numa regeneração ISR, uma leitura vencida é refeita antes de a página ser gravada
+  (`patch-fetch.js`: "when stale and is revalidating we wait for fresh data"), então nenhuma
+  página regenera com dado vencido. Mas uma leitura ainda dentro da janela, gravada pela
+  renderização de outra página, é reaproveitada: o pior caso de uma mudança **sem webhook** fica
+  perto da soma das duas janelas — cerca de 2 min na home (60 + 60 s) em vez de 1 min. Em rota
+  `force-dynamic` (`/legado`) e em rota de API (o webhook), a leitura vencida ainda é servida uma
+  vez e renovada em segundo plano, sem o `signal` do pedido: o `withDeadline` continua limitando
+  quem lê, e o pedido renovado fica só com os prazos do undici. O que não tem webhook:
+  despublicação (o Kal El não manda evento), renomear editoria, autor ou entidade (1 h,
+  `REVALIDATE.taxonomy`), metadados de mídia (1 h), redirecionamentos (5 min). Uma troca de slug
+  deixa o endereço antigo resolvendo a matéria por até cerca de 10 min: a busca pelo slug antigo
+  pode ter sido guardada pouco antes da troca (5 min), e a página regenerada com ela fica mais uma
+  janela de página (5 min).
+- **Taxonomia nova.** A lista de editorias e autores vem do cache por até uma hora. Uma matéria
+  que credite um autor criado depois disso sairia sem a assinatura por até uma hora — a medição
+  reproduziu isso com a correção do transporte sozinha. Por isso `relationsFor` (que lê a matéria
+  sem cache e as listas pelo cache, como as páginas as veem) marca `staleTaxonomy` quando a
+  matéria cita editoria ou autor que a lista em cache não conhece, e o webhook então revalida
+  também a tag `taxonomy`. Medido: autor novo creditado numa matéria publicada, entrega
+  `article.updated`, e a primeira visita já mostra o nome. Só nesse caso: toda página lê as
+  editorias, então purgar a taxonomia em toda entrega marcaria o site inteiro como velho. Quando
+  `relationsFor` falha, o webhook purga todas as editorias, mas não a taxonomia: o CMS está falhando
+  naquela hora, e purgar a taxonomia tiraria a cópia velha de todas as páginas — tag, autor e
+  ofertas incluídas —, que passariam a renderizar contra o CMS em falha. O preço é raro e
+  limitado: uma editoria ou autor criados junto com essa matéria esperam a hora da taxonomia.
+  Entidades ficam de fora de propósito: só alimentam o rótulo comercial da oferta, que tem texto
+  genérico de reserva, e uma entidade nova (ou a lista de entidades fora do ar) purgaria o site
+  inteiro a cada entrega. Tags lidas por id não precisam disso — um id novo é uma URL nova. A
+  busca de tag por **slug** (arquivo `/tag/<slug>`, filtros de assunto, `/legado`) guarda também
+  a resposta vazia de um slug pedido antes de a tag existir; ela usa `REVALIDATE.tag` (5 min), não
+  a hora da taxonomia, para que `/tag/novo` não responda 404 por uma hora.
+- **Resposta ruim em cache.** O Next guarda qualquer 200 antes de o transporte ler o corpo. Antes
+  isso não importava, porque a entrada nunca era lida de volta; agora, uma resposta fora do
+  contrato — ou uma página HTML de proxy servida com 200 — voltaria a cada leitura durante a
+  janela inteira, mesmo com o CMS já corrigido (a lista de editorias quebrada derrubaria o site
+  por uma hora, e só um reinício limparia). Por isso, quando uma leitura com cache recebe um 200
+  cujo corpo é recusado (fora do contrato, ou que não é JSON), ela tenta de novo na hora, sem
+  espera, sob uma chave própria (`retryCorrelationId`: o id + o minuto). Só nesse caso: um 5xx ou
+  um 429 nunca é guardado, e a nova tentativa deles continua na chave da leitura, onde a resposta
+  boa serve o próximo leitor. Enquanto o CMS continuar errado, cada endereço é pedido no máximo uma
+  vez por minuto e o alerta `kalel.contract.violation` continua saindo. Corrigido o CMS, o site
+  volta em até um minuto, mas a entrada ruim fica até a janela dela vencer (até 1 h na taxonomia),
+  e cada leitura daquele endereço paga um pedido a mais nesse tempo; o aviso
+  `kalel.read.cached-unusable` (nível `warn`, não alerta) mostra isso. Quem não quiser esperar
+  reinicia o contêiner, que zera o cache. Leitura `no-store` e sonda com `retry: false` seguem sem
+  nova tentativa.
+- **Cota do Kal El.** O CMS aceita 600 pedidos por minuto por token. Uma matéria fora do
+  pré-render custava cerca de 30 leituras (151 em 5); com 20 renderizações por minuto — um
+  robô de busca passando pelo acervo — a cota acabava. Agora as mesmas 5 custaram 52, cerca de
+  10 cada: o que é só daquela matéria (ela, suas tags e mídias, as listas relacionadas).
+- **Memória.** O LRU deixa de encher de entradas de uso único, que empurravam para fora as
+  páginas renderizadas sob demanda. Não medido em produção.
+
+**Revisão.** O Codex CLI segue recusando todo modelo com a conta ChatGPT (`model_not_found`, como
+em 31/10); a revisão independente foi de um subagente só leitura, em duas rodadas. Da primeira
+vieram a nova tentativa com chave própria, a saída das entidades, a janela da busca por slug, o
+teste da segunda entrega e as correções deste texto; da segunda, a chave própria só para o 200
+recusado, a nova tentativa sem espera e o aviso dela, a conferência de que o `next start` liga os
+handlers, e a decisão de não purgar a taxonomia quando `relationsFor` falha (a primeira rodada
+pedia o contrário; a segunda mostrou o custo). Ficaram registrados aqui, sem mudança de código, a
+troca de slug (até cerca de 10 min) e a renovação em segundo plano sem `signal` nas rotas
+dinâmicas. A segunda rodada terminou sem achado de severidade alta ou média.
+
+**Testes.** `tests/unit/kalel-cache-key.test.ts`: leituras iguais saem com cabeçalhos idênticos
+e caem na mesma chave calculada pela própria `generateCacheKey` do Next (e o mesmo pedido com um
+id aleatório cai em outra, que é o que dá sentido à asserção); query diferente, id diferente; um
+id do chamador não divide o cache; `no-store` mantém um id por chamada; violação de contrato e
+200 que não é JSON são tentados de novo na hora sob outra chave, com aviso, e só a resposta final
+vira alerta; um 5xx é tentado de novo na mesma chave; `no-store` e `retry: false` não repetem;
+`relationsFor` marca a taxonomia velha para autor e editoria desconhecidos, ignora entidades, e lê
+as listas pelo cache (com tag e janela) e a matéria sem cache. `tests/unit/next-cache-handler.test.ts`:
+o `next start` liga os handlers padrão e o projeto não os tira; a segunda entrega da mesma tag
+invalida o que foi guardado depois da primeira. `tests/integration/revalidate-taxonomy.test.ts`:
+o webhook revalida `taxonomy` quando `staleTaxonomy` vem marcado, e não no caso comum nem quando
+`relationsFor` falha (aí, todas as editorias).
+
+**Deploy.** Nenhuma variável nova. O cache é em memória, então o contêiner novo nasce frio como
+sempre. Depois do deploy, conferir: uma publicação do MN-Prime aparece na home na primeira visita
+seguinte; os logs `kalel.read.*` não sobem; uma matéria do acervo abre normalmente.
