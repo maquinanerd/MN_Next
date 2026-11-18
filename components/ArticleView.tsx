@@ -8,6 +8,7 @@ import {
   Disclosure,
   EditoriaBand,
   EndNotes,
+  FichaCinerie,
   FloatRelated,
   FullBleedCover,
   Lead,
@@ -72,6 +73,10 @@ export function ArticleView({ view, preview = false }: { view: MateriaView; prev
   const anuncio = preview ? null : view.anuncios;
   const top = anuncio ? <OpaPrecoAd slot="article-top" contexto={anuncio} className="mt-32" /> : null;
   const bottom = anuncio ? <OpaPrecoAd slot="article-bottom" contexto={anuncio} className="my-48" /> : null;
+  // After the text, before the closing notes: the film or series the story is about.
+  const fichas = view.fichas.map((ficha, i) => (
+    <FichaCinerie key={`${i}-${ficha.url}`} ficha={ficha} id={`ficha-${i}`} />
+  ));
 
   if (materia.layout === 'overlay') {
     return (
@@ -92,6 +97,7 @@ export function ArticleView({ view, preview = false }: { view: MateriaView; prev
                   comercial={materia.comercial}
                   anuncio={anuncio}
                 />
+                {fichas}
                 <EndNotes facebook={facebook} x={x} newsletter="/newsletter">
                   <ShareRow titulo={materia.titulo} url={materia.url} />
                 </EndNotes>
@@ -172,6 +178,7 @@ export function ArticleView({ view, preview = false }: { view: MateriaView; prev
                   comercial={materia.comercial}
                   anuncio={anuncio}
                 />
+                {fichas}
                 <EndNotes facebook={facebook} x={x} newsletter="/newsletter">
                   <ShareRow titulo={materia.titulo} url={materia.url} />
                 </EndNotes>

@@ -78,6 +78,30 @@ export interface Imagem {
 
 export type Formato = 'noticia' | 'reportagem' | 'critica' | 'video' | 'lista' | 'oferta';
 
+/**
+ * The ficha of the film or series an article is about, as Cinerie describes it
+ * (`FichaCinerie`, after the article text). Every field is optional except what names the
+ * work: Cinerie leaves out what its licences do not let it show.
+ */
+export interface FichaObra {
+  tipo: 'filme' | 'serie';
+  titulo: string;
+  tituloOriginal?: string;
+  /** The work's page on Cinerie. */
+  url: string;
+  /** "Filme · 2024 · 2h 46min" / "Série · 2022 · 3 temporadas". */
+  linhaFina: string;
+  generos: string[];
+  sinopse?: string;
+  direcao: string[];
+  elenco: { nome: string; personagem?: string }[];
+  poster?: Imagem;
+  trailer?: { id: string; titulo: string };
+  ondeAssistir: { modalidade: string; plataformas: { nome: string; url?: string }[] }[];
+  /** Credit the offer data requires (JustWatch). */
+  creditoOfertas?: string;
+}
+
 /** A card, in any grid. */
 export interface Chamada {
   id: string;

@@ -10,11 +10,13 @@ import {
   type Category,
   type Tag,
 } from '@mn/content';
+import { fetchCinerieTitles } from '@mn/content/cinerie/client';
 import { isBrandUnsafe } from '@mn/content/kalel/mapper';
 import type {
   Chamada,
   ContextoDoAnuncio,
   Editoria,
+  FichaObra,
   Filtro,
   Materia,
   NestaEditoria,
@@ -24,6 +26,7 @@ import type {
 
 import { seoContext } from '../seo-context';
 import { CINERIE_URL, EDITORIAS, NOTICIAS } from './editorias';
+import { toFicha } from './ficha';
 import { PATROCINADOS_DEMO } from './fixtures/patrocinados';
 import { adContext, assuntoOf, toChamadas, toMateria } from './map';
 import { optional, repo } from './repo';
@@ -283,6 +286,8 @@ export interface MateriaView {
   flutuante?: Chamada;
   /** The page context of the article's OpaPreço slots; null when brand safety keeps ads off. */
   anuncios: ContextoDoAnuncio | null;
+  /** The fichas of the works the article is about, from Cinerie; empty when there are none or Cinerie is out. */
+  fichas: FichaObra[];
 }
 
 /**
@@ -296,11 +301,15 @@ export async function materiaView(article: Article): Promise<MateriaView | null>
     categorySlug && isEditoriaSlug(categorySlug)
       ? EDITORIAS[categorySlug].assuntos.slice(1).map((label) => slugify(label))
       : [];
-  const [categoryItems, latest, offers, tags] = await Promise.all([
+  const [categoryItems, latest, offers, tags, cinerie] = await Promise.all([
     categorySlug ? optional(repo().listCategory(categorySlug, 1, { perPage: 14 }), 'related') : Promise.resolve(null),
     optional(repo().listLatest(1, { perPage: 10 }), 'next-story'),
     article.layout === 'offer' ? optional(repo().listOffers(1, { perPage: 6 }), 'offers') : Promise.resolve(null),
     subjectSlugs.length > 0 ? optional(repo().findTags(subjectSlugs), 'article-tags') : Promise.resolve(null),
+    // The ficha is a module, never the page: Cinerie out or slow leaves the article at 200.
+    article.cinerie && article.layout !== 'offer'
+      ? optional(fetchCinerieTitles(article.cinerie), 'cinerie-ficha')
+      : Promise.resolve(null),
   ]);
 
   const others = toChamadas((categoryItems?.items ?? []).filter((a) => a.id !== article.id));
@@ -359,6 +368,7 @@ export async function materiaView(article: Article): Promise<MateriaView | null>
     patrocinados: repo().source === 'fixture' && article.layout === 'offer' ? PATROCINADOS_DEMO : [],
     ...(article.layout === 'offer' && (otherOffers[2] ?? others[0]) ? { flutuante: otherOffers[2] ?? others[0] } : {}),
     anuncios: adContext(article, adsPermitidos),
+    fichas: (cinerie ?? []).map((title) => toFicha(title, article)),
   };
 }
 
