@@ -125,10 +125,16 @@ const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: false },
   images: {
     formats: ['image/avif', 'image/webp'],
-    remotePatterns: allowedImageHosts().map((hostname) => ({
-      protocol: 'https' as const,
-      hostname,
-    })),
+    remotePatterns: [
+      ...allowedImageHosts().map((hostname) => ({
+        protocol: 'https' as const,
+        hostname,
+      })),
+      // Posters in the Cinerie ficha (lib/content/ficha.ts): Cinerie hands out TMDB CDN
+      // addresses it is licensed to show, at w780. One host, one size — not an open proxy
+      // that any visitor could point at `/t/p/original/<anything>`.
+      { protocol: 'https' as const, hostname: 'image.tmdb.org', pathname: '/t/p/w780/**' },
+    ],
     // A story cover must be >= 1200px wide for Discover; keep the ladder wide enough.
     deviceSizes: [390, 640, 768, 1024, 1200, 1440, 1920],
     imageSizes: [96, 128, 192, 256, 288, 343, 384, 576],

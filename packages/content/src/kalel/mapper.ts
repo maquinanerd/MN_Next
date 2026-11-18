@@ -1,3 +1,4 @@
+import { cinerieRefsFrom } from '../cinerie/refs';
 import type {
   Article,
   ArticleSummary,
@@ -525,6 +526,7 @@ export function mapArticle(dto: KalElArticle, ctx: MapperContext): MapArticleRes
   // A story with neither a meta description nor an excerpt — some of the imported archive —
   // describes itself with its opening paragraph, not with an empty `description`.
   const excerpt = summary.excerpt || leadText(doc.blocks);
+  const cinerie = cinerieRefsFrom(dto.provenance, doc.blocks);
   const article: Article = {
     ...summary,
     readingMinutes: readingMinutes(doc.wordCount),
@@ -532,6 +534,7 @@ export function mapArticle(dto: KalElArticle, ctx: MapperContext): MapArticleRes
     seo: mapSeo(dto.seo, { title: dto.title, excerpt, cover: summary.cover, schemaType }, ctx.media),
     editedAt: editedAt(dto),
     ...(commercial ? { commercial } : {}),
+    ...(cinerie.length > 0 ? { cinerie } : {}),
   };
 
   return { article, unknownBlocks: doc.unknown };

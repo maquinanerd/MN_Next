@@ -29,6 +29,8 @@ export const SIZES = {
   figure: '(max-width: 900px) 100vw, 944px',
   related: '(max-width: 760px) 100vw, 280px',
   product: '(max-width: 900px) 100vw, 200px',
+  /** The Cinerie ficha's poster: 96px wide on phones, 140px from the tablet up. */
+  poster: '(max-width: 760px) 96px, 140px',
   avatar: '52px',
 } as const;
 

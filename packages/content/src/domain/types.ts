@@ -170,11 +170,59 @@ export interface ArticleSummary {
   commercialKind?: CommercialKind;
 }
 
+export type CinerieKind = 'movie' | 'tv';
+
+/**
+ * The film or series an article is about, as the writer recorded it: the Cinerie catalogue
+ * id (Kal El `provenance.sources[provider = cinerie]`) or the address of its Cinerie page
+ * (a `source` block of kind `cinerie`). Either is enough to ask Cinerie for the ficha.
+ */
+export interface CinerieRef {
+  kind: CinerieKind;
+  /** Internal Cinerie catalogue id. */
+  entityId?: string;
+  /** pt-BR slug of the Cinerie page. */
+  slug?: string;
+  /** The Cinerie page. */
+  url: string;
+}
+
+export type CinerieOfferType = 'flatrate' | 'free' | 'ads' | 'rent' | 'buy';
+
+/**
+ * A film or series as Cinerie describes it, already filtered by Cinerie's licence gates:
+ * what is absent here is what Cinerie may not show, not what does not exist.
+ */
+export interface CinerieTitle {
+  kind: CinerieKind;
+  entityId: string;
+  title: string;
+  originalTitle?: string;
+  /** The Cinerie page. */
+  url: string;
+  /** `YYYY-MM-DD` of the release (film) or first episode (series). */
+  releaseDate?: string;
+  runtimeMinutes?: number;
+  genres: string[];
+  synopsis?: string;
+  directors: string[];
+  cast: { name: string; character?: string }[];
+  seasonCount?: number;
+  ended?: boolean;
+  poster?: Image;
+  trailer?: { youtubeId: string; title: string };
+  offers: { provider: string; type: CinerieOfferType; url?: string }[];
+  /** Credit the offer source requires (JustWatch), when Cinerie lists offers. */
+  offersCredit?: string;
+}
+
 export interface Article extends ArticleSummary {
   body: ContentBlock[];
   seo: SeoFields;
   commercial?: CommercialMeta;
   review?: ReviewData;
+  /** The works the article is about, in the writer's order. Absent on articles with none. */
+  cinerie?: CinerieRef[];
   /**
    * When the text was last *edited*, as a reader understands it — null when it never was.
    *

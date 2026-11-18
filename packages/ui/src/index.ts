@@ -26,6 +26,7 @@ export { ArticleLabel, ArticleTitleRow, Disclosure, Lead, Dates, AuthorRow, Full
 export { AuthorRail, EditoriaBand, EditoriaList } from './article/Rail';
 export type { NestaEditoria, EditoriaLink } from './article/Rail';
 export { WideFigure, RelatedInline, EndNotes, NextStory, RelatedGrid } from './article/Extras';
+export { FichaCinerie } from './article/Ficha';
 export { ShareButtons, ShareRow } from './article/Share';
 
 export { ProductCard, FloatRelated, LeiaTambem, AffiliateNotice, SponsoredGrid } from './commercial/Commercial';

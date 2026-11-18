@@ -68,6 +68,11 @@ services:
       - KAL_EL_TIMEOUT_MS=${KAL_EL_TIMEOUT_MS:-5000}
       - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-60}
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      # Ficha da obra (Cinerie Context Service). Both or neither: without them the ficha
+      # simply does not render. The token is the same key set in Cinerie's
+      # CINERIE_EDITORIAL_CONTEXT_API_KEYS; runtime only, never a build argument.
+      - CINERIE_INTERNAL_URL=${CINERIE_INTERNAL_URL:-}
+      - CINERIE_SERVICE_TOKEN=${CINERIE_SERVICE_TOKEN:-}
     healthcheck:
       # Liveness, not readiness: a CMS blip must not get the container killed and restarted
       # into the same blip. `?ready=1` is the operator's check (RUNBOOK §2).

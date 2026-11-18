@@ -1526,3 +1526,72 @@ A janela da lista caiu de 9 + 26 para 9 + 23, o máximo que as seções restante
 `tests/e2e/surfaces.spec.ts` tira "animes | especiais" da ordem da home e ganha "has no Animes band,
 while the menu still leads to /animes", que confere a ausência da faixa e o link do menu (cabeçalho
 no desktop, gaveta no celular).
+
+### 7.32 Ficha da obra vinda da Cinerie na matéria (2026-11-18)
+
+**Pedido do dono.** O Máquina Nerd passa a usar o banco da Cinerie — imagens, conteúdo e
+trailers — para construir as notícias sobre filme e série. Três peças, uma em cada repositório,
+todas pelo mesmo contrato (`cinerie-editorial-context-v1`):
+
+1. **Cinerie** (`maquinanerd/screena`): a rota interna `POST /api/internal/editorial-context`
+   (o "Cinerie Context Service" do ADR 0015 §3.2, até então só desenhado). Entrega, por obra,
+   sinopse, data, duração, gêneros, direção, elenco, backdrop, cenas, pôster, trailer do YouTube e
+   onde assistir no Brasil, pelos **mesmos portões de licença da página pública da Cinerie**.
+   Chave própria (`CINERIE_EDITORIAL_CONTEXT_API_KEYS`, escopo `catalog_context`).
+2. **MN-Prime**: lê o título da obra nas manchetes das fontes (entre aspas, ou `Título (ano)`),
+   pede a ficha antes da redação e a põe no prompt como dados verificados; na entrega ao Kal El
+   usa o backdrop como capa de reserva, uma cena no corpo sem imagem e o trailer no corpo sem vídeo
+   (crédito `TMDB`), e grava a obra em `provenance.sources[provider = cinerie]` e num nó `source`
+   de kind `cinerie`.
+3. **Portal** (este repositório): `materiaView` lê a obra da matéria
+   (`packages/content/src/cinerie/refs.ts`), pede a ficha à Cinerie
+   (`packages/content/src/cinerie/client.ts`) e mostra `FichaCinerie` depois do texto, antes das
+   notas finais, nos layouts padrão e overlay. A oferta (layout `offer`) não tem ficha.
+
+**Kal El sem mudança.** O campo que guarda a obra já existia: `provenance.sources[]` (registro de
+máquina, devolvido no detalhe) e o nó `source {label, url, kind}` (link visível). Os dois aceitam
+texto livre, e o mapper do portal lê os dois — o nó também deixa um editor ligar uma obra à mão no
+editor do Kal El, colando o link da ficha com o tipo `cinerie`.
+
+**Por que a ficha é ao vivo, e não copiada para o Kal El.** "Onde assistir" muda com o tempo; uma
+cópia na matéria ficaria errada em semanas. A ficha é lida no render com cache de dados de uma hora
+(`next: { tags: ['cinerie:titles'], revalidate: 3600 }`, a janela que `REVALIDATE.cinerie` já
+reservava). O Next 15.5 põe os **cabeçalhos** na chave do cache de dados (`incremental-cache`
+`generateCacheKey` só tira `traceparent`/`tracestate`), então o `x-correlation-id` da ficha é
+derivado do corpo, nunca aleatório — com um id novo por chamada, toda renderização seria um erro
+de cache. Travado por teste (duas chamadas iguais, cabeçalhos idênticos).
+
+**Módulo opcional, como docs/02 manda.** Sem `CINERIE_INTERNAL_URL` e `CINERIE_SERVICE_TOKEN`, não
+há chamada nem ficha. As duas são lidas cruas no esquema de ambiente e validadas pelo cliente da
+ficha (`cinerieServiceFrom`): uma URL malformada, só uma das duas, ou `http` fora de localhost em
+produção desligam a ficha com um aviso `cinerie.config.ignored` — nunca o `serverEnv()` do site
+inteiro. Erro, prazo estourado (3,5 s, com o `withDeadline` do transporte do Kal El: uma chamada travada não pode prender a regeneração ISR da matéria)
+ou resposta fora do contrato: `optional()` registra e a matéria segue 200, sem a ficha.
+
+**Licença no portal.** Só entra mídia `approved` e `allowedForEditorial = true`, a regra do contrato.
+O pôster é servido por `next/image` de `image.tmdb.org/t/p/w780/**` — um host e o único tamanho
+que a Cinerie entrega, fixos em `next.config.ts`, não um proxy aberto; o CSP não muda, porque a imagem sai de `/_next/image`. O
+crédito "Dados: Cinerie · Imagem: TMDB" e o da fonte das ofertas (JustWatch) vão no rodapé da ficha.
+Plataformas abrem em nova aba com `nofollow noopener noreferrer`; "Ver na Cinerie" abre na mesma
+aba, com referrer, porque a Cinerie é do mesmo grupo.
+
+**Design.** A ficha não é uma das sete superfícies aprovadas: é um módulo dentro da matéria, feito
+só com tokens (borda `line`, escala de texto, a moldura da caixa de produto), neutro — a cor da
+editoria continua sendo a do texto. Pôster 2:3 reservado (sem CLS); sem pôster, não ocupa espaço.
+O trailer usa o `VideoFacade` (clique para carregar, `youtube-nocookie`) e some quando o texto já
+incorpora o mesmo vídeo. Conferido com uma Cinerie falsa local em 390, 768, 1024 e 1440 px, sem
+rolagem horizontal (`artifacts/visual/cinerie-ficha/`).
+
+**Testes.** `tests/unit/cinerie-ficha.test.ts`: leitura da obra (provenance e nó `source`, teto
+de 3, endereço que não é da Cinerie recusado), mapeamento (mídia não aprovada e host fora da lista
+caem), cliente (POST por id com a tag de cache; desligado sem configuração; erro e contrato violado
+lançam para o `optional()`), e a ficha da tela (rótulos, grupos de oferta, trailer não repetido).
+
+**Operação.** Em produção, no recurso do portal no Coolify: `CINERIE_INTERNAL_URL=https://cinerie.com`
+e `CINERIE_SERVICE_TOKEN` = a chave **do portal** dentro de `CINERIE_EDITORIAL_CONTEXT_API_KEYS` na
+Cinerie (o MN-Prime tem a dele: o teto da rota é por chave). São de runtime; um redeploy as aplica.
+
+**Achado de passagem (fora deste PR).** O transporte do Kal El (`kalel/transport.ts`) manda um
+`x-correlation-id` aleatório em toda leitura com `next.tags`, o que, pela mesma regra do Next,
+torna cada leitura do Kal El um erro de cache de dados. Mudar isso muda o comportamento de cache do
+site inteiro e fica para uma tarefa própria, com medição.

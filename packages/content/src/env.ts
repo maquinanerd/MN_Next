@@ -50,8 +50,14 @@ const baseSchema = z.object({
   KAL_EL_PREVIEW_SECRET: nonEmpty.optional(),
   KAL_EL_TIMEOUT_MS: z.coerce.number().int().positive().max(30_000).default(5_000),
 
-  CINERIE_INTERNAL_URL: urlNoTrailingSlash.optional(),
-  CINERIE_SERVICE_TOKEN: nonEmpty.optional(),
+  /*
+   * Read raw and validated by the ficha's own client (`cinerie/client.ts`): a typo here
+   * must cost the ficha, never the site. In this schema a malformed URL would fail the
+   * whole `serverEnv()` — the Kal El transport, preview and revalidation included — for
+   * an optional module (docs/02).
+   */
+  CINERIE_INTERNAL_URL: z.string().optional().catch(undefined),
+  CINERIE_SERVICE_TOKEN: z.string().optional().catch(undefined),
 
   MEDIA_ALLOWED_HOSTS: z.string().default(''),
 
