@@ -235,7 +235,10 @@ export class KalElContentRepository implements ContentRepository {
       path: this.transport.sitePath('/tags'),
       query: { slug },
       tags: [TAG.taxonomy],
-      revalidate: REVALIDATE.taxonomy,
+      // Not the taxonomy's hour: an empty answer for a slug asked before its tag existed
+      // is cached too, and no webhook reaches it — `/tag/novo` would 404 for an hour.
+      // A tag's own archive window keeps that to what it was before the cache hit.
+      revalidate: REVALIDATE.tag,
     });
     const row = rows.find((r) => r.slug === slug);
     return row ? mapTag(row) : null;
@@ -901,6 +904,10 @@ export class KalElContentRepository implements ContentRepository {
       path: this.transport.sitePath(`/articles/${articleId}`),
       noStore: true,
     });
+    // The article is read fresh; these lists come from the data cache, as the pages see
+    // them. Tags are read by id, so a new tag is a new URL and never a stale answer.
+    // Entities are left out on purpose: they only feed an offer's commercial label, which
+    // has a generic fallback, and purging the taxonomy marks every page of the site stale.
     const [categories, tags, authors] = await Promise.all([
       this.fetchCategories(),
       this.fetchTagsByIds(dto.tags),
@@ -908,10 +915,13 @@ export class KalElContentRepository implements ContentRepository {
     ]);
     const categoryById = new Map(categories.map((c) => [c.id, c]));
     const authorById = new Map(authors.map((a) => [a.id, a]));
+    const staleTaxonomy =
+      dto.categories.some((id) => !categoryById.has(id)) || dto.authors.some((id) => !authorById.has(id));
     return {
       categories: dto.categories.map((id) => categoryById.get(id)?.slug).filter((s): s is string => Boolean(s)),
       tags: dto.tags.map((id) => tags.get(id)?.slug).filter((s): s is string => Boolean(s)),
       authors: dto.authors.map((id) => authorById.get(id)?.slug).filter((s): s is string => Boolean(s)),
+      staleTaxonomy,
     };
   }
 }

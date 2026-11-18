@@ -1,5 +1,5 @@
 import 'server-only';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { z } from 'zod';
 
 import { ContentError } from '../errors';
@@ -42,6 +42,10 @@ export interface ReadRequest {
    * must answer inside its own deadline rather than a reader's.
    */
   retry?: boolean;
+  /**
+   * Honoured by `noStore` reads only. A cached read's id is derived from its URL
+   * (`readCorrelationId`): any other value would split Next's data cache.
+   */
   correlationId?: string;
 }
 
@@ -123,6 +127,43 @@ export function withDeadline<T>(work: Promise<T>, signal: AbortSignal): Promise<
   });
 }
 
+/**
+ * The `x-correlation-id` of a read: derived from the URL when Next caches the read,
+ * unique per call when it does not.
+ *
+ * Next 15 keys its data cache on the request headers as well as the URL —
+ * `generateCacheKey` in `next/dist/server/lib/incremental-cache/index.js` drops only the
+ * W3C trace headers. With a fresh `randomUUID()` per call no cached read ever hit: every
+ * render and every ISR regeneration re-read everything from Kal El, and every read
+ * stored one more entry in the in-memory LRU that pages share (`next-cache-handler.mjs`).
+ * Measured against the stand-in CMS on 18/11/2026 (DECISIONS §7.33): a build made 1,507
+ * reads; the same `/legado` request read 6 times on every visit.
+ *
+ * The same URL always gets the same id, so a portal log line (`kalel.read.error`,
+ * `discovery.degraded`) still points at the read that failed. Nothing on Kal El's side
+ * depends on it being unique: the CMS mints its own request id and does not record this
+ * header. A `no-store` read never reaches the cache and keeps an id of its own per call.
+ */
+export function readCorrelationId(url: string, req: Pick<ReadRequest, 'noStore' | 'correlationId'>): string {
+  if (req.noStore) return req.correlationId ?? randomUUID();
+  return `kalel-${createHash('sha256').update(`GET ${url}`).digest('hex').slice(0, 16)}`;
+}
+
+/**
+ * The id of the retry of a cached read: a key of its own, shared for one minute.
+ *
+ * Next stores any 200 before the transport has looked at the body, so an answer the
+ * first attempt rejects — outside the contract, or not JSON at all — may be one the data
+ * cache kept, and under the same key the retry would be handed it again (Next even waits
+ * on the same per-key lock). With an hour-long window and the CMS already fixed, that is
+ * an hour of a broken site that only a restart would end. A key per minute bounds both
+ * sides: the CMS is asked at most once a minute per address while it keeps answering
+ * badly, and the site recovers within a minute of the CMS being fixed.
+ */
+export function retryCorrelationId(id: string, now: number = Date.now()): string {
+  return `${id}-r${Math.floor(now / 60_000).toString(36)}`;
+}
+
 /** Transport events that are alerts rather than dependency blips (RUNBOOK §2). */
 const ALERT_EVENTS: ReadonlySet<string> = new Set(['kalel.contract.violation', 'kalel.read.rate-limited']);
 
@@ -184,17 +225,38 @@ export class KalElTransport {
 
   /** GET with Next tag caching, one bounded retry, and envelope validation. */
   async read<T extends z.ZodTypeAny>(schema: T, req: ReadRequest): Promise<z.infer<T>> {
-    const correlationId = req.correlationId ?? randomUUID();
     const url = this.url(req.path, req.query);
+    // Part of the cache key: see `readCorrelationId` before making it vary per call.
+    const correlationId = readCorrelationId(url, req);
     const envelope = kalelEnvelope(schema);
 
     let lastError: unknown;
+    // Set when a cached read got a 200 whose body was refused — possibly a stored one.
+    let refusedBody = false;
     for (let attempt = 0; attempt <= 1; attempt += 1) {
       const isLastAttempt = attempt === 1 || req.retry === false;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
       // Every await on the network below goes through the deadline: see `withDeadline`.
       const bounded = <V>(work: Promise<V>) => withDeadline(work, controller.signal);
+      // Only a refused 200 can be a stored answer, so only its retry changes key; a 5xx or
+      // a 429 is never stored, and its retry fills the read's own entry.
+      const headerId = refusedBody ? retryCorrelationId(correlationId) : correlationId;
+      /**
+       * A cached read whose 200 cannot be used: one more try, at once, under its own key
+       * (`retryCorrelationId`) — the point is to change key, not to wait out a blip. That
+       * tells a CMS still answering badly from a bad answer the data cache kept. Logged at
+       * `warn`, since a good retry would otherwise hide that the stored entry is still
+       * there, costing a request until its window runs out.
+       */
+      const retryRefusedBody = (reason: string, err: unknown): boolean => {
+        if (req.noStore || isLastAttempt) return false;
+        refusedBody = true;
+        lastError = err;
+        clearTimeout(timer);
+        this.onLog('kalel.read.cached-unusable', { correlationId, path: req.path, reason });
+        return true;
+      };
       try {
         const res = await bounded(
           this.fetchImpl(url, {
@@ -202,7 +264,7 @@ export class KalElTransport {
             headers: {
               authorization: `Bearer ${this.token}`,
               accept: 'application/json',
-              'x-correlation-id': correlationId,
+              'x-correlation-id': headerId,
             },
             signal: controller.signal,
             // `no-store` for search/preview; otherwise a tagged, time-bounded entry.
@@ -265,24 +327,36 @@ export class KalElTransport {
           throw err;
         }
 
-        const json: unknown = await bounded(res.json());
+        let json: unknown;
+        try {
+          json = await bounded(res.json());
+        } catch (err) {
+          // A 200 that is not JSON — a proxy's page — is stored like any other 200.
+          const aborted = err instanceof Error && err.name === 'AbortError';
+          if (!aborted && retryRefusedBody('not-json', err)) continue;
+          throw err;
+        }
         const parsed = envelope.safeParse(json);
         if (!parsed.success) {
           const detail = parsed.error.issues
             .slice(0, 8)
             .map((i) => `${i.path.join('.')}: ${i.message}`)
             .join('; ');
-          this.onLog('kalel.contract.violation', { correlationId, path: req.path, detail });
-          throw ContentError.contract(`Kal El response for ${req.path} does not satisfy the agreed schema`, {
+          const err = ContentError.contract(`Kal El response for ${req.path} does not satisfy the agreed schema`, {
             correlationId,
             detail,
           });
+          // Only the answer that stands is an alert: see `retryRefusedBody`.
+          if (retryRefusedBody('contract', err)) continue;
+          this.onLog('kalel.contract.violation', { correlationId, path: req.path, detail });
+          throw err;
         }
         return parsed.data.data as z.infer<T>;
       } catch (err) {
         clearTimeout(timer);
-        // Editorial 404s, credential rejections and contract violations are terminal:
-        // repeating them only doubles the latency of a failure that will not change.
+        // Editorial 404s and credential rejections are terminal, and so is a contract
+        // violation once retried (above): repeating them only doubles the latency of a
+        // failure that will not change.
         if (err instanceof ContentError) throw err;
         lastError = err;
         const aborted = err instanceof Error && err.name === 'AbortError';
