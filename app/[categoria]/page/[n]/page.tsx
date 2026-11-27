@@ -13,6 +13,15 @@ export const revalidate = 120;
 
 type Params = { categoria: string; n: string };
 
+/**
+ * None at build time, every page on its first request — and then cached like page 1.
+ * Without this function the route is rendered on every request whatever `revalidate`
+ * says: until 2026-11-27 every `/{editoria}/page/{n}` answered `private, no-store`.
+ */
+export function generateStaticParams(): Params[] {
+  return [];
+}
+
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const { categoria, n } = await params;
   const slug = safeSlugParam(categoria);
