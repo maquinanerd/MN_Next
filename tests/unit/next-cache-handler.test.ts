@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import FileSystemCache from 'next/dist/server/lib/incremental-cache/file-system-cache';
+import { executeRevalidates } from 'next/dist/server/revalidation-utils';
+import { initializeCacheHandlers } from 'next/dist/server/use-cache/handlers';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import MemoryOnlyCache from '../../next-cache-handler.mjs';
@@ -142,6 +144,65 @@ describe('next-cache-handler', () => {
 
     expect(disk.writes.length).toBeGreaterThan(0);
     expect(writes).toEqual([]);
+  });
+});
+
+describe('revalidating the same tag again', () => {
+  /*
+   * The publication webhook revalidates `home` on every delivery, and since the Kal El
+   * reads hit the data cache (DECISIONS §7.33) whether the second delivery works decides
+   * whether the home shows the second story. In Next 15.5.4 the file-system cache records
+   * only the FIRST time a tag is revalidated (`if (!tagsManifest.has(tag))` in
+   * `file-system-cache.js`); what moves the date forward on later deliveries is the
+   * default `use cache` handler's `expireTags`, which `executeRevalidates` also calls and
+   * which writes to the same manifest. This drives that path — the one a route handler's
+   * `revalidateTag` ends in — through this repository's handler.
+   */
+  const FETCH_CTX = (tag: string) => ({ kind: 'FETCH', tags: [tag], softTags: [] }) as never;
+  const fetchEntry = {
+    kind: 'FETCH',
+    data: { headers: {}, body: 'e30=', status: 200, url: 'https://cms.example/articles' },
+    revalidate: 60,
+  } as never;
+  // The manifest keeps `performance.timeOrigin + now()`, an entry `Date.now()`: a margin
+  // well above any drift between the two clocks.
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 40));
+
+  it('is wired in production: Next starts the default handlers unless the config removes them', async () => {
+    // `next start` calls `initializeCacheHandlers` only when `experimental.cacheHandlers`
+    // is set (`next-server.js`), and that is true by default. Neither the project config
+    // nor a Next upgrade may take it away without the second delivery going stale.
+    const { defaultConfig } = await import('next/dist/server/config-shared');
+    const { default: config } = await import('../../next.config');
+    expect(typeof defaultConfig.experimental?.cacheHandlers).toBe('object');
+    expect(config.experimental?.cacheHandlers).toBeUndefined();
+  });
+
+  it('invalidates what was cached after the first delivery', async () => {
+    initializeCacheHandlers();
+    const { instance } = cache();
+    const tag = uniqueKey('home');
+    const key = uniqueKey('fetch-home');
+    const deliver = () =>
+      executeRevalidates({ incrementalCache: instance } as never, {
+        pendingRevalidatedTags: [tag],
+        pendingRevalidates: {},
+        pendingRevalidateWrites: [],
+      });
+
+    await instance.set(key, fetchEntry, { fetchCache: true, tags: [tag] } as never);
+    await tick();
+    await deliver();
+    expect(await instance.get(key, FETCH_CTX(tag))).toBeNull();
+
+    // The next render stores the fresh answer; it must be served until the next delivery.
+    await tick();
+    await instance.set(key, fetchEntry, { fetchCache: true, tags: [tag] } as never);
+    expect(await instance.get(key, FETCH_CTX(tag))).not.toBeNull();
+
+    await tick();
+    await deliver();
+    expect(await instance.get(key, FETCH_CTX(tag))).toBeNull();
   });
 });
 

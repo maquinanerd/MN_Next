@@ -76,22 +76,29 @@ faltar qualquer uma — inclusive `TRUST_PROXY`, que precisa ser respondida expl
 
 ## 2. Observação
 
-| Sinal                       | Onde        | O que significa                                                |
-| --------------------------- | ----------- | -------------------------------------------------------------- |
-| `GET /api/health`           | balanceador | processo vivo. Não depende do CMS de propósito                 |
-| `GET /api/health?ready=1`   | operador    | ambiente válido, token aceito e contrato do Kal El (abaixo)    |
-| `content.optional-degraded` | log         | um módulo opcional caiu; a página continuou                    |
-| `kalel.contract.violation`  | log         | o CMS mudou de formato. **Alerta**                             |
-| `kalel.read.error`          | log         | indisponibilidade do CMS                                       |
-| `kalel.read.rate-limited`   | log         | o Kal El recusou o token por excesso de chamadas. **Alerta**   |
-| `revalidate.rejected`       | log         | webhook com assinatura ou evento inválido. Investigar          |
-| `revalidate.duplicate`      | log         | reentrega normal. Não é erro                                   |
-| `preview.rejected`          | log         | token de preview inválido ou expirado                          |
-| `rum.metric`                | log         | Core Web Vitals por template e editoria                        |
-| `discovery.degraded`        | log         | feed ou sitemap renderizado vazio por falha do CMS. **Alerta** |
+| Sinal                        | Onde        | O que significa                                                |
+| ---------------------------- | ----------- | -------------------------------------------------------------- |
+| `GET /api/health`            | balanceador | processo vivo. Não depende do CMS de propósito                 |
+| `GET /api/health?ready=1`    | operador    | ambiente válido, token aceito e contrato do Kal El (abaixo)    |
+| `content.optional-degraded`  | log         | um módulo opcional caiu; a página continuou                    |
+| `kalel.contract.violation`   | log         | o CMS mudou de formato. **Alerta**                             |
+| `kalel.read.cached-unusable` | log         | resposta 200 recusada; nova tentativa sob outra chave (abaixo) |
+| `kalel.read.error`           | log         | indisponibilidade do CMS                                       |
+| `kalel.read.rate-limited`    | log         | o Kal El recusou o token por excesso de chamadas. **Alerta**   |
+| `revalidate.rejected`        | log         | webhook com assinatura ou evento inválido. Investigar          |
+| `revalidate.duplicate`       | log         | reentrega normal. Não é erro                                   |
+| `preview.rejected`           | log         | token de preview inválido ou expirado                          |
+| `rum.metric`                 | log         | Core Web Vitals por template e editoria                        |
+| `discovery.degraded`         | log         | feed ou sitemap renderizado vazio por falha do CMS. **Alerta** |
 
 Toda linha é JSON com `event`, `time` e um `correlationId` quando existe um. Segredos são
 removidos na saída; nenhum log carrega token.
+
+**`kalel.read.cached-unusable` sem `kalel.contract.violation`** é o que sobra depois de o Kal El
+voltar ao contrato: o cache de dados ainda guarda a resposta ruim daquele endereço até a janela
+dela vencer (até 1 h na taxonomia), e cada leitura paga um pedido a mais para contorná-la. O site
+já está certo; para parar o aviso antes, reinicie o portal no Coolify, que zera o cache
+(DECISIONS §7.33).
 
 **`?ready=1`** faz a leitura sem a qual nada funciona: artigos publicados, `order=published`,
 `offset=0`, `limit=1`, autenticada e sem cache, uma tentativa em 2 s. Fora de `ok` responde
@@ -578,7 +585,10 @@ Desde então:
 - páginas e fetches ficam **em memória** em execução (`next-cache-handler.mjs`, LRU de
   256 MB em `cacheMaxMemorySize`); o build continua gravando o que pré-renderiza;
 - a única gravação em disco é a das imagens otimizadas, no volume `portal-image-cache`
-  (`/app/.next/cache/images`), que atravessa o deploy.
+  (`/app/.next/cache/images`), que atravessa o deploy;
+- desde 18/11/2026 as leituras do Kal El acertam esse cache (antes, um id aleatório no
+  cabeçalho dava a cada leitura uma chave nova, o que muito provavelmente explica a maior parte
+  daqueles arquivos de fetch): [DECISIONS §7.33](./DECISIONS.md).
 
 Para conferir depois de um deploy, no terminal do servidor no Coolify:
 
