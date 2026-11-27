@@ -38,6 +38,10 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version-file: .nvmrc, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      # The file Coolify deploys, validated by Compose itself: an invalid one fails the
+      # deployment before the build, with the site down if the old container is gone.
+      - name: The Coolify compose file is valid
+        run: docker compose -f docker-compose.coolify.yml config --quiet
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
