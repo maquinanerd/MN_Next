@@ -2,9 +2,11 @@ import { notFound } from 'next/navigation';
 import type { SitemapKind } from '@mn/content';
 import { urlSet } from '@mn/seo';
 
-import { discoveryCacheControl, repo } from '../../../lib/content';
+import { discoveryCacheControl, isContentError, repo } from '../../../lib/content';
 import { indexableHubTags } from '../../../lib/content/tags';
+import { logger } from '../../../lib/logger';
 import { seoContext } from '../../../lib/seo-context';
+import { freshSeconds, sitemapFiles, sitemapKey, sitemapPolicy, type SitemapFile } from '../../../lib/sitemap-cache';
 
 /**
  * Child sitemaps, named by the index at `/sitemap.xml`.
@@ -14,8 +16,16 @@ import { seoContext } from '../../../lib/seo-context';
  * The tag file lists the editorias' subject hubs only, and only those indexable
  * (`indexableHubTags`): the archive brought 37.150 tags, most on one or two stories, and a
  * tag page under the threshold is `noindex` — it must not be submitted as well.
+ *
+ * Every file is answered from `lib/sitemap-cache.ts`: rendered once, served from memory,
+ * refreshed behind the answer, and kept when the CMS fails. Rendered per request, as it was,
+ * an article file cost fifty CMS reads every time Googlebot asked for it, and one slow read
+ * turned the whole file into a 500 (2026-11-27, `articles-2.xml`, after 29.6 s). With no copy
+ * to fall back on, an outage is a 503 with `Retry-After` — "come back", not "broken".
  */
-export const revalidate = 3600;
+
+// No `revalidate` and no `generateStaticParams`: the route renders per request, and the
+// cache is `sitemapFiles`. Next's ISR would put these files in the page LRU (see above).
 
 const SIMPLE_KINDS = new Set<SitemapKind>(['categories', 'tags', 'authors']);
 
@@ -33,26 +43,44 @@ export async function GET(_request: Request, ctx: { params: Promise<{ kind: stri
   const { kind: raw } = await ctx.params;
   const parsed = parseKind(raw);
   if (!parsed || parsed.page < 1) notFound();
+  const { kind, page } = parsed;
+  const key = sitemapKey(kind, page);
 
-  if (parsed.kind === 'tags') {
-    const { slugs, degraded } = await indexableHubTags();
-    const entries = slugs.map((slug) => ({ path: `/tag/${slug}` }));
-    return xml(urlSet(seoContext(), entries), degraded);
+  let file: SitemapFile | null;
+  let state: string;
+  try {
+    ({ value: file, state } = await sitemapFiles.get(key, () => render(kind, page), sitemapPolicy(kind, page)));
+  } catch (err) {
+    if (!isContentError(err) || err.kind !== 'unavailable') throw err;
+    logger.error('discovery.unavailable', { label: `sitemap-${key}`, correlationId: err.correlationId ?? null });
+    return new Response('Sitemap temporarily unavailable', {
+      status: 503,
+      headers: { 'retry-after': '120', 'cache-control': 'no-store', 'content-type': 'text/plain; charset=utf-8' },
+    });
   }
 
-  const page = await repo().listSitemap(parsed.kind, String(parsed.page));
   // A page past the end is a 404, not an empty file a crawler would keep re-fetching.
-  if (parsed.kind === 'articles' && page.entries.length === 0 && parsed.page > 1) notFound();
+  if (!file) notFound();
 
-  return xml(urlSet(seoContext(), page.entries));
-}
-
-/** Cached an hour; a minute while degraded, so the next read repairs it (`discovery`). */
-function xml(body: string, degraded = false): Response {
-  return new Response(body, {
+  return new Response(file.body, {
     headers: {
       'content-type': 'application/xml; charset=utf-8',
-      'cache-control': discoveryCacheControl(degraded, 3600),
+      // An hour (ten minutes for the newest file); a minute while degraded (`discovery`).
+      'cache-control': discoveryCacheControl(file.degraded, freshSeconds(kind, page)),
+      'x-sitemap-cache': state,
     },
   });
+}
+
+/** One file, from the CMS. Null for an article page past the end. */
+async function render(kind: SitemapKind, page: number): Promise<SitemapFile | null> {
+  if (kind === 'tags') {
+    const { slugs, degraded } = await indexableHubTags();
+    const entries = slugs.map((slug) => ({ path: `/tag/${slug}` }));
+    return { body: urlSet(seoContext(), entries), entries: entries.length, degraded };
+  }
+
+  const listed = await repo().listSitemap(kind, String(page));
+  if (kind === 'articles' && listed.entries.length === 0 && page > 1) return null;
+  return { body: urlSet(seoContext(), listed.entries), entries: listed.entries.length, degraded: false };
 }

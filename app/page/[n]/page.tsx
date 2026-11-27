@@ -15,6 +15,16 @@ export const revalidate = 120;
 
 type Params = { n: string };
 
+/**
+ * None at build time, every page on its first request — and then cached like the home.
+ * Without this function a dynamic segment is rendered on every request whatever
+ * `revalidate` says: until 2026-11-27 every `/page/{n}` answered `private, no-store`, so
+ * each crawl of the archive's 5 000 pages was a full render and a round of CMS reads.
+ */
+export function generateStaticParams(): Params[] {
+  return [];
+}
+
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const page = parsePage((await params).n);
   return listingMetadata(seoContext(), {
