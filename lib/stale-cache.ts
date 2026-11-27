@@ -6,11 +6,11 @@
  * Built for the article sitemaps (`app/sitemap/[kind]/route.ts`). Each of those files is
  * fifty CMS reads of a hundred stories, and Kal El takes seconds for the deep offsets: on
  * 2026-11-27 `/sitemap/articles-1.xml` took 4.6 s and, asked again minutes later, 18.7 s,
- * and `/sitemap/articles-2.xml` answered 500 after 29.6 s because one of its fifty reads
- * passed the transport's 5 s deadline. Next's own ISR is no shelter for them: its entries
- * share the 256 MB in-memory LRU with every rendered page (next-cache-handler.mjs), where an
- * 800 KB file read by Googlebot a few times a day is evicted long before it is asked for
- * again, and it would keep a degraded file for the route's whole `revalidate`.
+ * and `/sitemap/articles-2.xml` answered 500 twice (29.6 s, 13.0 s) because one of its fifty
+ * reads passed the transport's 5 s deadline. Next's own ISR is no shelter for them: its
+ * entries share the 256 MB in-memory LRU with every rendered page (next-cache-handler.mjs),
+ * where an 800 KB file read by Googlebot a few times a day is evicted long before it is
+ * asked for again, and it would keep a degraded file for the route's whole `revalidate`.
  *
  * Bounded three ways: the number of entries (oldest evicted first), one refresh in flight
  * per key, and a pause after a failed refresh so an outage is not retried on every request.
@@ -23,9 +23,9 @@ export interface StaleCacheOptions {
   /** Most entries kept; past it the least recently stored goes first. */
   maxEntries: number;
   /**
-   * How long past freshness a copy is still served while it refreshes behind the answer.
-   * Older than that, a request waits for the refresh — and still gets the old copy if the
-   * refresh fails (`fallback`).
+   * How long past freshness a copy is still served while it refreshes behind the answer,
+   * unless the policy says otherwise for a value. Older than that, a request waits for the
+   * refresh — and still gets the old copy if the refresh fails (`fallback`).
    */
   staleWhileRevalidateMs: number;
   /**
@@ -33,26 +33,42 @@ export interface StaleCacheOptions {
    * repeated — before the next attempt.
    */
   retryAfterFailureMs: number;
-  /** Where a background refresh's failure goes; it must never become an unhandled rejection. */
+  /** Where a refresh's failure goes when a copy answers instead; never an unhandled rejection. */
   onBackgroundError?: (key: string, err: unknown) => void;
   now?: () => number;
+}
+
+export interface StorePolicy<T> {
+  /** How long a produced value stays fresh — so a degraded value can be kept for less. */
+  freshFor: (value: T) => number;
+  /** How long past freshness the value may be served while it refreshes; default the cache's. */
+  staleFor?: (value: T) => number;
+  /**
+   * Whether a produced value is kept at all. One that is not (a file past the end, say) is
+   * returned, and takes no room from the values that exist.
+   */
+  keep?: (value: T) => boolean;
+  /**
+   * Whether a produced value is worse than the copy held — a degraded file, an empty one
+   * where a whole one was. Then the copy stays, and the refresh counts as a failure.
+   */
+  worseThan?: (next: T, held: T) => boolean;
+}
+
+/** A produced value was refused in favour of the copy held (`StorePolicy.worseThan`). */
+export class KeptPreviousCopy extends Error {
+  constructor(key: string) {
+    super(`Refresh of ${key} produced a worse value; the previous copy was kept`);
+    this.name = 'KeptPreviousCopy';
+  }
 }
 
 interface Entry<T> {
   value: T;
   storedAt: number;
   freshMs: number;
+  staleMs: number;
   failedAt: number | null;
-}
-
-export interface StorePolicy<T> {
-  /** How long a produced value stays fresh — so a degraded value can be kept for less. */
-  freshFor: (value: T) => number;
-  /**
-   * Whether a produced value is kept at all. A value that is not (a file past the end, say)
-   * is returned, removes whatever the key held, and takes no room from the files that exist.
-   */
-  keep?: (value: T) => boolean;
 }
 
 export interface StaleCache<T> {
@@ -61,6 +77,12 @@ export interface StaleCache<T> {
    * background while stale; otherwise from `produce`, awaited.
    */
   get(key: string, produce: () => Promise<T>, policy: StorePolicy<T>): Promise<{ value: T; state: CacheState }>;
+  /**
+   * Ends `key`'s freshness without touching its copy: the next request is answered from the
+   * copy at once and refreshes it behind the answer — within the copy's stale window; past
+   * it, the request waits as usual. Nothing runs until that request comes.
+   */
+  markStale(key: string): void;
   /** Resolves once no refresh is in flight. */
   idle(): Promise<void>;
   clear(): void;
@@ -75,46 +97,52 @@ export function createStaleCache<T>(options: StaleCacheOptions): StaleCache<T> {
   /** The last failure of a key with no copy to fall back on, for the pause after it. */
   const failures = new Map<string, { at: number; error: unknown }>();
 
-  function store(key: string, value: T, freshMs: number): void {
+  function bounded<V>(map: Map<string, V>, key: string, value: V): void {
     // Re-inserted so the map's order is the order of storage: the first key is the oldest.
-    entries.delete(key);
-    entries.set(key, { value, storedAt: now(), freshMs, failedAt: null });
-    while (entries.size > options.maxEntries) {
-      const oldest = entries.keys().next().value;
+    map.delete(key);
+    map.set(key, value);
+    while (map.size > options.maxEntries) {
+      const oldest = map.keys().next().value;
       if (oldest === undefined) break;
-      entries.delete(oldest);
+      map.delete(oldest);
     }
   }
 
-  function remember(key: string, error: unknown): void {
+  function settle(key: string, value: T, policy: StorePolicy<T>): T {
+    const held = entries.get(key);
+    if (held && policy.worseThan?.(value, held.value)) throw new KeptPreviousCopy(key);
     failures.delete(key);
-    failures.set(key, { at: now(), error });
-    while (failures.size > options.maxEntries) {
-      const oldest = failures.keys().next().value;
-      if (oldest === undefined) break;
-      failures.delete(oldest);
+    if (policy.keep && !policy.keep(value)) {
+      entries.delete(key);
+      return value;
     }
+    bounded(entries, key, {
+      value,
+      storedAt: now(),
+      freshMs: Math.max(0, policy.freshFor(value)),
+      staleMs: Math.max(0, policy.staleFor?.(value) ?? options.staleWhileRevalidateMs),
+      failedAt: null,
+    });
+    return value;
   }
 
   function refresh(key: string, produce: () => Promise<T>, policy: StorePolicy<T>): Promise<T> {
     const running = inflight.get(key);
     if (running) return running;
-    const job = (async () => {
-      try {
-        const value = await produce();
-        failures.delete(key);
-        if (policy.keep && !policy.keep(value)) entries.delete(key);
-        else store(key, value, Math.max(0, policy.freshFor(value)));
-        return value;
-      } catch (err) {
+    // `produce` runs on a later tick, after the job is registered: a producer that throws
+    // synchronously still settles the job, and the job still leaves `inflight`.
+    const job = Promise.resolve()
+      .then(produce)
+      .then((value) => settle(key, value, policy))
+      .catch((err: unknown) => {
         const entry = entries.get(key);
         if (entry) entry.failedAt = now();
-        else remember(key, err);
+        else bounded(failures, key, { at: now(), error: err });
         throw err;
-      } finally {
+      })
+      .finally(() => {
         inflight.delete(key);
-      }
-    })();
+      });
     inflight.set(key, job);
     return job;
   }
@@ -131,7 +159,7 @@ export function createStaleCache<T>(options: StaleCacheOptions): StaleCache<T> {
       if (age < entry.freshMs) return { value: entry.value, state: 'fresh' };
 
       const recentlyFailed = entry.failedAt !== null && t - entry.failedAt < options.retryAfterFailureMs;
-      if (age < entry.freshMs + options.staleWhileRevalidateMs || recentlyFailed) {
+      if (age < entry.freshMs + entry.staleMs || recentlyFailed) {
         if (!recentlyFailed) {
           refresh(key, produce, policy).catch((err: unknown) => options.onBackgroundError?.(key, err));
         }
@@ -154,6 +182,16 @@ export function createStaleCache<T>(options: StaleCacheOptions): StaleCache<T> {
 
   return {
     get,
+    markStale(key) {
+      const entry = entries.get(key);
+      if (!entry) return;
+      // The stale window counts from the end of freshness: moving that end back to the time
+      // of storage keeps the copy's age limit where it was, never later.
+      entry.staleMs = Math.max(0, entry.staleMs + entry.freshMs - (now() - entry.storedAt));
+      entry.storedAt = now();
+      entry.freshMs = 0;
+      entry.failedAt = null;
+    },
     async idle() {
       while (inflight.size > 0) await Promise.allSettled([...inflight.values()]);
     },

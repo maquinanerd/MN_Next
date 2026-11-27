@@ -6,7 +6,7 @@ import { discoveryCacheControl, isContentError, repo } from '../../../lib/conten
 import { indexableHubTags } from '../../../lib/content/tags';
 import { logger } from '../../../lib/logger';
 import { seoContext } from '../../../lib/seo-context';
-import { sitemapFiles, type SitemapFile } from '../../../lib/sitemap-cache';
+import { freshSeconds, sitemapFiles, sitemapKey, sitemapPolicy, type SitemapFile } from '../../../lib/sitemap-cache';
 
 /**
  * Child sitemaps, named by the index at `/sitemap.xml`.
@@ -39,28 +39,17 @@ function parseKind(raw: string): { kind: SitemapKind; page: number } | null {
   return null;
 }
 
-/** How long a file is fresh. The first article file is the one each new story changes. */
-function freshSeconds(kind: SitemapKind, page: number): number {
-  return kind === 'articles' && page === 1 ? 600 : 3600;
-}
-
-/** A degraded file — the CMS failed some of its reads — is kept for a minute, not an hour. */
-const DEGRADED_SECONDS = 60;
-
 export async function GET(_request: Request, ctx: { params: Promise<{ kind: string }> }): Promise<Response> {
   const { kind: raw } = await ctx.params;
   const parsed = parseKind(raw);
   if (!parsed || parsed.page < 1) notFound();
   const { kind, page } = parsed;
-  const key = `${kind}-${page}`;
+  const key = sitemapKey(kind, page);
 
   let file: SitemapFile | null;
   let state: string;
   try {
-    ({ value: file, state } = await sitemapFiles.get(key, () => render(kind, page), {
-      freshFor: (f) => (f?.degraded ? DEGRADED_SECONDS : freshSeconds(kind, page)) * 1000,
-      keep: (f) => f !== null,
-    }));
+    ({ value: file, state } = await sitemapFiles.get(key, () => render(kind, page), sitemapPolicy(kind, page)));
   } catch (err) {
     if (!isContentError(err) || err.kind !== 'unavailable') throw err;
     logger.error('discovery.unavailable', { label: `sitemap-${key}`, correlationId: err.correlationId ?? null });
@@ -87,16 +76,11 @@ export async function GET(_request: Request, ctx: { params: Promise<{ kind: stri
 async function render(kind: SitemapKind, page: number): Promise<SitemapFile | null> {
   if (kind === 'tags') {
     const { slugs, degraded } = await indexableHubTags();
-    return {
-      body: urlSet(
-        seoContext(),
-        slugs.map((slug) => ({ path: `/tag/${slug}` })),
-      ),
-      degraded,
-    };
+    const entries = slugs.map((slug) => ({ path: `/tag/${slug}` }));
+    return { body: urlSet(seoContext(), entries), entries: entries.length, degraded };
   }
 
   const listed = await repo().listSitemap(kind, String(page));
   if (kind === 'articles' && listed.entries.length === 0 && page > 1) return null;
-  return { body: urlSet(seoContext(), listed.entries), degraded: false };
+  return { body: urlSet(seoContext(), listed.entries), entries: listed.entries.length, degraded: false };
 }

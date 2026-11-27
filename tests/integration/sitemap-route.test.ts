@@ -4,7 +4,7 @@ import { FixtureContentRepository } from '@mn/content/fixture/repository';
 import { setContentRepository } from '@mn/content/provider';
 
 import { GET } from '../../app/sitemap/[kind]/route';
-import { sitemapFiles } from '../../lib/sitemap-cache';
+import { markNewestArticlesStale, sitemapFiles } from '../../lib/sitemap-cache';
 
 /**
  * The child sitemaps through their route, with the CMS behind a switch.
@@ -19,16 +19,29 @@ import { sitemapFiles } from '../../lib/sitemap-cache';
 
 const fixture = new FixtureContentRepository();
 let down = false;
+let shortRead = false;
 let reads = 0;
 
-/** The fixture CMS, with `listSitemap` counted and able to fail as an outage does. */
+const outage = () => ContentError.unavailable('Kal El GET /articles timed out after 5000ms');
+
+/**
+ * The fixture CMS, with `listSitemap` counted and able to fail as an outage does — or to come
+ * back empty, as a short read would — and `getTag`, behind the tag file, able to fail too.
+ */
 const switchable = new Proxy(fixture, {
   get(target, prop, receiver) {
     if (prop === 'listSitemap') {
       return async (...args: Parameters<ContentRepository['listSitemap']>) => {
         reads += 1;
-        if (down) throw ContentError.unavailable('Kal El GET /articles timed out after 5000ms');
+        if (down) throw outage();
+        if (shortRead) return { entries: [], nextCursor: null };
         return target.listSitemap(...args);
+      };
+    }
+    if (prop === 'getTag') {
+      return async (...args: Parameters<ContentRepository['getTag']>) => {
+        if (down) throw outage();
+        return target.getTag(...args);
       };
     }
     const value: unknown = Reflect.get(target, prop, receiver);
@@ -50,6 +63,7 @@ beforeEach(() => {
   sitemapFiles.clear();
   setContentRepository(switchable);
   down = false;
+  shortRead = false;
   reads = 0;
 });
 
@@ -102,6 +116,60 @@ describe('child sitemaps', () => {
     expect(later.status).toBe(200);
     expect(later.headers.get('x-sitemap-cache')).toBe('fallback');
     expect(await later.text()).toBe(good);
+  });
+
+  it('keep the whole tag file when an outage would leave hubs out of it', async () => {
+    const body = await (await fetchFile('tags.xml')).text();
+    vi.setSystemTime(Date.now() + HOUR + 1);
+    down = true;
+    expect((await fetchFile('tags.xml')).headers.get('x-sitemap-cache')).toBe('stale');
+    await sitemapFiles.idle();
+    vi.setSystemTime(Date.now() + 25 * HOUR);
+    const later = await fetchFile('tags.xml');
+    expect(later.headers.get('x-sitemap-cache')).toBe('fallback');
+    expect(later.headers.get('cache-control')).toContain('s-maxage=3600');
+    expect(await later.text()).toBe(body);
+  });
+
+  it('never serve the newest article file more than an hour old', async () => {
+    await fetchFile('articles-1.xml');
+    vi.setSystemTime(Date.now() + 30 * 60 * 1000);
+    expect((await fetchFile('articles-1.xml')).headers.get('x-sitemap-cache')).toBe('stale');
+    await sitemapFiles.idle();
+    vi.setSystemTime(Date.now() + 61 * 60 * 1000);
+    expect((await fetchFile('articles-1.xml')).headers.get('x-sitemap-cache')).toBe('miss');
+  });
+
+  it('refresh the newest article file after a story is published, without making a reader wait', async () => {
+    const before = await (await fetchFile('articles-1.xml')).text();
+    markNewestArticlesStale();
+    // The next reader is answered from the copy at once, and the file renders behind it.
+    const next = await fetchFile('articles-1.xml');
+    expect(next.headers.get('x-sitemap-cache')).toBe('stale');
+    expect(await next.text()).toBe(before);
+    await sitemapFiles.idle();
+    expect(reads).toBe(2);
+    expect((await fetchFile('articles-1.xml')).headers.get('x-sitemap-cache')).toBe('fresh');
+    expect(reads).toBe(2);
+  });
+
+  it('keep a whole file when a read comes back empty, or the CMS fails, after a delivery', async () => {
+    const good = await (await fetchFile('articles-1.xml')).text();
+    expect(good).toContain('<url>');
+    shortRead = true;
+    markNewestArticlesStale();
+    await fetchFile('articles-1.xml');
+    await sitemapFiles.idle();
+    expect(await (await fetchFile('articles-1.xml')).text()).toBe(good);
+    vi.setSystemTime(Date.now() + 2 * 60 * 1000);
+    shortRead = false;
+    down = true;
+    markNewestArticlesStale();
+    await fetchFile('articles-1.xml');
+    await sitemapFiles.idle();
+    const res = await fetchFile('articles-1.xml');
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(good);
   });
 
   it('answer 503 with Retry-After when the CMS is down and there is no copy', async () => {

@@ -142,6 +142,69 @@ describe('createStaleCache', () => {
     expect(cache.size()).toBe(0);
   });
 
+  it('settles a producer that throws synchronously, and tries it again after the pause', async () => {
+    const { cache, clock: c } = setup();
+    const throwsAtOnce = vi.fn((): Promise<string> => {
+      throw new Error('bug');
+    });
+    await expect(cache.get('a', throwsAtOnce, FRESH)).rejects.toThrow('bug');
+    await cache.idle();
+    c.advance(2_000);
+    expect(await cache.get('a', async () => 'v1', FRESH)).toEqual({ value: 'v1', state: 'miss' });
+  });
+
+  it('keeps the copy held when the new value is worse, and counts it as a failure', async () => {
+    const { cache, clock: c, errors } = setup();
+    const policy = { freshFor: () => 1_000, worseThan: (next: string) => next === 'degraded' };
+    await cache.get('a', async () => 'whole', policy);
+    c.advance(1_500);
+    expect(await cache.get('a', async () => 'degraded', policy)).toEqual({ value: 'whole', state: 'stale' });
+    await cache.idle();
+    expect(errors).toEqual(['a']);
+    // Too old to serve while refreshing: the request waits, the worse value is refused again,
+    // and the copy held is the answer.
+    c.advance(1_000 + 10_000);
+    expect(await cache.get('a', async () => 'degraded', policy)).toEqual({ value: 'whole', state: 'fallback' });
+    // With nothing held, the worse value is all there is, and it is served.
+    expect(await cache.get('b', async () => 'degraded', policy)).toEqual({ value: 'degraded', state: 'miss' });
+  });
+
+  it('lets the policy shorten how long a value is served stale', async () => {
+    const { cache, clock: c } = setup();
+    const policy = { freshFor: () => 1_000, staleFor: () => 500 };
+    await cache.get('a', async () => 'v1', policy);
+    c.advance(1_200);
+    expect((await cache.get('a', async () => 'v2', policy)).state).toBe('stale');
+    await cache.idle();
+    c.advance(1_600);
+    expect(await cache.get('a', async () => 'v3', policy)).toEqual({ value: 'v3', state: 'miss' });
+  });
+
+  it('markStale makes the next request refresh behind the copy, without waiting', async () => {
+    const { cache } = setup();
+    await cache.get('a', async () => 'v1', FRESH);
+    cache.markStale('a');
+    expect(await cache.get('a', async () => 'v2', FRESH)).toEqual({ value: 'v1', state: 'stale' });
+    await cache.idle();
+    expect(await cache.get('a', async () => 'v3', FRESH)).toEqual({ value: 'v2', state: 'fresh' });
+    cache.markStale('nothing-here');
+    expect(cache.size()).toBe(1);
+  });
+
+  it('markStale never stretches how old a copy may be served', async () => {
+    const { cache, clock: c } = setup();
+    // Fresh 1 s and served stale 10 s more: servable for 11 s after it was stored.
+    await cache.get('a', async () => 'v1', FRESH);
+    c.advance(5_000);
+    cache.markStale('a');
+    c.advance(5_500);
+    expect((await cache.get('a', async () => 'v2', FRESH)).state).toBe('stale');
+    await cache.idle();
+    cache.markStale('a');
+    c.advance(11_000);
+    expect(await cache.get('a', async () => 'v3', FRESH)).toEqual({ value: 'v3', state: 'miss' });
+  });
+
   it('holds at most maxEntries, dropping the oldest first', async () => {
     const { cache } = setup();
     for (const key of ['a', 'b', 'c', 'd']) await cache.get(key, async () => key, FRESH);

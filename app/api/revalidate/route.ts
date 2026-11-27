@@ -19,6 +19,7 @@ import { optional, repo } from '../../../lib/content';
 import { announce, worthAnnouncing } from '../../../lib/indexnow';
 import { correlationId, logger } from '../../../lib/logger';
 import { seoContext } from '../../../lib/seo-context';
+import { markNewestArticlesStale } from '../../../lib/sitemap-cache';
 
 /**
  * Kal El publication webhook.
@@ -105,6 +106,9 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   for (const tag of tags) revalidateTag(tag);
+  // The child sitemaps keep their own cache, which tags do not reach (lib/sitemap-cache.ts):
+  // the file a new story lands in stops being fresh, and its next request renders it again.
+  markNewestArticlesStale();
 
   // Bing and the other IndexNow engines hear of a fresh story now, not at their next crawl
   // (`worthAnnouncing`: never the archive an import rewrites). After the response, so the
