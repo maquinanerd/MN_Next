@@ -52,42 +52,66 @@ nomes de variáveis.
 powershell -ExecutionPolicy Bypass -File scripts\rotacionar-segredos.ps1 -AdminEmail <e-mail do dono no Kal El>
 ```
 
-As duas senhas são pedidas sem eco. Em ordem, o script:
+As duas senhas são pedidas sem eco. O script fala com você em dois momentos: no Easypanel
+(passos 4 e 8) e na confirmação `REVOGAR` (passo 7). Em ordem:
 
-1. lê no Coolify o endereço e o site do Kal El, o token vazado (só para achar o id dele) e a
-   chave atual da Cinerie;
-2. gera o segredo de webhook (64 caracteres), o de preview (64) e a chave da Cinerie
-   (base64url de 32 bytes);
-3. `pnpm kalel:rotate prepare --apply`: cria no Kal El o token
-   `maquinanerd-portal-entrega-<data>`, com os mesmos 7 escopos, e um webhook novo na mesma
-   URL do antigo, assinado com o segredo novo. **O token e o webhook antigos continuam
-   valendo** até o passo 6;
-4. Cinerie: põe a chave nova na área de transferência e mostra os 4 primeiros caracteres da
-   chave vazada. No Easypanel, em `rss_prime › screen-app › Ambiente ›
-CINERIE_EDITORIAL_CONTEXT_API_KEYS`, troque a entrada que começa com eles pelo
-   conteúdo colado, **mantendo a do MN-Prime**, e clique em Salvar › Implantar. Depois volte
-   e aperte Enter. Entre a implantação e o deploy do portal, matérias que saírem do cache
-   ficam sem a ficha; a página continua 200;
-5. grava no Coolify `KAL_EL_SERVICE_TOKEN`, `SERVICE_BASE64_64_WEBHOOK`,
-   `SERVICE_BASE64_64_PREVIEW` e `CINERIE_SERVICE_TOKEN`, faz o deploy (que reconstrói,
-   porque as variáveis também são argumentos de build) e espera `/api/health?ready=1`
-   responder 200 com o Kal El ok;
-6. `pnpm kalel:rotate finish --apply`: revoga o token vazado e os outros
-   `maquinanerd-portal…` (como o de importação), apaga o webhook antigo e confere que o
-   token vazado recebe 401 ou 403. **O `mn-prime-publicacao` não é tocado.**
+1. **Leitura.** Lê no Coolify o endereço e o site do Kal El, o token vazado (só para achar
+   o id dele), a chave atual da Cinerie e os domínios do portal. Os domínios incluem o
+   `sslip.io`, por onde o Kal El entrega e por onde o script confere o portal sem passar
+   pelo Cloudflare.
+2. **Valores novos.** Gera o segredo de webhook (64 caracteres), o de preview (64) e a
+   chave da Cinerie (base64url de 32 bytes).
+3. **`pnpm kalel:rotate prepare --apply`.**
+   - Cria no Kal El o token `maquinanerd-portal-entrega-<data>`, com os mesmos 7 escopos.
+   - Cria um webhook novo na mesma URL do antigo, assinado com o segredo novo. Só os
+     webhooks dos domínios do portal contam; o de outro assinante não é tocado.
+   - Se o token vazado não se chamar `maquinanerd-portal…` (pode ser o do MN-Prime), o
+     script para e pede o nome digitado para revogá-lo.
+   - **O token e o webhook antigos continuam valendo** até o passo 7.
+4. **Cinerie, primeira parte.** A chave nova vai para a área de transferência, fora do
+   histórico do Windows. No Easypanel, em
+   `rss_prime › screen-app › Ambiente › CINERIE_EDITORIAL_CONTEXT_API_KEYS`, **acrescente**
+   no fim da lista uma vírgula e a chave, sem apagar nada, e clique em Salvar › Implantar.
+   O script confere que a Cinerie aceita a chave nova.
+5. **Coolify.** Grava `KAL_EL_SERVICE_TOKEN`, `SERVICE_BASE64_64_WEBHOOK`,
+   `SERVICE_BASE64_64_PREVIEW` e `CINERIE_SERVICE_TOKEN`, mantendo as marcações de cada
+   variável. Depois relê e confere os quatro.
+6. **Deploy.** Publica o portal (com build, porque as variáveis também são argumentos de
+   build) e espera o portal responder com o Kal El ok.
+7. **`pnpm kalel:rotate finish`.** Só segue se o Coolify tiver o token novo **e** o portal
+   no ar o tiver usado: o último uso do token novo no Kal El precisa avançar quando o
+   portal é consultado.
+   - Mostra o plano e pede que você digite `REVOGAR`.
+   - Revoga **só o token vazado** e apaga o webhook antigo do portal.
+   - Confere que o token vazado recebe 401 ou 403.
+   - Os outros tokens ativos (o `mn-prime-publicacao`, o de importação
+     `maquinanerd-importacao-<data>`, o de staging) aparecem como "mantido". Esses não
+     estavam no container. Revogue no CMS os que não usar.
+8. **Cinerie, segunda parte.** Apague da lista a entrada que começa com os 4 caracteres
+   mostrados, que é a chave vazada, mantendo a nova e a do MN-Prime. Clique em Salvar ›
+   Implantar. O script confere que a chave vazada não abre mais a rota.
 
 Os ids (que não são segredo) ficam em `artifacts/rotacao-segredos.json`.
 
 ### 3.3 Se algo falhar no meio
 
-| Onde parou                    | Estado                                                                                    | O que fazer                                                                                   |
-| ----------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Antes do passo 5              | Nada mudou no Coolify. O Kal El tem um token e um webhook novos sobrando                  | Rode o script de novo. O `finish` da próxima rodada revoga e apaga as sobras                  |
-| Deploy ou `ready=1` (passo 5) | Valores novos no Coolify; os antigos ainda valem no Kal El, então o portal continua no ar | Veja o log do deploy no painel, corrija, publique pelo painel e rode com `-SoFinalizar`       |
-| Passo 6                       | O portal já usa o token novo                                                              | Rode com `-SoFinalizar`, ou revogue à mão no CMS, em Tokens (o nome e o id aparecem na saída) |
+A mensagem de erro do script diz qual caso é. Em nenhum deles o portal fica sem
+credencial: o `finish` se recusa a revogar se o portal no ar não estiver usando o token
+novo.
+
+| Onde parou                                 | Estado                                                                        | O que fazer                                                                                   |
+| ------------------------------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Passos 1 a 4                               | Nada mudou no Coolify. O Kal El pode ter um token e um webhook novos sobrando | `-Recomecar`: a próxima revogação inclui as sobras                                            |
+| Passo 5 (gravar no Coolify)                | O portal no ar segue com os valores antigos, que ainda valem                  | Corrija o token do Coolify (ele escreve?) e rode com `-Recomecar`. **Não use `-SoFinalizar`** |
+| Passo 6 (deploy ou portal sem o Kal El ok) | Valores novos no Coolify; o container anterior segue no ar com os antigos     | Veja o log do deploy no painel, publique de novo e rode com `-SoFinalizar`                    |
+| Passo 7 (cancelado ou recusado)            | O portal usa o token novo, ou a mensagem diz que não                          | `-SoFinalizar`                                                                                |
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\rotacionar-segredos.ps1 -AdminEmail <e-mail> -SoFinalizar
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\rotacionar-segredos.ps1 -AdminEmail <e-mail> -Recomecar
 ```
 
 ### 3.4 Sem o script (manual, pelo CMS e pelos painéis)
@@ -161,6 +185,10 @@ da §3.
 
 As leituras feitas com o token (rascunhos, mídia, listas) não vão para o banco. Ficam só no
 stdout do container `api`, e um redeploy as apaga.
+
+A própria troca (§3) usa o token vazado duas vezes, num `GET /v1/auth/me` a partir do IP
+do seu computador: uma para achá-lo e outra para conferir a revogação. Desconte essas duas
+chamadas.
 
 ```bash
 API=$(docker ps --filter name=api-7t8t4kox5xazfgmsepc9ouqv --format '{{.Names}}' | head -1)

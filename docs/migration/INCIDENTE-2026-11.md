@@ -201,17 +201,30 @@ estático valida o compose com `docker compose config`, e
 ### 7.3 Troca dos segredos (este PR)
 
 - `scripts/kalel-rotate.ts` (`pnpm kalel:rotate prepare|finish`): token e webhook novos
-  antes, revogação depois. Só mexe em tokens `maquinanerd-portal…` e em webhooks
-  `/api/revalidate`, e acha o token vazado pelo `/v1/auth/me`. Testes em
-  `tests/unit/kalel-rotate.test.ts`.
+  antes, revogação depois.
+  - Acha o token vazado pelo `/v1/auth/me`.
+  - Só substitui webhooks `/api/revalidate` dos domínios do portal.
+  - Revoga só os ids que recebe. Se um deles não se chamar `maquinanerd-portal…`, exige
+    confirmação.
+  - Recusa revogar se o Coolify não tiver o token novo ou se o portal no ar não o tiver
+    usado (o `lastUsedAt` precisa avançar).
+  - Testes em `tests/unit/kalel-rotate.test.ts`.
 - `scripts/rotacionar-segredos.ps1`: o roteiro completo (Kal El, Cinerie, Coolify,
-  deploy, verificação, revogação). Lê as senhas sem eco, e nenhum valor passa pela tela.
+  deploy, verificação, revogação).
+  - Lê as senhas sem eco. Nenhum valor passa pela tela nem pelo histórico da área de
+    transferência.
+  - A chave da Cinerie é acrescentada antes e a vazada sai só no fim.
+  - Antes de revogar, pede que você digite `REVOGAR`.
+- Uma revisão independente (subagente só leitura, já que o Codex CLI está sem acesso desde
+  31/10) apontou 12 achados na primeira versão. O mais grave: uma retomada podia revogar o
+  token do portal no ar. Todos foram corrigidos e cobertos por testes, exceto os de
+  PowerShell, que foram verificados por análise sintática e pelas funções isoladas.
 
 ## 8. Pendências e decisões do dono
 
 | #   | Item                                                                                                                                                                                                                                                                                                                                                                      | Quem                                                                                   | Urgência |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | -------- |
-| 1   | **Rodar `scripts/rotacionar-segredos.ps1`** (RUNBOOK §2). Até lá, os segredos vazados seguem válidos: o token lê rascunhos e altera taxonomia e redirects                                                                                                                                                                                                                 | Dono (precisa do token da API do Coolify com leitura de segredos e da senha do Kal El) | Imediata |
+| 1   | **Rodar `scripts/rotacionar-segredos.ps1`** (RUNBOOK §3). Até lá, os segredos vazados seguem válidos: o token lê rascunhos e altera taxonomia e redirects                                                                                                                                                                                                                 | Dono (precisa do token da API do Coolify com leitura de segredos e da senha do Kal El) | Imediata |
 | 2   | **Cinerie exposta:** o `cinerie.com` roda next 15.5.25 com sharp 0.34.5 em glibc (`node:22-bookworm-slim`), vulnerável ao RCE crítico do otimizador com SVG (GHSA-2464). O `cms.cinerie.com` roda next 15.4.11 com Payload 3.86.0 (críticos de RCE no otimizador, SQLi e "RCE through first-register"). Ela fica em outro servidor (Easypanel), que **não foi examinado** | Sessão própria no repositório `screena`                                                | Imediata |
 | 3   | **aluguei.app** (mesma VPS) roda next 16.3.6: GHSA-2464 e GHSA-673q (RCEs críticos, corrigidos em 16.4.1)                                                                                                                                                                                                                                                                 | Sessão própria                                                                         | Alta     |
 | 4   | Auditar o uso dos segredos desde 18/11 (RUNBOOK §5). **Exporte os logs do container `api` do Kal El antes de qualquer redeploy dele**: as leituras só ficam no stdout                                                                                                                                                                                                     | Dono ou sessão com acesso à VPS                                                        | Alta     |

@@ -9,29 +9,38 @@ import { runAsScript } from './wp/cli';
  *   pnpm kalel:rotate prepare [--apply]   # a new token and a new webhook; the old ones
  *                                         # keep working until `finish`
  *   (store the new values in the portal and deploy it)
- *   pnpm kalel:rotate finish [--apply]    # revoke the leaked token(s), delete the old
+ *   pnpm kalel:rotate finish [--apply]    # proves the running portal uses the new token,
+ *                                         # then revokes the leaked one and deletes the old
  *                                         # webhook(s)
  *
- * Nothing is written without `--apply`. scripts/rotacionar-segredos.ps1 runs both phases
- * around the Coolify update and the deploy, and is the way to use this in production.
+ * Nothing is written without `--apply`; `finish` runs its checks either way. Production
+ * goes through scripts/rotacionar-segredos.ps1, which runs both phases around the Coolify
+ * update and the deploy.
  *
  * Environment (never flags: an argument is visible in the process list):
  *   KAL_EL_BASE_URL, KAL_EL_SITE_ID, KALEL_ADMIN_EMAIL, KALEL_ADMIN_PASSWORD
+ *   PORTAL_HOSTS          comma-separated hosts of the portal (www, apex, the sslip.io origin
+ *                          Kal El delivers to). Only webhooks on these hosts are the portal's.
  *   prepare  NEW_WEBHOOK_SECRET    32–128 characters, the value the portal will verify with
- *            LEAKED_SERVICE_TOKEN  optional: the token that leaked, to find its id through
- *                                  /v1/auth/me (it is never printed)
- *            PORTAL_PUBLIC_URL     only when no webhook points at /api/revalidate yet
- *   finish   KEEP_TOKEN_ID, KEEP_WEBHOOK_IDS (comma-separated), from `prepare`
- *            REVOKE_TOKEN_IDS      optional, comma-separated: the leaked token's id
+ *            LEAKED_SERVICE_TOKEN  the token that leaked, to find its id and name through
+ *                                  /v1/auth/me (never printed)
+ *            PORTAL_PUBLIC_URL     only when no portal webhook exists yet
+ *   finish   KEEP_TOKEN_ID, KEEP_WEBHOOK_IDS   from `prepare`
+ *            REVOKE_TOKEN_IDS      the leaked token's id (plus leftovers of an earlier run)
+ *            CURRENT_SERVICE_TOKEN the token the portal's environment holds right now
+ *            PORTAL_READY_URL      a request that makes the running portal read Kal El
+ *            ALLOW_FOREIGN_REVOKE  `1` to revoke a listed token not named maquinanerd-portal…
  *
  * What it touches, and only that:
- *   - service tokens named `maquinanerd-portal…` plus the ids it is given — never another
- *     consumer's token (MN-Prime publishes with its own, `mn-prime-publicacao`);
- *   - webhooks whose path is `/api/revalidate` — the portal's.
+ *   - the service tokens it is given by id — never by name pattern. A listed token whose
+ *     name is not `maquinanerd-portal…` (MN-Prime's is `mn-prime-publicacao`) is skipped
+ *     unless ALLOW_FOREIGN_REVOKE=1;
+ *   - webhooks on the portal's hosts whose path is `/api/revalidate`.
  *
- * `prepare` prints, for the wrapper to capture, one `KAL_EL_SERVICE_TOKEN=` line (the new
- * secret, shown once as Kal El itself does) and the ids `finish` needs. Nothing else it
- * prints is secret.
+ * `finish` refuses to revoke anything unless the token in the portal's environment is the
+ * new one AND the running portal used it: the new token's `lastUsedAt` must move when
+ * PORTAL_READY_URL is requested. A failed Coolify update or deploy therefore cannot end with
+ * the live portal's token revoked.
  */
 
 const PORTAL_TOKEN_PREFIX = 'maquinanerd-portal';
@@ -66,6 +75,7 @@ export interface RotateConfig {
 
 export interface PrepareInput {
   newWebhookSecret: string;
+  portalHosts: string[];
   leakedToken?: string;
   portal?: string;
   /** Today, for the new token's and webhook's names. */
@@ -76,28 +86,39 @@ export interface PrepareInput {
 export interface PrepareResult {
   token?: { id: string; secret: string };
   webhookIds: string[];
-  leakedTokenId?: string;
+  leaked?: { id: string; name: string };
 }
 
-const isPortalHook = (w: Webhook): boolean => {
-  try {
-    return new URL(w.url).pathname.replace(/\/+$/, '') === HOOK_PATH;
-  } catch {
-    return false;
-  }
-};
+const hostsOf = (hosts: string[]): Set<string> => new Set(hosts.map((h) => h.trim().toLowerCase()).filter(Boolean));
+
+function portalHookFilter(hosts: string[]): (w: Webhook) => boolean {
+  const allowed = hostsOf(hosts);
+  if (allowed.size === 0) throw new Error('PORTAL_HOSTS is required: the hosts the portal answers on');
+  return (w) => {
+    try {
+      const url = new URL(w.url);
+      return allowed.has(url.hostname.toLowerCase()) && url.pathname.replace(/\/+$/, '') === HOOK_PATH;
+    } catch {
+      return false;
+    }
+  };
+}
 
 function describeToken(t: ServiceToken): string {
   const state = t.revokedAt ? `revogado em ${t.revokedAt}` : 'ativo';
   return `${t.id} "${t.name}" — ${state}; criado ${t.createdAt}; último uso ${t.lastUsedAt ?? 'nunca'}`;
 }
 
-/** The id of the token behind a credential, through the endpoint that answers who is calling. */
-async function tokenIdOf(base: string, token: string, fetchImpl: typeof fetch): Promise<string | undefined> {
+/** The token behind a credential, through the endpoint that answers who is calling. */
+async function whoIs(
+  base: string,
+  token: string,
+  fetchImpl: typeof fetch,
+): Promise<{ id: string; name: string } | undefined> {
   const res = await fetchImpl(`${base}/v1/auth/me`, { headers: { authorization: `Bearer ${token}` } });
   if (!res.ok) return undefined;
-  const me = (await res.json()) as { data?: { kind?: string; id?: string } };
-  return me.data?.kind === 'service' ? me.data.id : undefined;
+  const me = (await res.json()) as { data?: { kind?: string; id?: string; name?: string } };
+  return me.data?.kind === 'service' && me.data.id ? { id: me.data.id, name: me.data.name ?? '' } : undefined;
 }
 
 export async function prepare(
@@ -110,16 +131,22 @@ export async function prepare(
   if (input.newWebhookSecret.length < 32 || input.newWebhookSecret.length > 128) {
     throw new Error('NEW_WEBHOOK_SECRET must be 32 to 128 characters');
   }
+  const isPortalHook = portalHookFilter(input.portalHosts);
   const now = input.now ?? new Date();
   const stamp = now.toISOString().slice(0, 10);
 
-  // Before logging in, so a wrong admin password cannot hide whether the leaked token works.
-  const leakedTokenId = input.leakedToken ? await tokenIdOf(cfg.base, input.leakedToken, fetchImpl) : undefined;
+  const leaked = input.leakedToken ? await whoIs(cfg.base, input.leakedToken, fetchImpl) : undefined;
   if (input.leakedToken) {
     log(
-      leakedTokenId
-        ? `token vazado identificado: ${leakedTokenId} (ainda ativo)`
+      leaked
+        ? `token vazado identificado: ${leaked.id} "${leaked.name}" (ainda ativo)`
         : 'o token vazado já não autentica (revogado, expirado ou inexistente)',
+    );
+  }
+  if (leaked && !leaked.name.startsWith(PORTAL_TOKEN_PREFIX)) {
+    log(
+      `ATENÇÃO: o token vazado se chama "${leaked.name}", não ${PORTAL_TOKEN_PREFIX}…. Se outro consumidor ` +
+        '(o MN-Prime) usa o mesmo token, ele para de publicar quando este for revogado.',
     );
   }
 
@@ -130,26 +157,26 @@ export async function prepare(
 
   log(`tokens do site (${tokens.length}):`);
   for (const t of tokens) log(`  ${describeToken(t)}`);
-  const leaked = tokens.find((t) => t.id === leakedTokenId);
-  if (leaked && !leaked.name.startsWith(PORTAL_TOKEN_PREFIX)) {
-    log(
-      `ATENÇÃO: o token vazado se chama "${leaked.name}", não ${PORTAL_TOKEN_PREFIX}…. Se outro consumidor ` +
-        '(o MN-Prime) usa o mesmo token, ele também precisa de um novo depois do `finish`.',
-    );
-  }
 
   const portalHooks = webhooks.filter(isPortalHook);
   const urls = [...new Set(portalHooks.map((w) => w.url))];
   if (urls.length === 0) {
-    if (!input.portal) throw new Error(`no webhook points at ${HOOK_PATH}; set PORTAL_PUBLIC_URL`);
-    urls.push(`${input.portal.replace(/\/+$/, '')}${HOOK_PATH}`);
+    if (!input.portal) throw new Error(`no portal webhook at ${HOOK_PATH}; set PORTAL_PUBLIC_URL`);
+    const url = `${input.portal.replace(/\/+$/, '')}${HOOK_PATH}`;
+    if (!isPortalHook({ id: '', url, events: [], enabled: true, createdAt: '' })) {
+      throw new Error('PORTAL_PUBLIC_URL is not one of PORTAL_HOSTS');
+    }
+    urls.push(url);
   }
   log(`webhooks do portal: ${portalHooks.map((w) => `${w.id} ${w.url}`).join(', ') || 'nenhum'}`);
+  const others = webhooks.filter((w) => !isPortalHook(w));
+  if (others.length) log(`webhooks de outros assinantes (não mexo): ${others.map((w) => w.url).join(', ')}`);
   log(`a criar: 1 token "${PORTAL_TOKEN_PREFIX}-entrega-${stamp}" e ${urls.length} webhook(s) para ${urls.join(', ')}`);
 
+  const leakedResult = leaked ? { leaked } : {};
   if (!cfg.apply) {
     log('dry run — nada foi escrito. Rode com --apply para aplicar.');
-    return { webhookIds: [], ...(leakedTokenId ? { leakedTokenId } : {}) };
+    return { webhookIds: [], ...leakedResult };
   }
 
   const expiresAt = input.expiresInDays
@@ -158,10 +185,17 @@ export async function prepare(
   const created = await admin.call<{ id: string; token?: string; secret?: string }>(
     'POST',
     `${admin_}/service-tokens`,
-    { name: `${PORTAL_TOKEN_PREFIX}-entrega-${stamp}`, scopes: DELIVERY_SCOPES, expiresAt },
+    {
+      name: `${PORTAL_TOKEN_PREFIX}-entrega-${stamp}`,
+      scopes: DELIVERY_SCOPES,
+      expiresAt,
+    },
   );
   const secret = created.token ?? created.secret;
-  if (!secret) throw new Error('Kal El created the token but did not answer its secret');
+  if (!secret)
+    throw new Error(`Kal El created token ${created.id} but did not answer its secret; revoke it in the CMS`);
+  log(`token criado: ${created.id}`);
+  log(`NEW_TOKEN_ID=${created.id}`);
 
   const webhookIds: string[] = [];
   for (const url of urls) {
@@ -176,19 +210,27 @@ export async function prepare(
     log(`webhook criado: ${hook.id} ${url}`);
   }
 
-  log(`token criado: ${created.id}`);
-  // Shown once, as Kal El itself does: the wrapper stores it in Coolify and nowhere else.
-  log(`KAL_EL_SERVICE_TOKEN=${secret}`);
-  log(`NEW_TOKEN_ID=${created.id}`);
   log(`NEW_WEBHOOK_IDS=${webhookIds.join(',')}`);
-  if (leakedTokenId) log(`LEAKED_TOKEN_ID=${leakedTokenId}`);
-  return { token: { id: created.id, secret }, webhookIds, ...(leakedTokenId ? { leakedTokenId } : {}) };
+  if (leaked) {
+    log(`LEAKED_TOKEN_ID=${leaked.id}`);
+    log(`LEAKED_TOKEN_NAME=${leaked.name}`);
+  }
+  // Last, and only once everything was created: the wrapper stores it in Coolify and
+  // nowhere else. A failure above never prints a secret.
+  log(`KAL_EL_SERVICE_TOKEN=${secret}`);
+  return { token: { id: created.id, secret }, webhookIds, ...leakedResult };
 }
 
 export interface FinishInput {
   keepTokenId: string;
   keepWebhookIds: string[];
-  revokeTokenIds?: string[];
+  revokeTokenIds: string[];
+  /** The token the portal's environment holds now; it must be the new one. */
+  currentToken: string;
+  portalHosts: string[];
+  allowForeign?: boolean;
+  /** A request that makes the running portal read Kal El with its token. */
+  probe?: () => Promise<void>;
 }
 
 export interface FinishResult {
@@ -196,38 +238,74 @@ export interface FinishResult {
   deletedWebhooks: string[];
 }
 
+const usedAfter = (before: string | null, after: string | null): boolean =>
+  after !== null && (before === null || Date.parse(after) > Date.parse(before));
+
 export async function finish(
   cfg: RotateConfig,
   input: FinishInput,
   admin: KalElAdmin,
   log: (line: string) => void,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<FinishResult> {
   if (!input.keepTokenId || input.keepWebhookIds.length === 0) {
     throw new Error('KEEP_TOKEN_ID and KEEP_WEBHOOK_IDS are required: run `prepare` first');
   }
-  await admin.login(cfg.email, cfg.password);
-  const admin_ = `/v1/admin/sites/${cfg.siteId}`;
-  const tokens = await admin.call<ServiceToken[]>('GET', `${admin_}/service-tokens`);
-  const webhooks = await admin.call<Webhook[]>('GET', `${admin_}/webhooks`);
+  const isPortalHook = portalHookFilter(input.portalHosts);
 
-  const keep = tokens.find((t) => t.id === input.keepTokenId);
-  if (!keep || keep.revokedAt)
-    throw new Error(`the new token ${input.keepTokenId} is missing or revoked; not revoking anything`);
-  const kept = webhooks.filter((w) => input.keepWebhookIds.includes(w.id));
-  if (kept.length !== input.keepWebhookIds.length) {
-    throw new Error('a new webhook is missing; not deleting anything');
+  // 1. The portal's environment holds the new token — not the leaked one, not a token from
+  //    an earlier, abandoned run.
+  const current = input.currentToken ? await whoIs(cfg.base, input.currentToken, fetchImpl) : undefined;
+  if (current?.id !== input.keepTokenId) {
+    throw new Error(
+      `the portal's environment does not hold the new token ${input.keepTokenId} ` +
+        `(it holds ${current ? current.id : 'nothing that authenticates'}); not revoking anything`,
+    );
   }
 
-  const explicit = new Set(input.revokeTokenIds ?? []);
-  const toRevoke = tokens.filter(
-    (t) => !t.revokedAt && t.id !== input.keepTokenId && (explicit.has(t.id) || t.name.startsWith(PORTAL_TOKEN_PREFIX)),
-  );
+  await admin.login(cfg.email, cfg.password);
+  const admin_ = `/v1/admin/sites/${cfg.siteId}`;
+  const keepOf = async (): Promise<ServiceToken | undefined> =>
+    (await admin.call<ServiceToken[]>('GET', `${admin_}/service-tokens`)).find((t) => t.id === input.keepTokenId);
+
+  const keep = await keepOf();
+  if (!keep || keep.revokedAt)
+    throw new Error(`the new token ${input.keepTokenId} is missing or revoked; not revoking anything`);
+
+  // 2. The running portal uses it: its last use moves when the portal is made to read Kal El.
+  if (input.probe) {
+    await input.probe();
+    const after = await keepOf();
+    if (!usedAfter(keep.lastUsedAt, after?.lastUsedAt ?? null)) {
+      throw new Error(
+        `the running portal did not use the new token (last use ${after?.lastUsedAt ?? 'never'}); ` +
+          'is the new deployment live? Not revoking anything',
+      );
+    }
+    log(`conferido: o portal no ar usa o token novo (último uso ${after?.lastUsedAt})`);
+  } else {
+    log('aviso: sem PORTAL_READY_URL, não conferi se o portal no ar usa o token novo');
+  }
+
+  const tokens = await admin.call<ServiceToken[]>('GET', `${admin_}/service-tokens`);
+  const webhooks = await admin.call<Webhook[]>('GET', `${admin_}/webhooks`);
+  const kept = webhooks.filter((w) => input.keepWebhookIds.includes(w.id));
+  if (kept.length !== input.keepWebhookIds.length) throw new Error('a new webhook is missing; not deleting anything');
+
+  const listed = new Set(input.revokeTokenIds);
+  const candidates = tokens.filter((t) => listed.has(t.id) && !t.revokedAt && t.id !== input.keepTokenId);
+  const foreign = candidates.filter((t) => !t.name.startsWith(PORTAL_TOKEN_PREFIX));
+  const toRevoke = input.allowForeign ? candidates : candidates.filter((t) => !foreign.includes(t));
   const toDelete = webhooks.filter((w) => isPortalHook(w) && !input.keepWebhookIds.includes(w.id));
 
   for (const t of toRevoke) log(`a revogar: ${describeToken(t)}`);
+  if (!input.allowForeign) {
+    for (const t of foreign) log(`NÃO revogo sem ALLOW_FOREIGN_REVOKE=1 (outro nome): ${describeToken(t)}`);
+  }
   for (const w of toDelete) log(`a apagar: webhook ${w.id} ${w.url}`);
-  const untouched = tokens.filter((t) => !t.revokedAt && t.id !== input.keepTokenId && !toRevoke.includes(t));
-  for (const t of untouched) log(`mantido (outro consumidor): ${describeToken(t)}`);
+  for (const t of tokens.filter((t) => !t.revokedAt && t.id !== input.keepTokenId && !candidates.includes(t))) {
+    log(`mantido: ${describeToken(t)}`);
+  }
 
   if (!cfg.apply) {
     log('dry run — nada foi escrito. Rode com --apply para aplicar.');
@@ -249,7 +327,7 @@ export async function finish(
   return { revoked, deletedWebhooks };
 }
 
-const ids = (value: string | undefined): string[] =>
+const list = (value: string | undefined): string[] =>
   (value ?? '')
     .split(',')
     .map((s) => s.trim())
@@ -277,6 +355,7 @@ async function main(): Promise<void> {
     password: need('KALEL_ADMIN_PASSWORD'),
     apply: argv.includes('--apply'),
   };
+  const portalHosts = list(need('PORTAL_HOSTS'));
   const log = (line: string) => console.log(line);
   const admin = new KalElAdmin(cfg.base);
   if (phase === 'prepare') {
@@ -287,6 +366,7 @@ async function main(): Promise<void> {
       cfg,
       {
         newWebhookSecret: need('NEW_WEBHOOK_SECRET'),
+        portalHosts,
         ...(leaked ? { leakedToken: leaked } : {}),
         ...(portal ? { portal } : {}),
         ...(days > 0 ? { expiresInDays: days } : {}),
@@ -296,12 +376,25 @@ async function main(): Promise<void> {
     );
     return;
   }
+  const readyUrl = process.env.PORTAL_READY_URL?.trim();
   await finish(
     cfg,
     {
       keepTokenId: need('KEEP_TOKEN_ID'),
-      keepWebhookIds: ids(need('KEEP_WEBHOOK_IDS')),
-      revokeTokenIds: ids(process.env.REVOKE_TOKEN_IDS),
+      keepWebhookIds: list(need('KEEP_WEBHOOK_IDS')),
+      revokeTokenIds: list(process.env.REVOKE_TOKEN_IDS),
+      currentToken: need('CURRENT_SERVICE_TOKEN'),
+      portalHosts,
+      allowForeign: process.env.ALLOW_FOREIGN_REVOKE === '1',
+      ...(readyUrl
+        ? {
+            probe: async () => {
+              const url = new URL(readyUrl);
+              url.searchParams.set('rotacao', String(Date.now()));
+              await fetch(url, { cache: 'no-store' }).catch(() => undefined);
+            },
+          }
+        : {}),
     },
     admin,
     log,

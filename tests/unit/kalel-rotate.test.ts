@@ -4,17 +4,26 @@ import { KalElAdmin } from '../../scripts/kalel-provision';
 import { finish, prepare, type ServiceToken, type Webhook } from '../../scripts/kalel-rotate';
 
 /**
- * The credential rotation, against a stand-in admin API. What matters: nothing is written
- * without --apply; the new token and webhook exist before anything old is revoked; only
- * the portal's credentials are touched — never MN-Prime's token, never another
- * subscriber's webhook; and neither the password nor the leaked token reaches the output.
+ * The credential rotation, against a stand-in admin API. What matters:
+ *   - nothing is written without --apply;
+ *   - nothing is revoked unless the portal's environment holds the new token AND the
+ *     running portal used it — a failed Coolify update or deploy cannot take the live
+ *     portal's token away;
+ *   - only what it is given by id is revoked, and only the portal's webhooks (by host) are
+ *     replaced: never MN-Prime's token, never another subscriber's webhook;
+ *   - neither the password, the leaked token nor the new webhook secret reaches the output,
+ *     and the new token is printed once, last.
  */
 
 const SITE = '11111111-2222-4333-8444-555566667777';
 const BASE = 'https://api.kalel.test';
-const HOOK = 'https://portal-abc.sslip.io/api/revalidate';
+const ORIGIN = 'portal-abc.sslip.io';
+const HOOK = `https://${ORIGIN}/api/revalidate`;
+const HOSTS = [ORIGIN, 'www.maquinanerd.test'];
 const LEAKED = 'ke_st.vazado-que-nao-pode-aparecer';
+const NEW = 'ke_st.novo';
 const PASSWORD = 'senha-que-nao-pode-vazar';
+const SECRET = 's'.repeat(64);
 
 const token = (over: Partial<ServiceToken>): ServiceToken => ({
   id: 'x',
@@ -27,7 +36,24 @@ const token = (over: Partial<ServiceToken>): ServiceToken => ({
   ...over,
 });
 
-function stub(state: { tokens: ServiceToken[]; hooks: Webhook[] }) {
+const hook = (id: string, url: string): Webhook => ({
+  id,
+  url,
+  events: ['article.published', 'article.updated'],
+  enabled: true,
+  createdAt: '',
+});
+
+interface State {
+  tokens: ServiceToken[];
+  hooks: Webhook[];
+  /** Which token each bearer value authenticates as. */
+  bearers: Record<string, string>;
+  failWebhookCreate?: boolean;
+  csrfInBodyOnly?: boolean;
+}
+
+function stub(state: State) {
   const writes: { method: string; path: string; body: unknown }[] = [];
   const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -37,24 +63,36 @@ function stub(state: { tokens: ServiceToken[]; hooks: Webhook[] }) {
     if (url.pathname === '/v1/auth/login') {
       const headers = new Headers({ 'content-type': 'application/json' });
       headers.append('set-cookie', 'ke_session=abc; HttpOnly; Path=/');
-      headers.append('set-cookie', 'ke_csrf=xyz; Path=/');
-      return new Response(JSON.stringify({ data: { ok: true } }), { status: 200, headers });
+      if (!state.csrfInBodyOnly) headers.append('set-cookie', 'ke_csrf=xyz; Path=/');
+      return new Response(JSON.stringify({ data: { csrfToken: 'xyz' } }), { status: 200, headers });
     }
     if (url.pathname === '/v1/auth/me') {
-      const bearer = new Headers(init?.headers).get('authorization');
-      return bearer === `Bearer ${LEAKED}` ? json({ kind: 'service', id: 't-portal' }) : json({}, 401);
+      const bearer = new Headers(init?.headers).get('authorization')?.replace(/^Bearer /, '') ?? '';
+      const id = state.bearers[bearer];
+      const t = state.tokens.find((x) => x.id === id);
+      if (!t) return json({}, 401);
+      if (t.revokedAt) return json({}, 403);
+      return json({ kind: 'service', id: t.id, name: t.name });
     }
     if (method !== 'GET') {
+      if (new Headers(init?.headers).get('x-kal-el-csrf') !== 'xyz') return json({}, 403);
       writes.push({ method, path: url.pathname, body: init?.body ? JSON.parse(String(init.body)) : null });
-      if (url.pathname.endsWith('/service-tokens')) return json({ id: 't-novo', token: 'ke_st.novo' }, 201);
-      if (url.pathname.endsWith('/webhooks')) return json({ id: `w-novo-${writes.length}` }, 201);
+      if (url.pathname.endsWith('/service-tokens')) return json({ id: 't-novo', token: NEW }, 201);
+      if (url.pathname.endsWith('/webhooks')) {
+        if (state.failWebhookCreate) return json({ message: 'boom' }, 500);
+        return json({ id: `w-novo-${writes.length}` }, 201);
+      }
       return json({ id: 'ok' });
     }
     if (url.pathname.endsWith('/service-tokens')) return json(state.tokens);
     if (url.pathname.endsWith('/webhooks')) return json(state.hooks);
     return new Response('', { status: 404 });
   });
-  return { fetchImpl, writes, admin: new KalElAdmin(BASE, fetchImpl as unknown as typeof fetch) };
+  return {
+    writes,
+    fetchImpl: fetchImpl as unknown as typeof fetch,
+    admin: new KalElAdmin(BASE, fetchImpl as unknown as typeof fetch),
+  };
 }
 
 const cfg = (apply: boolean) => ({
@@ -65,17 +103,19 @@ const cfg = (apply: boolean) => ({
   apply,
 });
 
-const site = () => ({
+const site = (): State => ({
   tokens: [
     token({ id: 't-portal', name: 'maquinanerd-portal-entrega', lastUsedAt: '2026-11-26T23:00:00.000Z' }),
-    token({ id: 't-import', name: 'maquinanerd-portal-importacao' }),
+    token({ id: 't-staging', name: 'maquinanerd-portal-entrega-staging' }),
+    token({ id: 't-import', name: 'maquinanerd-importacao-2026-09-16' }),
     token({ id: 't-prime', name: 'mn-prime-publicacao', scopes: ['articles.publish'] }),
-    token({ id: 't-velho', name: 'maquinanerd-portal-entrega', revokedAt: '2026-09-20T00:00:00.000Z' }),
   ],
   hooks: [
-    { id: 'w-portal', url: HOOK, events: ['article.published', 'article.updated'], enabled: true, createdAt: '' },
-    { id: 'w-outro', url: 'https://outro.example/hook', events: ['article.published'], enabled: true, createdAt: '' },
+    hook('w-portal', HOOK),
+    hook('w-staging', 'https://staging.example/api/revalidate'),
+    hook('w-outro', 'https://outro.example/hook'),
   ],
+  bearers: { [LEAKED]: 't-portal' },
 });
 
 describe('kalel:rotate prepare', () => {
@@ -84,26 +124,26 @@ describe('kalel:rotate prepare', () => {
     const lines: string[] = [];
     const result = await prepare(
       cfg(false),
-      { newWebhookSecret: 's'.repeat(64), leakedToken: LEAKED },
+      { newWebhookSecret: SECRET, leakedToken: LEAKED, portalHosts: HOSTS },
       admin,
       (l) => lines.push(l),
-      fetchImpl as unknown as typeof fetch,
+      fetchImpl,
     );
     expect(writes).toEqual([]);
-    expect(result.leakedTokenId).toBe('t-portal');
+    expect(result.leaked).toEqual({ id: 't-portal', name: 'maquinanerd-portal-entrega' });
     expect(result.token).toBeUndefined();
     expect(lines.join('\n')).toContain('dry run');
   });
 
-  it('creates a delivery token with the same scopes and a webhook on the URL the old one used', async () => {
+  it("creates a delivery token and a webhook on the portal's own URL, and leaves other hosts alone", async () => {
     const { admin, fetchImpl, writes } = stub(site());
     const lines: string[] = [];
     const result = await prepare(
       cfg(true),
-      { newWebhookSecret: 's'.repeat(64), leakedToken: LEAKED, now: new Date('2026-11-27T03:00:00Z') },
+      { newWebhookSecret: SECRET, leakedToken: LEAKED, portalHosts: HOSTS, now: new Date('2026-11-27T03:00:00Z') },
       admin,
       (l) => lines.push(l),
-      fetchImpl as unknown as typeof fetch,
+      fetchImpl,
     );
 
     expect(writes.map((w) => `${w.method} ${w.path}`)).toEqual([
@@ -115,81 +155,202 @@ describe('kalel:rotate prepare', () => {
       scopes: expect.arrayContaining(['articles.read', 'media.read', 'seo.manage']),
       expiresAt: null,
     });
-    expect(writes[0]?.body).not.toHaveProperty('scopes', expect.arrayContaining(['articles.publish']));
+    expect((writes[0]?.body as { scopes: string[] }).scopes).not.toContain('articles.publish');
     expect(writes[1]?.body).toMatchObject({
       url: HOOK,
       events: ['article.published', 'article.updated'],
-      secret: 's'.repeat(64),
+      secret: SECRET,
     });
-    expect(result).toMatchObject({ token: { id: 't-novo', secret: 'ke_st.novo' }, leakedTokenId: 't-portal' });
+    expect(result).toMatchObject({ token: { id: 't-novo', secret: NEW }, leaked: { id: 't-portal' } });
 
     const out = lines.join('\n');
-    expect(out).toContain('KAL_EL_SERVICE_TOKEN=ke_st.novo');
+    expect(lines.filter((l) => l.startsWith('KAL_EL_SERVICE_TOKEN='))).toEqual([`KAL_EL_SERVICE_TOKEN=${NEW}`]);
+    expect(lines.at(-1)).toBe(`KAL_EL_SERVICE_TOKEN=${NEW}`);
     expect(out).toContain('NEW_TOKEN_ID=t-novo');
     expect(out).toContain('LEAKED_TOKEN_ID=t-portal');
-    expect(out).not.toContain(PASSWORD);
-    expect(out).not.toContain(LEAKED);
-    expect(out).not.toContain('s'.repeat(64));
+    expect(out).toContain('LEAKED_TOKEN_NAME=maquinanerd-portal-entrega');
+    expect(out).toContain('outros assinantes (não mexo): https://staging.example/api/revalidate');
+    for (const secret of [PASSWORD, LEAKED, SECRET]) expect(out).not.toContain(secret);
   });
 
-  it('refuses a webhook secret the portal would refuse', async () => {
+  it('replaces each portal URL with its own new webhook', async () => {
+    const state = site();
+    state.hooks.push(hook('w-www', 'https://www.maquinanerd.test/api/revalidate'));
+    const { admin, fetchImpl, writes } = stub(state);
+    const result = await prepare(
+      cfg(true),
+      { newWebhookSecret: SECRET, portalHosts: HOSTS },
+      admin,
+      () => {},
+      fetchImpl,
+    );
+    expect(writes.filter((w) => w.path.endsWith('/webhooks')).map((w) => (w.body as { url: string }).url)).toEqual([
+      HOOK,
+      'https://www.maquinanerd.test/api/revalidate',
+    ]);
+    expect(result.webhookIds).toHaveLength(2);
+  });
+
+  it('never prints the new token when a later step fails', async () => {
+    const state = site();
+    state.failWebhookCreate = true;
+    const { admin, fetchImpl } = stub(state);
+    const lines: string[] = [];
+    await expect(
+      prepare(cfg(true), { newWebhookSecret: SECRET, portalHosts: HOSTS }, admin, (l) => lines.push(l), fetchImpl),
+    ).rejects.toThrow(/HTTP 500/);
+    expect(lines.join('\n')).not.toContain(NEW);
+    expect(lines.join('\n')).toContain('NEW_TOKEN_ID=t-novo');
+  });
+
+  it('warns when the leaked token is not named as the portal’s', async () => {
+    const state = site();
+    state.bearers = { [LEAKED]: 't-prime' };
+    const { admin, fetchImpl } = stub(state);
+    const lines: string[] = [];
+    await prepare(
+      cfg(false),
+      { newWebhookSecret: SECRET, leakedToken: LEAKED, portalHosts: HOSTS },
+      admin,
+      (l) => lines.push(l),
+      fetchImpl,
+    );
+    expect(lines.join('\n')).toMatch(/ATENÇÃO: o token vazado se chama "mn-prime-publicacao"/);
+  });
+
+  it('refuses a webhook secret the portal would refuse, and a run without the portal hosts', async () => {
     const { admin } = stub(site());
-    await expect(prepare(cfg(true), { newWebhookSecret: 'curto' }, admin, () => {})).rejects.toThrow(/32 to 128/);
+    await expect(
+      prepare(cfg(true), { newWebhookSecret: 'curto', portalHosts: HOSTS }, admin, () => {}),
+    ).rejects.toThrow(/32 to 128/);
+    await expect(prepare(cfg(true), { newWebhookSecret: SECRET, portalHosts: [] }, admin, () => {})).rejects.toThrow(
+      /PORTAL_HOSTS/,
+    );
+  });
+
+  it('logs in with the CSRF token from the body when no cookie carries it', async () => {
+    const state = site();
+    state.csrfInBodyOnly = true;
+    const { admin, fetchImpl, writes } = stub(state);
+    await prepare(cfg(true), { newWebhookSecret: SECRET, portalHosts: HOSTS }, admin, () => {}, fetchImpl);
+    expect(writes).toHaveLength(2);
   });
 });
 
 describe('kalel:rotate finish', () => {
-  const after = () => {
-    const s = site();
-    s.tokens.push(token({ id: 't-novo', name: 'maquinanerd-portal-entrega-2026-11-27' }));
-    s.hooks.push({ id: 'w-novo', url: HOOK, events: ['article.published'], enabled: true, createdAt: '' });
-    return s;
+  /** The site after `prepare`, with the new token in the portal and used by it on the probe. */
+  const after = (opts: { liveUses: boolean } = { liveUses: true }) => {
+    const state = site();
+    state.tokens.push(token({ id: 't-novo', name: 'maquinanerd-portal-entrega-2026-11-27' }));
+    state.hooks.push(hook('w-novo', HOOK));
+    state.bearers[NEW] = 't-novo';
+    const probe = async () => {
+      if (!opts.liveUses) return;
+      const t = state.tokens.find((x) => x.id === 't-novo');
+      if (t) t.lastUsedAt = '2026-11-27T03:10:00.000Z';
+    };
+    return { state, probe };
   };
+  const input = (over: Partial<Parameters<typeof finish>[1]> = {}) => ({
+    keepTokenId: 't-novo',
+    keepWebhookIds: ['w-novo'],
+    revokeTokenIds: ['t-portal'],
+    currentToken: NEW,
+    portalHosts: HOSTS,
+    ...over,
+  });
 
-  it("revokes the portal's tokens and deletes its old webhook — and nothing of anyone else", async () => {
-    const { admin, writes } = stub(after());
+  it("revokes the leaked token and deletes the portal's old webhook — nothing else", async () => {
+    const { state, probe } = after();
+    const { admin, fetchImpl, writes } = stub(state);
     const lines: string[] = [];
-    const result = await finish(
-      cfg(true),
-      { keepTokenId: 't-novo', keepWebhookIds: ['w-novo'], revokeTokenIds: ['t-portal'] },
-      admin,
-      (l) => lines.push(l),
-    );
+    const result = await finish(cfg(true), input({ probe }), admin, (l) => lines.push(l), fetchImpl);
 
     expect(writes.map((w) => `${w.method} ${w.path}`)).toEqual([
       `POST /v1/admin/sites/${SITE}/service-tokens/t-portal/revoke`,
-      `POST /v1/admin/sites/${SITE}/service-tokens/t-import/revoke`,
       `DELETE /v1/admin/sites/${SITE}/webhooks/w-portal`,
     ]);
-    expect(result).toEqual({ revoked: ['t-portal', 't-import'], deletedWebhooks: ['w-portal'] });
-    expect(lines.join('\n')).toContain('mantido (outro consumidor): t-prime "mn-prime-publicacao"');
+    expect(result).toEqual({ revoked: ['t-portal'], deletedWebhooks: ['w-portal'] });
+    const out = lines.join('\n');
+    expect(out).toContain('conferido: o portal no ar usa o token novo');
+    for (const kept of ['t-staging', 't-import', 't-prime']) expect(out).toMatch(new RegExp(`mantido: ${kept} `));
   });
 
-  it('revokes a token it is told leaked, whatever its name', async () => {
-    const { admin, writes } = stub(after());
-    await finish(
-      cfg(true),
-      { keepTokenId: 't-novo', keepWebhookIds: ['w-novo'], revokeTokenIds: ['t-prime'] },
-      admin,
-      () => {},
+  it('revokes nothing while the portal still holds the leaked token (the Coolify update failed)', async () => {
+    const { state, probe } = after();
+    const { admin, fetchImpl, writes } = stub(state);
+    await expect(finish(cfg(true), input({ currentToken: LEAKED, probe }), admin, () => {}, fetchImpl)).rejects.toThrow(
+      /does not hold the new token t-novo \(it holds t-portal\)/,
     );
-    expect(writes.map((w) => w.path)).toContain(`/v1/admin/sites/${SITE}/service-tokens/t-prime/revoke`);
+    expect(writes).toEqual([]);
+  });
+
+  it('revokes nothing while the running portal has not used the new token (the deploy did not go live)', async () => {
+    const { state, probe } = after({ liveUses: false });
+    const { admin, fetchImpl, writes } = stub(state);
+    await expect(finish(cfg(true), input({ probe }), admin, () => {}, fetchImpl)).rejects.toThrow(
+      /did not use the new token/,
+    );
+    expect(writes).toEqual([]);
+  });
+
+  it('skips a listed token named otherwise unless explicitly allowed', async () => {
+    const run = async (allowForeign: boolean) => {
+      const { state, probe } = after();
+      const { admin, fetchImpl, writes } = stub(state);
+      const lines: string[] = [];
+      await finish(
+        cfg(true),
+        input({ revokeTokenIds: ['t-prime'], allowForeign, probe }),
+        admin,
+        (l) => lines.push(l),
+        fetchImpl,
+      );
+      return { writes, out: lines.join('\n') };
+    };
+    const refused = await run(false);
+    expect(refused.writes.map((w) => w.path)).not.toContain(`/v1/admin/sites/${SITE}/service-tokens/t-prime/revoke`);
+    expect(refused.out).toMatch(/NÃO revogo sem ALLOW_FOREIGN_REVOKE=1/);
+    const allowed = await run(true);
+    expect(allowed.writes.map((w) => w.path)).toContain(`/v1/admin/sites/${SITE}/service-tokens/t-prime/revoke`);
+  });
+
+  it('never revokes the new token, even when it is listed', async () => {
+    const { state, probe } = after();
+    const { admin, fetchImpl, writes } = stub(state);
+    await finish(cfg(true), input({ revokeTokenIds: ['t-portal', 't-novo'], probe }), admin, () => {}, fetchImpl);
+    expect(writes.map((w) => w.path)).not.toContain(`/v1/admin/sites/${SITE}/service-tokens/t-novo/revoke`);
+  });
+
+  it('keeps every new webhook when the portal has two URLs', async () => {
+    const { state, probe } = after();
+    state.hooks.push(hook('w-www', 'https://www.maquinanerd.test/api/revalidate'));
+    state.hooks.push(hook('w-www-novo', 'https://www.maquinanerd.test/api/revalidate'));
+    const { admin, fetchImpl, writes } = stub(state);
+    await finish(cfg(true), input({ keepWebhookIds: ['w-novo', 'w-www-novo'], probe }), admin, () => {}, fetchImpl);
+    expect(writes.filter((w) => w.method === 'DELETE').map((w) => w.path)).toEqual([
+      `/v1/admin/sites/${SITE}/webhooks/w-portal`,
+      `/v1/admin/sites/${SITE}/webhooks/w-www`,
+    ]);
   });
 
   it('touches nothing when the new token is not there', async () => {
-    const { admin, writes } = stub(site());
-    await expect(
-      finish(cfg(true), { keepTokenId: 't-novo', keepWebhookIds: ['w-novo'] }, admin, () => {}),
-    ).rejects.toThrow(/missing or revoked/);
+    const { admin, fetchImpl, writes } = stub(site());
+    await expect(finish(cfg(true), input({ currentToken: NEW }), admin, () => {}, fetchImpl)).rejects.toThrow(
+      /does not hold the new token/,
+    );
     expect(writes).toEqual([]);
   });
 
-  it('a dry run lists what it would do and writes nothing', async () => {
-    const { admin, writes } = stub(after());
+  it('a dry run checks everything and writes nothing', async () => {
+    const { state, probe } = after();
+    const { admin, fetchImpl, writes } = stub(state);
     const lines: string[] = [];
-    await finish(cfg(false), { keepTokenId: 't-novo', keepWebhookIds: ['w-novo'] }, admin, (l) => lines.push(l));
+    await finish(cfg(false), input({ probe }), admin, (l) => lines.push(l), fetchImpl);
     expect(writes).toEqual([]);
-    expect(lines.join('\n')).toMatch(/a revogar: t-portal/);
-    expect(lines.join('\n')).toContain('dry run');
+    const out = lines.join('\n');
+    expect(out).toMatch(/a revogar: t-portal/);
+    expect(out).toContain('conferido: o portal no ar usa o token novo');
+    expect(out).toContain('dry run');
   });
 });
