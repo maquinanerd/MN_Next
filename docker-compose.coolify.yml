@@ -77,7 +77,7 @@ services:
       # own heap fit with room to spare, and the other ~768 MB are left to sharp/libvips,
       # whose buffers live outside the JS heap.
       - NODE_OPTIONS=--max-old-space-size=768
-    # Hardening after the November 2026 intrusion (docs/security/INCIDENTE-2026-11.md):
+    # Hardening after the November 2026 intrusion (docs/migration/INCIDENTE-2026-11.md):
     # remote code execution as `nextjs` ran a miner from memory, Tor and a watchdog from
     # /var/tmp, and 1,587 child processes over 8 days, with no CPU or memory ceiling.
     #  - The root filesystem is read-only: no binary dropped next to the code, no rewritten
@@ -100,12 +100,14 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    pids_limit: 256
+    # Every ceiling in one place: Compose refuses a `pids_limit` beside a
+    # `deploy.resources.limits` that does not repeat it ("can't set distinct values").
     deploy:
       resources:
         limits:
           cpus: '1.5'
           memory: 1536M
+          pids: 256
     healthcheck:
       # Liveness, not readiness: a CMS blip must not get the container killed and restarted
       # into the same blip. `?ready=1` is the operator's check (RUNBOOK §2).
@@ -123,7 +125,7 @@ services:
       # written inside the container makes it too slow to remove, and Coolify's swap fails.
       # `-v2`: the first volume was writable by the intruder for 8 days, so the clean
       # deploy starts an empty one; the old `portal-image-cache` is kept for inspection
-      # and then removed by hand (docs/security/RUNBOOK-INCIDENTE-2026-11.md).
+      # and then removed by hand (docs/migration/RUNBOOK-INCIDENTE-2026-11.md).
       - portal-image-cache-v2:/app/.next/cache/images
 
 volumes:
