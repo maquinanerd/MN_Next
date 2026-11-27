@@ -13,25 +13,25 @@
        da Cinerie.
     3. Kal El (`pnpm kalel:rotate prepare --apply`): cria um token de entrega novo, com os
        mesmos escopos, e um webhook novo na mesma URL do antigo, assinado com o segredo
-       novo. Se o token vazado não se chamar maquinanerd-portal…, para e pede confirmação.
+       novo. Um token a revogar que não se chame maquinanerd-portal… exige o nome digitado.
     4. Cinerie (pule com -SemCinerie): você ACRESCENTA a chave nova à lista no Easypanel. O
        script confere que a Cinerie a aceita.
     5. Coolify: grava KAL_EL_SERVICE_TOKEN, SERVICE_BASE64_64_WEBHOOK,
-       SERVICE_BASE64_64_PREVIEW e CINERIE_SERVICE_TOKEN, relê e confere os quatro.
+       SERVICE_BASE64_64_PREVIEW e CINERIE_SERVICE_TOKEN, relê e confere.
     6. Publica o portal e espera o deploy terminar e o portal responder com o Kal El ok.
-    7. Kal El (`pnpm kalel:rotate finish`): só revoga se o Coolify tiver o token novo E o
-       portal no ar o tiver usado. Mostra o plano, pede que você digite REVOGAR, revoga o
-       token vazado e apaga o webhook antigo. O token do MN-Prime não é tocado.
-    8. Cinerie: você tira a chave vazada da lista. O script confere que ela não abre mais.
+    7. Kal El (`pnpm kalel:rotate finish`): com nenhum deploy do portal em andamento, só
+       revoga se o Coolify tiver o token novo E o portal no ar o tiver usado. Mostra o plano,
+       pede que você digite REVOGAR, revoga o token vazado e apaga o webhook antigo.
+    8. Cinerie: você tira da lista a chave vazada. O script confere que ela não abre mais.
 
   Duas senhas são pedidas sem eco, nunca como argumento, porque argumento aparece na lista
   de processos: um token da API do Coolify que leia valores secretos, escreva e faça
   deploy, e a senha do dono do site no Kal El. As duas somem do ambiente quando o script
-  termina. Os ids (que não são segredo) ficam em artifacts/rotacao-segredos.json, ignorado
-  pelo git.
+  termina. Os ids e prefixos de 4 caracteres (que não são segredo) ficam em
+  artifacts/rotacao-segredos.json, ignorado pelo git.
 
-  Se algo falhar, a mensagem diz o que fazer. -SoFinalizar retoma do passo 6; -Recomecar
-  começa de novo e leva para a próxima revogação os tokens criados na rodada abandonada.
+  Se algo falhar, a mensagem diz o que fazer: -SoFinalizar retoma do passo 7; -Recomecar
+  começa de novo e leva para a revogação o que a rodada abandonada criou.
 
   Rode na raiz do repositório, depois do `pnpm install`.
 
@@ -44,6 +44,8 @@ param(
   [string] $CoolifyUrl = 'https://vps.cinerie.com',
   [string] $ApplicationUuid = 'xys58xzntjzf3xd5ar5snoq5',
   [string] $PortalUrl = 'https://www.maquinanerd.com.br',
+  # Só quando o Coolify não informa os domínios do portal: www, apex e a origem sslip.io.
+  [string[]] $PortalHosts = @(),
   [switch] $SemCinerie,
   [switch] $SoFinalizar,
   [switch] $Recomecar
@@ -60,7 +62,7 @@ $stateFile = Join-Path (Get-Location) 'artifacts\rotacao-segredos.json'
 $tokenPrefix = 'maquinanerd-portal'
 $childEnv = 'KALEL_ADMIN_PASSWORD', 'NEW_WEBHOOK_SECRET', 'LEAKED_SERVICE_TOKEN', 'CURRENT_SERVICE_TOKEN',
   'KALEL_ADMIN_EMAIL', 'KAL_EL_BASE_URL', 'KAL_EL_SITE_ID', 'PORTAL_PUBLIC_URL', 'PORTAL_HOSTS', 'PORTAL_READY_URL',
-  'KEEP_TOKEN_ID', 'KEEP_WEBHOOK_IDS', 'REVOKE_TOKEN_IDS', 'ALLOW_FOREIGN_REVOKE'
+  'KEEP_TOKEN_ID', 'KEEP_WEBHOOK_IDS', 'REVOKE_TOKEN_IDS', 'ALLOW_FOREIGN_REVOKE_IDS'
 $usedClipboard = $false
 
 function Read-Secret([string] $Prompt) {
@@ -116,6 +118,26 @@ function Clear-PrivateClipboard {
   else { Set-Clipboard -Value ' ' }
 }
 
+function Get-StatusCode($err) {
+  if ($err.Exception.Response) { return [int]$err.Exception.Response.StatusCode }
+  return 0
+}
+
+# O corpo de uma resposta de erro. O Windows PowerShell 5.1 só o põe em ErrorDetails quando a
+# resposta traz Content-Length; as rotas do Next respondem em chunks, então lê-se o stream.
+function Get-ErrorBody($err) {
+  if ($err.ErrorDetails -and $err.ErrorDetails.Message) { return [string]$err.ErrorDetails.Message }
+  $response = $err.Exception.Response
+  if (-not $response) { return '' }
+  try {
+    $reader = New-Object System.IO.StreamReader($response.GetResponseStream())
+    $text = $reader.ReadToEnd()
+    $reader.Dispose()
+    return $text
+  }
+  catch { return '' }
+}
+
 function Get-EnvItem($envs, [string] $Key) {
   return $envs | Where-Object { $_.key -eq $Key -and -not $_.is_preview } | Select-Object -First 1
 }
@@ -145,6 +167,25 @@ function Get-CoolifyEnvs {
   return , $envs
 }
 
+# Durante um build, o builder lê o Kal El com o token novo do Coolify enquanto o container
+# antigo ainda serve com o vazado: a conferência do finish não provaria nada.
+function Assert-NoDeployInProgress {
+  try { $running = Invoke-RestMethod -Method Get -Uri "$api/deployments" -Headers $script:headers }
+  catch { throw "Não consegui conferir no Coolify se há deploy do portal em andamento ($($_.Exception.Message)). Nada foi revogado." }
+  $items = @()
+  if ($null -ne $running) {
+    if ($running -isnot [array] -and $running.PSObject.Properties.Name -contains 'deployments') { $items = @($running.deployments) }
+    else { $items = @($running) }
+  }
+  $mine = @($items | Where-Object {
+      $_ -and (@('queued', 'in_progress') -contains [string]$_.status) -and
+      (([string]$_.deployment_url) -like "*/application/$ApplicationUuid/*" -or [string]$_.application_name -eq $script:appName)
+    })
+  if ($mine.Count -gt 0) {
+    throw "Há um deploy do portal em andamento ($($mine[0].deployment_uuid)). Espere terminar e rode com -SoFinalizar. Nada foi revogado."
+  }
+}
+
 function Invoke-Rotate([string] $Phase, [switch] $Apply) {
   $previousEncoding = [Console]::OutputEncoding
   [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -152,13 +193,13 @@ function Invoke-Rotate([string] $Phase, [switch] $Apply) {
   $ErrorActionPreference = 'Continue'
   $arguments = @('--silent', 'kalel:rotate', $Phase)
   if ($Apply) { $arguments += '--apply' }
-  $lines = & pnpm @arguments 2>&1 | ForEach-Object { "$_" }
+  $lines = @(& pnpm @arguments 2>&1 | ForEach-Object { "$_" })
   $code = $LASTEXITCODE
   $ErrorActionPreference = 'Stop'
   [Console]::OutputEncoding = $previousEncoding
   $lines | Where-Object { $_ -notmatch '^KAL_EL_SERVICE_TOKEN=' } | ForEach-Object { Write-Host "    $_" }
-  if ($code -ne 0) { throw "kalel:rotate $Phase falhou; as linhas acima dizem por quê." }
-  return $lines
+  # As linhas voltam mesmo na falha: o prepare pode ter criado um token antes de falhar.
+  return [pscustomobject]@{ lines = $lines; code = $code }
 }
 
 function Get-Line($lines, [string] $Name) {
@@ -167,23 +208,41 @@ function Get-Line($lines, [string] $Name) {
   return $line.Substring($Name.Length + 1).Trim()
 }
 
+function Split-Ids([string] $Value) {
+  return @(($Value -split ',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
+
 function Save-State($state) {
   New-Item -ItemType Directory -Force (Split-Path $stateFile) | Out-Null
   $state | ConvertTo-Json | Set-Content -LiteralPath $stateFile -Encoding utf8
 }
 
-# 401 = a Cinerie recusou a chave; 503 = nenhuma chave válida na lista. Qualquer outra resposta
-# (400/422 para o corpo vazio) quer dizer que a autenticação passou.
+# 'aceita' (a autenticação passou: 200, 400/413/422 para o corpo vazio, 429), 'recusada' (401,
+# ou 503 context_disabled: nenhuma chave válida) ou 'indefinida' (WAF, rota, reinício do app).
 function Test-CinerieKey([string] $Base, [string] $Key) {
   try {
     Invoke-RestMethod -Method Post -Uri "$Base/api/internal/editorial-context" -Headers @{ Authorization = "Bearer $Key" } `
       -ContentType 'application/json' -Body '{}' | Out-Null
-    return $true
+    return 'aceita'
   }
   catch {
-    $code = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
-    if ($code -eq 0) { throw "Não consegui falar com a Cinerie: $($_.Exception.Message)" }
-    return -not ($code -eq 401 -or $code -eq 503)
+    $code = Get-StatusCode $_
+    if (@(400, 413, 422, 429) -contains $code) { return 'aceita' }
+    if ($code -eq 401) { return 'recusada' }
+    if ($code -eq 503 -and (Get-ErrorBody $_) -match 'context_disabled') { return 'recusada' }
+    return "indefinida (HTTP $code)"
+  }
+}
+
+# Repete a conferência até a Cinerie responder o esperado, ou até você digitar PULAR.
+function Wait-CinerieKey([string] $Base, [string] $Key, [string] $Expected, [string] $WrongMessage) {
+  while ($true) {
+    $answer = Read-Host '    Quando o screen-app voltar, aperte Enter aqui'
+    if ($answer -ceq 'PULAR') { Write-Host '    pulado: confira depois, à mão.'; return $false }
+    $result = Test-CinerieKey $Base $Key
+    if ($result -eq $Expected) { return $true }
+    if ($result -like 'indefinida*') { Write-Host "    Não consegui conferir: $result. Enter tenta de novo; PULAR segue sem conferir." }
+    else { Write-Host "    $WrongMessage Enter tenta de novo; PULAR segue sem conferir." }
   }
 }
 
@@ -198,7 +257,8 @@ function Wait-PortalReady([string] $ReadyUrl) {
       $kalel = $ready.checks.kalel
     }
     catch {
-      try { $kalel = ($_.ErrorDetails.Message | ConvertFrom-Json).checks.kalel } catch { $kalel = '' }
+      $body = Get-ErrorBody $_
+      if ($body) { try { $kalel = ($body | ConvertFrom-Json).checks.kalel } catch { $kalel = '' } }
     }
   } while ($kalel -ne 'ok' -and (Get-Date) -lt $deadline)
   return $kalel -eq 'ok'
@@ -208,16 +268,39 @@ function Invoke-Finish($state, [string] $ReadyUrl, [string] $Hosts) {
   Write-Host '7/8 Kal El: conferindo que o portal no ar usa o token novo'
   $env:KEEP_TOKEN_ID = $state.newTokenId
   $env:KEEP_WEBHOOK_IDS = $state.newWebhookIds
-  $env:REVOKE_TOKEN_IDS = (@($state.leakedTokenId) + @($state.staleTokenIds) | Where-Object { $_ }) -join ','
-  $env:ALLOW_FOREIGN_REVOKE = if ($state.allowForeign) { '1' } else { '' }
-  $env:CURRENT_SERVICE_TOKEN = Get-EnvValue (Get-CoolifyEnvs) 'KAL_EL_SERVICE_TOKEN'
+  $env:REVOKE_TOKEN_IDS = (@($state.revokeTokenIds) | Where-Object { $_ }) -join ','
+  $env:ALLOW_FOREIGN_REVOKE_IDS = (@($state.allowForeignIds) | Where-Object { $_ }) -join ','
   $env:PORTAL_HOSTS = $Hosts
   $env:PORTAL_READY_URL = $ReadyUrl
-  # Primeiro só confere e mostra o plano; só revoga depois da confirmação digitada.
-  [void](Invoke-Rotate 'finish')
+  # Primeiro só confere e mostra o plano; só revoga depois da confirmação digitada. A trava do
+  # deploy em andamento vale antes de cada uma das duas passadas.
+  Assert-NoDeployInProgress
+  $env:CURRENT_SERVICE_TOKEN = Get-EnvValue (Get-CoolifyEnvs) 'KAL_EL_SERVICE_TOKEN'
+  $plan = Invoke-Rotate 'finish'
+  if ($plan.code -ne 0) { throw 'O finish recusou (as linhas acima dizem por quê). Nada foi revogado.' }
   $answer = Read-Host '    Digite REVOGAR para aplicar o plano acima (qualquer outra coisa cancela)'
   if ($answer -cne 'REVOGAR') { throw 'Cancelado. Nada foi revogado; rode com -SoFinalizar quando quiser.' }
-  [void](Invoke-Rotate 'finish' -Apply)
+  Assert-NoDeployInProgress
+  $env:CURRENT_SERVICE_TOKEN = Get-EnvValue (Get-CoolifyEnvs) 'KAL_EL_SERVICE_TOKEN'
+  $done = Invoke-Rotate 'finish' -Apply
+  if ($done.code -ne 0) { throw 'O finish falhou no meio (as linhas acima dizem onde). Rode com -SoFinalizar.' }
+  $stillActive = Split-Ids (Get-Line $done.lines 'STILL_ACTIVE_IDS')
+  if ($stillActive.Count -gt 0) {
+    Write-Host "    ATENÇÃO: seguem ativos, sem confirmação para revogar: $($stillActive -join ', '). Revogue no CMS, em Tokens,"
+    Write-Host '    depois de dar ao dono desse token (MN-Prime?) um token novo.'
+  }
+  else { Write-Host '    conferido no Kal El: todos os tokens a revogar estão revogados' }
+}
+
+function Show-CinerieRemoval($state, [string] $CurrentNewPrefix) {
+  $prefixes = @(@($state.cinerieLeakedPrefix) + @($state.cinerieAddedPrefixes) |
+    Where-Object { $_ -and $_ -ne $CurrentNewPrefix } | Select-Object -Unique)
+  if ($prefixes.Count -eq 0) { return $false }
+  Write-Host '8/8 Cinerie: tirar da lista a chave vazada (e as de rodadas abandonadas)'
+  Write-Host '    No Easypanel, em rss_prime > screen-app > Ambiente > CINERIE_EDITORIAL_CONTEXT_API_KEYS,'
+  Write-Host "    apague as entradas que começam com: $($prefixes -join ', ')"
+  Write-Host '    (e a vírgula de cada uma), mantendo a nova e a do MN-Prime. Salvar > Implantar.'
+  return $true
 }
 
 try {
@@ -227,9 +310,15 @@ try {
   Write-Host '1/8 Lendo no Coolify o que o portal usa hoje'
   $envs = Get-CoolifyEnvs
   $app = Invoke-RestMethod -Method Get -Uri "$api/applications/$ApplicationUuid" -Headers $script:headers
-  $domains = @()
-  foreach ($service in ($app.docker_compose_domains | ConvertFrom-Json).PSObject.Properties) {
-    $domains += ([string]$service.Value.domain).Split(',') | Where-Object { $_ } | ForEach-Object { ([Uri]$_.Trim()).Host }
+  $script:appName = [string]$app.name
+  $domains = @($PortalHosts | Where-Object { $_ })
+  if ($domains.Count -eq 0 -and $app.docker_compose_domains) {
+    foreach ($service in ($app.docker_compose_domains | ConvertFrom-Json).PSObject.Properties) {
+      $domains += ([string]$service.Value.domain).Split(',') | Where-Object { $_ } | ForEach-Object { ([Uri]$_.Trim()).Host }
+    }
+  }
+  if ($domains.Count -eq 0) {
+    throw "O Coolify não informou os domínios do portal. Rode de novo com -PortalHosts 'www.maquinanerd.com.br','maquinanerd.com.br','<origem>.sslip.io'."
   }
   $domains = @($domains + ([Uri]$PortalUrl).Host | Select-Object -Unique)
   $origin = $domains | Where-Object { $_ -like '*.sslip.io' } | Select-Object -First 1
@@ -256,18 +345,19 @@ try {
 
   if ($SoFinalizar) {
     if (-not $previous -or $previous.finished) { throw "Não há troca em andamento em $stateFile." }
+    if (-not $previous.newWebhookIds) { throw 'A rodada anterior não terminou de criar o token e o webhook; rode com -Recomecar.' }
     if (-not (Wait-PortalReady $readyUrl)) { throw 'O portal não respondeu com o Kal El ok. Confira o deploy antes de finalizar.' }
     Invoke-Finish $previous $readyUrl $hosts
     $previous.finished = $true
     Save-State $previous
-    Write-Host '8/8 Cinerie: se a chave antiga do portal ainda está na lista do Easypanel, tire-a agora.'
-    Write-Host "    (é a que começa com `"$($previous.cinerieOldPrefix)`"), mantendo a do MN-Prime; Salvar > Implantar."
+    if (-not $previous.semCinerie) { [void](Show-CinerieRemoval $previous $previous.cinerieNewPrefix) }
     Write-Host 'Pronto. Falta o que está em docs/migration/RUNBOOK-INCIDENTE-2026-11.md, a partir do passo 4.'
     return
   }
   if ($previous -and -not $previous.finished -and -not $Recomecar) {
     throw "Há uma troca em andamento ($stateFile). Rode com -SoFinalizar se o deploy com os valores novos foi ao ar, ou com -Recomecar para começar de novo."
   }
+  if (-not ($previous -and -not $previous.finished)) { $previous = $null }
 
   $leaked = Get-EnvValue $envs 'KAL_EL_SERVICE_TOKEN'
   $oldCinerie = Get-EnvValue $envs 'CINERIE_SERVICE_TOKEN'
@@ -283,57 +373,75 @@ try {
   $env:LEAKED_SERVICE_TOKEN = $leaked
   $env:PORTAL_PUBLIC_URL = $PortalUrl
   $env:PORTAL_HOSTS = $hosts
-  $lines = Invoke-Rotate 'prepare' -Apply
-  $newToken = Get-Line $lines 'KAL_EL_SERVICE_TOKEN'
-  $leakedId = Get-Line $lines 'LEAKED_TOKEN_ID'
-  $leakedName = Get-Line $lines 'LEAKED_TOKEN_NAME'
+  $prepared = Invoke-Rotate 'prepare' -Apply
+  $newTokenId = Get-Line $prepared.lines 'NEW_TOKEN_ID'
+  if (-not $newTokenId) { throw 'O prepare falhou antes de criar o token (as linhas acima dizem por quê). Nada mudou.' }
+
+  # O token vazado de verdade e o que a rodada abandonada criou ou gravou no Coolify: tudo isso
+  # é revogado no fim. Um nome que não seja maquinanerd-portal… exige confirmação por id.
+  $currentId = Get-Line $prepared.lines 'LEAKED_TOKEN_ID'
+  $currentName = Get-Line $prepared.lines 'LEAKED_TOKEN_NAME'
+  $toRevoke = @()
+  if ($currentId) { $toRevoke += [pscustomobject]@{ id = $currentId; name = $currentName } }
+  if ($previous) {
+    if ($previous.leakedTokenId) { $toRevoke += [pscustomobject]@{ id = $previous.leakedTokenId; name = $previous.leakedTokenName } }
+    if ($previous.newTokenId) { $toRevoke += [pscustomobject]@{ id = $previous.newTokenId; name = "$tokenPrefix (rodada anterior)" } }
+    foreach ($id in @($previous.revokeTokenIds)) { if ($id) { $toRevoke += [pscustomobject]@{ id = $id; name = "$tokenPrefix (rodada anterior)" } } }
+  }
+  # Sem repetir id, ficando com a primeira ocorrência: o nome real (lido do Kal El) vem antes do
+  # rótulo genérico das rodadas anteriores. O nome que vale para revogar é o do Kal El, no finish.
+  $seen = @{}
+  $toRevoke = @(foreach ($candidate in $toRevoke) {
+      if ($candidate.id -and $candidate.id -ne $newTokenId -and -not $seen.ContainsKey($candidate.id)) {
+        $seen[$candidate.id] = $true
+        $candidate
+      }
+    })
+  $originalLeaked = if ($previous -and $previous.leakedTokenId) { $previous } else { [pscustomobject]@{ leakedTokenId = $currentId; leakedTokenName = $currentName } }
   $state = [pscustomobject]@{
     at = (Get-Date).ToUniversalTime().ToString('o')
-    newTokenId = Get-Line $lines 'NEW_TOKEN_ID'
-    newWebhookIds = Get-Line $lines 'NEW_WEBHOOK_IDS'
-    leakedTokenId = $leakedId
-    leakedTokenName = $leakedName
-    allowForeign = $false
-    staleTokenIds = @()
-    cinerieOldPrefix = if ($oldCinerie.Length -ge 4) { $oldCinerie.Substring(0, 4) } else { '' }
+    newTokenId = $newTokenId
+    newWebhookIds = Get-Line $prepared.lines 'NEW_WEBHOOK_IDS'
+    leakedTokenId = $originalLeaked.leakedTokenId
+    leakedTokenName = $originalLeaked.leakedTokenName
+    revokeTokenIds = @($toRevoke | ForEach-Object { $_.id })
+    allowForeignIds = @(if ($previous) { @($previous.allowForeignIds) | Where-Object { $_ } })
+    semCinerie = [bool]$SemCinerie
+    cinerieLeakedPrefix = if ($previous -and $previous.cinerieLeakedPrefix) { $previous.cinerieLeakedPrefix } elseif ($oldCinerie.Length -ge 4) { $oldCinerie.Substring(0, 4) } else { '' }
+    cinerieAddedPrefixes = @(if ($previous) { @($previous.cinerieAddedPrefixes) | Where-Object { $_ } })
+    cinerieNewPrefix = ''
     finished = $false
   }
-  if ($previous -and $Recomecar) {
-    # A rodada abandonada: o token vazado de verdade é o que ela anotou; o que ela criou (e
-    # o que hoje está no Coolify, se ela chegou a gravar) entra na próxima revogação.
-    if ($previous.leakedTokenId) {
-      $state.leakedTokenId = $previous.leakedTokenId
-      $state.leakedTokenName = $previous.leakedTokenName
-      $state.allowForeign = [bool]$previous.allowForeign
-    }
-    $state.staleTokenIds = @(@($previous.staleTokenIds) + @($previous.newTokenId, $leakedId) |
-      Where-Object { $_ -and $_ -ne $state.leakedTokenId -and $_ -ne $state.newTokenId } | Select-Object -Unique)
-    if ($previous.cinerieOldPrefix) { $state.cinerieOldPrefix = $previous.cinerieOldPrefix }
+  # Gravado já: se algo abaixo falhar (ou você interromper), o -Recomecar sabe o que revogar.
+  Save-State $state
+  $newToken = Get-Line $prepared.lines 'KAL_EL_SERVICE_TOKEN'
+  if ($prepared.code -ne 0 -or -not $newToken -or -not $state.newWebhookIds) {
+    throw "O prepare falhou depois de criar o token $newTokenId. Rode com -Recomecar: ele entra na revogação."
   }
-  if (-not $newToken -or -not $state.newTokenId -or -not $state.newWebhookIds) {
-    throw 'O Kal El não devolveu o token ou o webhook novo.'
-  }
-  if ($state.leakedTokenName -and -not $state.leakedTokenName.StartsWith($tokenPrefix)) {
-    Write-Host "    O token vazado se chama `"$($state.leakedTokenName)`". Se o MN-Prime publica com ele, crie antes um"
-    Write-Host '    token novo para o MN-Prime (painel /sites > trocar token), senão ele para de publicar na revogação.'
-    $confirm = Read-Host "    Digite o nome do token para revogá-lo mesmo assim (ou Enter para não revogar)"
-    $state.allowForeign = ($confirm -ceq $state.leakedTokenName)
+
+  foreach ($candidate in $toRevoke) {
+    $name = [string]$candidate.name
+    if ($name.StartsWith($tokenPrefix) -or @($state.allowForeignIds) -contains $candidate.id) { continue }
+    Write-Host "    O token a revogar $($candidate.id) se chama `"$name`". Se o MN-Prime (ou outro) publica com ele, dê"
+    Write-Host '    antes um token novo a esse consumidor (no MN-Prime: painel /sites > trocar token), senão ele para.'
+    $confirm = Read-Host '    Digite o nome do token para revogá-lo mesmo assim (ou Enter para não revogar)'
+    if ($confirm -ceq $name) { $state.allowForeignIds = @(@($state.allowForeignIds) + $candidate.id) }
   }
   Save-State $state
 
   if (-not $SemCinerie) {
-    Write-Host '4/8 Cinerie: acrescentar a chave nova no Easypanel (a antiga sai no passo 8)'
+    Write-Host '4/8 Cinerie: acrescentar a chave nova no Easypanel (a vazada sai no passo 8)'
+    $state.cinerieNewPrefix = $cinerieKey.Substring(0, 4)
+    $state.cinerieAddedPrefixes = @(@($state.cinerieAddedPrefixes) + $state.cinerieNewPrefix)
+    Save-State $state
     Set-PrivateClipboard $cinerieKey
     $usedClipboard = $true
     Write-Host '    A chave nova está na área de transferência (fora do histórico do Windows). No Easypanel:'
     Write-Host '      rss_prime > screen-app > Ambiente > CINERIE_EDITORIAL_CONTEXT_API_KEYS'
     Write-Host '      ACRESCENTE no fim da lista uma vírgula e a chave (Ctrl+V), sem apagar nada. Salvar > Implantar.'
-    do {
-      Read-Host '    Quando o screen-app voltar, aperte Enter aqui' | Out-Null
-      $accepted = Test-CinerieKey $cinerieBase $cinerieKey
-      if (-not $accepted) { Write-Host '    A Cinerie ainda recusa a chave nova. Confira o Ambiente e o Implantar.' }
-    } until ($accepted)
-    Write-Host '    conferido: a Cinerie aceita a chave nova'
+    if (Wait-CinerieKey $cinerieBase $cinerieKey 'aceita' 'A Cinerie ainda recusa a chave nova. Confira o Ambiente e o Implantar.') {
+      Write-Host '    conferido: a Cinerie aceita a chave nova'
+    }
     Clear-PrivateClipboard
     $usedClipboard = $false
   }
@@ -351,10 +459,10 @@ try {
     foreach ($key in $written.Keys) {
       if ((Get-EnvValue $reread $key) -cne $written[$key]) { throw "o Coolify não guardou $key" }
     }
-    Write-Host '    conferido: o Coolify guardou os quatro valores'
+    Write-Host "    conferido: o Coolify guardou os $($written.Count) valores"
   }
   catch {
-    throw "Falha ao gravar no Coolify ($($_.Exception.Message)). O portal no ar segue com os valores antigos, que ainda valem; NÃO rode -SoFinalizar. Corrija (o token do Coolify escreve?) e rode com -Recomecar."
+    throw "Falha ao gravar no Coolify ($($_.Exception.Message)). O portal no ar segue com os valores antigos, que ainda valem. Corrija (o token do Coolify escreve?) e rode com -Recomecar."
   }
 
   Write-Host '6/8 Publicando o portal'
@@ -366,7 +474,7 @@ try {
       break
     }
     catch {
-      if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 405) { continue }
+      if ((Get-StatusCode $_) -eq 405) { continue }
       throw
     }
   }
@@ -380,7 +488,7 @@ try {
     Write-Host "    $status"
   } while ((@('queued', 'in_progress') -contains $status) -and ((Get-Date) -lt $deadline))
   if ($status -ne 'finished') {
-    throw "O deploy terminou como '$status'. O portal segue com o container anterior e os valores antigos ainda valem. Veja o log no painel, publique de novo e rode com -SoFinalizar."
+    throw "O deploy terminou como '$status'. O portal segue com o container anterior, e os valores antigos ainda valem. Veja o log no painel, publique de novo, espere terminar e rode com -SoFinalizar."
   }
   if (-not (Wait-PortalReady $readyUrl)) {
     throw 'O portal não respondeu com o Kal El ok depois do deploy. Nada foi revogado; confira o portal e rode com -SoFinalizar.'
@@ -390,32 +498,27 @@ try {
   Invoke-Finish $state $readyUrl $hosts
   try {
     Invoke-RestMethod -Method Get -Uri "$kalelBase/v1/auth/me" -Headers @{ Authorization = "Bearer $leaked" } | Out-Null
-    Write-Host '    ATENÇÃO: o token vazado ainda autentica. Revogue-o no CMS, em Tokens.'
+    Write-Host '    ATENÇÃO: o token que estava no Coolify ainda autentica. Revogue-o no CMS, em Tokens.'
   }
   catch {
-    $code = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
-    if ($code -eq 401 -or $code -eq 403) { Write-Host "    conferido: o token vazado não autentica mais (HTTP $code)" }
-    else { Write-Host "    não consegui conferir o token vazado ($($_.Exception.Message)); veja em Tokens no CMS" }
+    $code = Get-StatusCode $_
+    if ($code -eq 401 -or $code -eq 403) { Write-Host "    conferido: o token que estava no Coolify não autentica mais (HTTP $code)" }
+    else { Write-Host "    não consegui conferir o token que estava no Coolify ($($_.Exception.Message)); veja em Tokens no CMS" }
   }
   $state.finished = $true
   Save-State $state
 
-  if (-not $SemCinerie -and $oldCinerie) {
-    Write-Host '8/8 Cinerie: tirar a chave vazada do portal'
-    Write-Host "    No mesmo Ambiente do Easypanel, apague da lista a entrada que começa com `"$($state.cinerieOldPrefix)`""
-    Write-Host '    (e a vírgula), mantendo a nova e a do MN-Prime. Salvar > Implantar.'
-    do {
-      Read-Host '    Quando o screen-app voltar, aperte Enter aqui' | Out-Null
-      $stillOpen = Test-CinerieKey $cinerieBase $oldCinerie
-      if ($stillOpen) { Write-Host '    A chave vazada ainda abre a rota. Confira a lista e o Implantar.' }
-    } while ($stillOpen)
-    Write-Host '    conferido: a chave vazada não abre mais a rota da Cinerie'
+  if (-not $SemCinerie -and (Show-CinerieRemoval $state $state.cinerieNewPrefix) -and $oldCinerie) {
+    # A chave que estava no Coolify (a vazada, ou a de uma rodada abandonada) sai junto.
+    if (Wait-CinerieKey $cinerieBase $oldCinerie 'recusada' 'A chave antiga ainda abre a rota. Confira a lista e o Implantar.') {
+      Write-Host '    conferido: a chave antiga não abre mais a rota da Cinerie'
+    }
   }
   Write-Host 'Pronto. Falta o que está em docs/migration/RUNBOOK-INCIDENTE-2026-11.md, a partir do passo 4.'
 }
 finally {
   if ($usedClipboard) { Clear-PrivateClipboard }
   foreach ($name in $childEnv) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
-  Remove-Variable coolifyToken, envs, reread, leaked, oldCinerie, webhookSecret, previewSecret, cinerieKey, newToken, lines, written -ErrorAction SilentlyContinue
+  Remove-Variable coolifyToken, envs, reread, leaked, oldCinerie, webhookSecret, previewSecret, cinerieKey, newToken, prepared, written -ErrorAction SilentlyContinue
   $script:headers = $null
 }

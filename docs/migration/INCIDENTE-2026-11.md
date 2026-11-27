@@ -215,10 +215,17 @@ estático valida o compose com `docker compose config`, e
     transferência.
   - A chave da Cinerie é acrescentada antes e a vazada sai só no fim.
   - Antes de revogar, pede que você digite `REVOGAR`.
-- Uma revisão independente (subagente só leitura, já que o Codex CLI está sem acesso desde
-  31/10) apontou 12 achados na primeira versão. O mais grave: uma retomada podia revogar o
-  token do portal no ar. Todos foram corrigidos e cobertos por testes, exceto os de
-  PowerShell, que foram verificados por análise sintática e pelas funções isoladas.
+- Revisão independente em duas rodadas (subagente só leitura, já que o Codex CLI está sem
+  acesso desde 31/10):
+  - Primeira rodada: 12 achados. O mais grave: uma retomada podia revogar o token do
+    portal no ar.
+  - Segunda rodada: 9 resolvidos, 3 só em parte, e 9 novos. O mais grave: um
+    `-SoFinalizar` durante um redeploy, quando o builder usa o token novo e engana a
+    conferência.
+  - Todos foram corrigidos. O lado TypeScript está coberto por 17 testes.
+  - O lado PowerShell foi verificado por análise sintática e contra um servidor HTTP local:
+    503 em chunks como o Next, as respostas da Cinerie e a trava de deploy em andamento,
+    em 7 cenários.
 
 ## 8. Pendências e decisões do dono
 

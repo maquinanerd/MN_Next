@@ -29,12 +29,13 @@ import { runAsScript } from './wp/cli';
  *            REVOKE_TOKEN_IDS      the leaked token's id (plus leftovers of an earlier run)
  *            CURRENT_SERVICE_TOKEN the token the portal's environment holds right now
  *            PORTAL_READY_URL      a request that makes the running portal read Kal El
- *            ALLOW_FOREIGN_REVOKE  `1` to revoke a listed token not named maquinanerd-portal…
+ *                                  (required with --apply)
+ *            ALLOW_FOREIGN_REVOKE_IDS  listed ids to revoke although not named maquinanerd-portal…
  *
  * What it touches, and only that:
  *   - the service tokens it is given by id — never by name pattern. A listed token whose
  *     name is not `maquinanerd-portal…` (MN-Prime's is `mn-prime-publicacao`) is skipped
- *     unless ALLOW_FOREIGN_REVOKE=1;
+ *     unless its id is in ALLOW_FOREIGN_REVOKE_IDS;
  *   - webhooks on the portal's hosts whose path is `/api/revalidate`.
  *
  * `finish` refuses to revoke anything unless the token in the portal's environment is the
@@ -228,14 +229,17 @@ export interface FinishInput {
   /** The token the portal's environment holds now; it must be the new one. */
   currentToken: string;
   portalHosts: string[];
-  allowForeign?: boolean;
-  /** A request that makes the running portal read Kal El with its token. */
+  /** Listed ids the owner confirmed revoking although they are not named maquinanerd-portal…. */
+  allowForeignIds?: string[];
+  /** A request that makes the running portal read Kal El with its token. Required to apply. */
   probe?: () => Promise<void>;
 }
 
 export interface FinishResult {
   revoked: string[];
   deletedWebhooks: string[];
+  /** Listed ids still active afterwards (another consumer's, not confirmed). */
+  stillActive: string[];
 }
 
 const usedAfter = (before: string | null, after: string | null): boolean =>
@@ -251,6 +255,9 @@ export async function finish(
   if (!input.keepTokenId || input.keepWebhookIds.length === 0) {
     throw new Error('KEEP_TOKEN_ID and KEEP_WEBHOOK_IDS are required: run `prepare` first');
   }
+  if (cfg.apply && !input.probe) {
+    throw new Error('PORTAL_READY_URL is required with --apply: nothing is revoked unproven');
+  }
   const isPortalHook = portalHookFilter(input.portalHosts);
 
   // 1. The portal's environment holds the new token — not the leaked one, not a token from
@@ -265,43 +272,58 @@ export async function finish(
 
   await admin.login(cfg.email, cfg.password);
   const admin_ = `/v1/admin/sites/${cfg.siteId}`;
-  const keepOf = async (): Promise<ServiceToken | undefined> =>
-    (await admin.call<ServiceToken[]>('GET', `${admin_}/service-tokens`)).find((t) => t.id === input.keepTokenId);
+  const listTokens = () => admin.call<ServiceToken[]>('GET', `${admin_}/service-tokens`);
+  const listed = new Set(input.revokeTokenIds);
 
-  const keep = await keepOf();
-  if (!keep || keep.revokedAt)
+  const before = await listTokens();
+  const keep = before.find((t) => t.id === input.keepTokenId);
+  if (!keep || keep.revokedAt) {
     throw new Error(`the new token ${input.keepTokenId} is missing or revoked; not revoking anything`);
+  }
 
   // 2. The running portal uses it: its last use moves when the portal is made to read Kal El.
+  //    A build running at the same time also reads Kal El with the new token, so the wrapper
+  //    refuses to finish while a deployment of the portal is queued or running.
   if (input.probe) {
     await input.probe();
-    const after = await keepOf();
-    if (!usedAfter(keep.lastUsedAt, after?.lastUsedAt ?? null)) {
+    const after = await listTokens();
+    const keptAfter = after.find((t) => t.id === input.keepTokenId);
+    if (!usedAfter(keep.lastUsedAt, keptAfter?.lastUsedAt ?? null)) {
       throw new Error(
-        `the running portal did not use the new token (last use ${after?.lastUsedAt ?? 'never'}); ` +
+        `the running portal did not use the new token (last use ${keptAfter?.lastUsedAt ?? 'never'}); ` +
           'is the new deployment live? Not revoking anything',
       );
     }
-    log(`conferido: o portal no ar usa o token novo (último uso ${after?.lastUsedAt})`);
+    log(`conferido: o portal no ar usa o token novo (último uso ${keptAfter?.lastUsedAt})`);
+    // A token to revoke being used during the probe means something still runs with it: an
+    // old container, or whoever holds the leak. Not a refusal (the leak's holder could keep
+    // it busy on purpose), but the owner reads it before typing REVOGAR.
+    for (const t of before.filter((x) => listed.has(x.id) && !x.revokedAt)) {
+      const now = after.find((x) => x.id === t.id);
+      if (usedAfter(t.lastUsedAt, now?.lastUsedAt ?? null)) {
+        log(
+          `ATENÇÃO: ${t.id} "${t.name}" também foi usado durante a conferência (${now?.lastUsedAt}). ` +
+            'Se um container antigo do portal ainda estiver no ar, ele cai na revogação.',
+        );
+      }
+    }
   } else {
-    log('aviso: sem PORTAL_READY_URL, não conferi se o portal no ar usa o token novo');
+    log('aviso: sem PORTAL_READY_URL, não conferi se o portal no ar usa o token novo (só no dry run)');
   }
 
-  const tokens = await admin.call<ServiceToken[]>('GET', `${admin_}/service-tokens`);
+  const tokens = await listTokens();
   const webhooks = await admin.call<Webhook[]>('GET', `${admin_}/webhooks`);
   const kept = webhooks.filter((w) => input.keepWebhookIds.includes(w.id));
   if (kept.length !== input.keepWebhookIds.length) throw new Error('a new webhook is missing; not deleting anything');
 
-  const listed = new Set(input.revokeTokenIds);
+  const allowed = new Set(input.allowForeignIds ?? []);
   const candidates = tokens.filter((t) => listed.has(t.id) && !t.revokedAt && t.id !== input.keepTokenId);
-  const foreign = candidates.filter((t) => !t.name.startsWith(PORTAL_TOKEN_PREFIX));
-  const toRevoke = input.allowForeign ? candidates : candidates.filter((t) => !foreign.includes(t));
+  const foreign = candidates.filter((t) => !t.name.startsWith(PORTAL_TOKEN_PREFIX) && !allowed.has(t.id));
+  const toRevoke = candidates.filter((t) => !foreign.includes(t));
   const toDelete = webhooks.filter((w) => isPortalHook(w) && !input.keepWebhookIds.includes(w.id));
 
   for (const t of toRevoke) log(`a revogar: ${describeToken(t)}`);
-  if (!input.allowForeign) {
-    for (const t of foreign) log(`NÃO revogo sem ALLOW_FOREIGN_REVOKE=1 (outro nome): ${describeToken(t)}`);
-  }
+  for (const t of foreign) log(`NÃO revogo sem confirmação (outro nome): ${describeToken(t)}`);
   for (const w of toDelete) log(`a apagar: webhook ${w.id} ${w.url}`);
   for (const t of tokens.filter((t) => !t.revokedAt && t.id !== input.keepTokenId && !candidates.includes(t))) {
     log(`mantido: ${describeToken(t)}`);
@@ -309,7 +331,7 @@ export async function finish(
 
   if (!cfg.apply) {
     log('dry run — nada foi escrito. Rode com --apply para aplicar.');
-    return { revoked: [], deletedWebhooks: [] };
+    return { revoked: [], deletedWebhooks: [], stillActive: [] };
   }
 
   const revoked: string[] = [];
@@ -324,7 +346,12 @@ export async function finish(
     deletedWebhooks.push(w.id);
     log(`webhook apagado: ${w.id}`);
   }
-  return { revoked, deletedWebhooks };
+  // What was asked to be revoked and is still active, read back from Kal El.
+  const stillActive = (await listTokens())
+    .filter((t) => listed.has(t.id) && t.id !== input.keepTokenId && !t.revokedAt)
+    .map((t) => t.id);
+  log(`STILL_ACTIVE_IDS=${stillActive.join(',')}`);
+  return { revoked, deletedWebhooks, stillActive };
 }
 
 const list = (value: string | undefined): string[] =>
@@ -385,7 +412,7 @@ async function main(): Promise<void> {
       revokeTokenIds: list(process.env.REVOKE_TOKEN_IDS),
       currentToken: need('CURRENT_SERVICE_TOKEN'),
       portalHosts,
-      allowForeign: process.env.ALLOW_FOREIGN_REVOKE === '1',
+      allowForeignIds: list(process.env.ALLOW_FOREIGN_REVOKE_IDS),
       ...(readyUrl
         ? {
             probe: async () => {

@@ -82,6 +82,9 @@ function stub(state: State) {
         if (state.failWebhookCreate) return json({ message: 'boom' }, 500);
         return json({ id: `w-novo-${writes.length}` }, 201);
       }
+      const revoke = /\/service-tokens\/([^/]+)\/revoke$/.exec(url.pathname);
+      const revokedToken = state.tokens.find((t) => t.id === revoke?.[1]);
+      if (revokedToken) revokedToken.revokedAt = '2026-11-27T03:20:00.000Z';
       return json({ id: 'ok' });
     }
     if (url.pathname.endsWith('/service-tokens')) return json(state.tokens);
@@ -239,15 +242,19 @@ describe('kalel:rotate prepare', () => {
 
 describe('kalel:rotate finish', () => {
   /** The site after `prepare`, with the new token in the portal and used by it on the probe. */
-  const after = (opts: { liveUses: boolean } = { liveUses: true }) => {
+  const after = (opts: { liveUses?: boolean; leakedAlsoUsed?: boolean } = {}) => {
     const state = site();
     state.tokens.push(token({ id: 't-novo', name: 'maquinanerd-portal-entrega-2026-11-27' }));
     state.hooks.push(hook('w-novo', HOOK));
     state.bearers[NEW] = 't-novo';
-    const probe = async () => {
-      if (!opts.liveUses) return;
-      const t = state.tokens.find((x) => x.id === 't-novo');
+    const touch = (id: string) => {
+      const t = state.tokens.find((x) => x.id === id);
       if (t) t.lastUsedAt = '2026-11-27T03:10:00.000Z';
+    };
+    const probe = async () => {
+      if (opts.liveUses !== false) touch('t-novo');
+      // A build reading Kal El with the new token while the old container still answers.
+      if (opts.leakedAlsoUsed) touch('t-portal');
     };
     return { state, probe };
   };
@@ -270,10 +277,31 @@ describe('kalel:rotate finish', () => {
       `POST /v1/admin/sites/${SITE}/service-tokens/t-portal/revoke`,
       `DELETE /v1/admin/sites/${SITE}/webhooks/w-portal`,
     ]);
-    expect(result).toEqual({ revoked: ['t-portal'], deletedWebhooks: ['w-portal'] });
+    expect(result).toEqual({ revoked: ['t-portal'], deletedWebhooks: ['w-portal'], stillActive: [] });
     const out = lines.join('\n');
     expect(out).toContain('conferido: o portal no ar usa o token novo');
+    expect(out).not.toContain('ATENÇÃO');
+    expect(lines.at(-1)).toBe('STILL_ACTIVE_IDS=');
     for (const kept of ['t-staging', 't-import', 't-prime']) expect(out).toMatch(new RegExp(`mantido: ${kept} `));
+  });
+
+  it('refuses to apply without a probe of the running portal', async () => {
+    const { state } = after();
+    const { admin, fetchImpl, writes } = stub(state);
+    await expect(finish(cfg(true), input(), admin, () => {}, fetchImpl)).rejects.toThrow(
+      /PORTAL_READY_URL is required/,
+    );
+    expect(writes).toEqual([]);
+  });
+
+  it('warns when the token to revoke is still in use during the probe (an old container still answering)', async () => {
+    const { state, probe } = after({ leakedAlsoUsed: true });
+    const { admin, fetchImpl } = stub(state);
+    const lines: string[] = [];
+    await finish(cfg(false), input({ probe }), admin, (l) => lines.push(l), fetchImpl);
+    expect(lines.join('\n')).toMatch(
+      /ATENÇÃO: t-portal "maquinanerd-portal-entrega" também foi usado durante a conferência/,
+    );
   });
 
   it('revokes nothing while the portal still holds the leaked token (the Coolify update failed)', async () => {
@@ -294,25 +322,33 @@ describe('kalel:rotate finish', () => {
     expect(writes).toEqual([]);
   });
 
-  it('skips a listed token named otherwise unless explicitly allowed', async () => {
-    const run = async (allowForeign: boolean) => {
+  it('skips a listed token named otherwise unless that very id was confirmed', async () => {
+    const run = async (allowForeignIds: string[]) => {
       const { state, probe } = after();
+      state.tokens.push(token({ id: 't-outro', name: 'cms-integracao' }));
       const { admin, fetchImpl, writes } = stub(state);
       const lines: string[] = [];
-      await finish(
+      const result = await finish(
         cfg(true),
-        input({ revokeTokenIds: ['t-prime'], allowForeign, probe }),
+        input({ revokeTokenIds: ['t-prime', 't-outro'], allowForeignIds, probe }),
         admin,
         (l) => lines.push(l),
         fetchImpl,
       );
-      return { writes, out: lines.join('\n') };
+      return { writes: writes.map((w) => w.path), out: lines.join('\n'), result };
     };
-    const refused = await run(false);
-    expect(refused.writes.map((w) => w.path)).not.toContain(`/v1/admin/sites/${SITE}/service-tokens/t-prime/revoke`);
-    expect(refused.out).toMatch(/NÃO revogo sem ALLOW_FOREIGN_REVOKE=1/);
-    const allowed = await run(true);
-    expect(allowed.writes.map((w) => w.path)).toContain(`/v1/admin/sites/${SITE}/service-tokens/t-prime/revoke`);
+    const revokePath = (id: string) => `/v1/admin/sites/${SITE}/service-tokens/${id}/revoke`;
+
+    const refused = await run([]);
+    expect(refused.writes).not.toContain(revokePath('t-prime'));
+    expect(refused.out).toMatch(/NÃO revogo sem confirmação \(outro nome\): t-prime/);
+    expect(refused.result.stillActive).toEqual(['t-prime', 't-outro']);
+
+    // The confirmation covers the id it was given, not every foreign token on the list.
+    const oneConfirmed = await run(['t-prime']);
+    expect(oneConfirmed.writes).toContain(revokePath('t-prime'));
+    expect(oneConfirmed.writes).not.toContain(revokePath('t-outro'));
+    expect(oneConfirmed.out).toContain('STILL_ACTIVE_IDS=t-outro');
   });
 
   it('never revokes the new token, even when it is listed', async () => {
@@ -336,7 +372,8 @@ describe('kalel:rotate finish', () => {
 
   it('touches nothing when the new token is not there', async () => {
     const { admin, fetchImpl, writes } = stub(site());
-    await expect(finish(cfg(true), input({ currentToken: NEW }), admin, () => {}, fetchImpl)).rejects.toThrow(
+    const probe = async () => {};
+    await expect(finish(cfg(true), input({ currentToken: NEW, probe }), admin, () => {}, fetchImpl)).rejects.toThrow(
       /does not hold the new token/,
     );
     expect(writes).toEqual([]);
