@@ -244,6 +244,7 @@ jobs:
       - run: pnpm redirects:build --help
       - run: pnpm urls:verify --help
       - run: pnpm kalel:provision --help
+      - run: pnpm kalel:rotate --help
 
   # Nothing that must never be committed may enter the tree.
   hygiene:

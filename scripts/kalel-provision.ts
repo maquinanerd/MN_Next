@@ -27,7 +27,7 @@ import { runAsScript } from './wp/cli';
  * is visible in the process list). The password is never printed.
  */
 
-const DELIVERY_SCOPES = [
+export const DELIVERY_SCOPES = [
   'articles.read',
   'media.read',
   // Kal El has no read-only taxonomy or redirect scope yet; these are the narrowest that
@@ -103,7 +103,10 @@ export class KalElAdmin {
       .map((c) => c.split(';')[0])
       .filter(Boolean)
       .join('; ');
-    this.csrf = /(?:^|;\s*)ke_csrf=([^;]+)/.exec(this.cookie)?.[1] ?? '';
+    // Since kal-el#11 the login also answers the CSRF token in its body, for a client that
+    // does not get the cookie (one scoped to another host).
+    const body = (await res.json().catch(() => ({}))) as { data?: { csrfToken?: string } };
+    this.csrf = /(?:^|;\s*)ke_csrf=([^;]+)/.exec(this.cookie)?.[1] ?? body.data?.csrfToken ?? '';
     if (!this.cookie || !this.csrf) throw new Error('login answered without a session');
   }
 
