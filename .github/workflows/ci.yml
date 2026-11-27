@@ -124,10 +124,20 @@ jobs:
           --build-arg KAL_EL_WEBHOOK_SECRET=ci-placeholder-webhook-secret-000000
           --build-arg KAL_EL_PREVIEW_SECRET=ci-placeholder-preview-secret-000000
           --tag maquinanerd-portal:ci .
-      - name: Serves, as a user that is not root
+      # With the restrictions docker-compose.coolify.yml gives it in production: read-only
+      # root, noexec /tmp and /var/tmp, no capabilities, no privilege gain, init, process,
+      # CPU and memory ceilings, and a volume on the image cache.
+      - name: Serves, as a user that is not root, inside the production restrictions
         run: |
           set -euo pipefail
           docker run --detach --name portal --publish 3000:3000 \
+            --init --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777 \
+            --tmpfs /var/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777 \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            --pids-limit 256 --cpus 1.5 --memory 1536m \
+            --mount type=volume,dst=/app/.next/cache/images \
+            --env NODE_OPTIONS=--max-old-space-size=768 \
             --env APP_ENV=test --env CONTENT_SOURCE=fixture \
             --env KAL_EL_WEBHOOK_SECRET=ci-placeholder-webhook-secret-000000 \
             --env KAL_EL_PREVIEW_SECRET=ci-placeholder-preview-secret-000000 \
@@ -139,6 +149,27 @@ jobs:
           curl -fsS http://127.0.0.1:3000/api/health
           curl -fsS -o /dev/null http://127.0.0.1:3000/
           test "$(docker exec portal id -u)" != "0"
+      - name: Gives code execution nowhere to write or run a binary
+        run: |
+          set -euo pipefail
+          # The code is root's: the server's user cannot rewrite it, read-only root or not.
+          test "$(docker exec --workdir /app portal stat -c %U server.js)" = "root"
+          if docker exec --workdir /app portal sh -c 'echo x >> server.js' 2>/dev/null; then
+            echo "server.js is writable"; exit 1
+          fi
+          if docker exec portal sh -c 'echo x > /app/dropped' 2>/dev/null; then
+            echo "the root filesystem is writable"; exit 1
+          fi
+          # Writable in-memory scratch space, where nothing can be executed.
+          for dir in /tmp /var/tmp /dev/shm; do
+            docker exec portal sh -c "cp /bin/busybox $dir/probe"
+            if docker exec portal "$dir/probe" true 2>/dev/null; then
+              echo "a binary runs from $dir"; exit 1
+            fi
+          done
+          # The bounding set: what any process here could ever hold, even through setuid.
+          test "$(docker exec portal sh -c 'grep CapBnd /proc/self/status' | awk '{print $2}')" = "0000000000000000"
+          docker exec portal sh -c 'grep -q "^NoNewPrivs:[[:space:]]*1" /proc/self/status'
       # Pages and fetches stay in memory (next-cache-handler.mjs); the only run-time disk
       # writes are optimized images, into a directory the volume on Coolify covers. A
       # container that fills its own writable layer cannot be removed inside Coolify's
