@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Troca os segredos do portal que vazaram na invasão de novembro de 2026. Nenhum valor
   aparece na tela, no histórico do PowerShell ou em arquivo.
