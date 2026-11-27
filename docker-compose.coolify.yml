@@ -73,6 +73,39 @@ services:
       # CINERIE_EDITORIAL_CONTEXT_API_KEYS; runtime only, never a build argument.
       - CINERIE_INTERNAL_URL=${CINERIE_INTERNAL_URL:-}
       - CINERIE_SERVICE_TOKEN=${CINERIE_SERVICE_TOKEN:-}
+      # Heap ceiling inside the memory limit below: the 256 MB ISR LRU plus the server's
+      # own heap fit with room to spare, and the other ~768 MB are left to sharp/libvips,
+      # whose buffers live outside the JS heap.
+      - NODE_OPTIONS=--max-old-space-size=768
+    # Hardening after the November 2026 intrusion (docs/security/INCIDENTE-2026-11.md):
+    # remote code execution as `nextjs` ran a miner from memory, Tor and a watchdog from
+    # /var/tmp, and 1,587 child processes over 8 days, with no CPU or memory ceiling.
+    #  - The root filesystem is read-only: no binary dropped next to the code, no rewritten
+    #    server.js. The server writes only the image cache (the volume below); pages and
+    #    fetches stay in memory (next-cache-handler.mjs).
+    #  - /tmp and /var/tmp are small in-memory mounts where nothing can be executed.
+    #    (Docker already mounts /dev/shm noexec.)
+    #  - No Linux capability and no privilege gain through setuid binaries: the server
+    #    needs none (port 3000, a user that is not root).
+    #  - `init` reaps orphaned children, which Node as PID 1 does not; `pids_limit` caps
+    #    how many processes anything can start.
+    #  - CPU and memory ceilings, about 1.5x a normal day: a runaway (or a miner) is
+    #    throttled here instead of taking the server's cores from Kal El and the rest.
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+      - /var/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1536M
     healthcheck:
       # Liveness, not readiness: a CMS blip must not get the container killed and restarted
       # into the same blip. `?ready=1` is the operator's check (RUNBOOK §2).
@@ -88,7 +121,10 @@ services:
       # The only thing the server writes to disk at run time: optimized images, keyed by
       # source URL, width and format, so they survive a deploy unchanged. Anything else
       # written inside the container makes it too slow to remove, and Coolify's swap fails.
-      - portal-image-cache:/app/.next/cache/images
+      # `-v2`: the first volume was writable by the intruder for 8 days, so the clean
+      # deploy starts an empty one; the old `portal-image-cache` is kept for inspection
+      # and then removed by hand (docs/security/RUNBOOK-INCIDENTE-2026-11.md).
+      - portal-image-cache-v2:/app/.next/cache/images
 
 volumes:
-  portal-image-cache:
+  portal-image-cache-v2:

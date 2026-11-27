@@ -6,3 +6,10 @@ allowBuilds:
   esbuild: true
   sharp: true
   unrs-resolver: true
+
+# Segurança: o otimizador de imagens do Next traz o próprio sharp (0.34.x), com advisories
+# altos em libvips, libheif e librsvg (GHSA-f88m-g3jw-g9cj, GHSA-rgj7-g3m4-5g8c,
+# GHSA-wq5f-xc86-pv6w). As imagens das matérias vêm de sites de terceiros, então o mesmo
+# sharp corrigido serve aos dois caminhos: /_next/image e /media (lib/renditions.ts).
+overrides:
+  sharp: 0.35.5

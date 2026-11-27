@@ -157,14 +157,16 @@ describe('wiring', () => {
     const compose = readFileSync(path.join(process.cwd(), 'docker-compose.coolify.yml'), 'utf8');
     const mounts = [...compose.matchAll(/^\s+- ([\w-]+):(\/app\/\S+)$/gm)].map((m) => `${m[1]}:${m[2]}`);
 
-    expect(mounts).toEqual(['portal-image-cache:/app/.next/cache/images']);
-    expect(compose).toMatch(/^volumes:\n {2}portal-image-cache:/m);
+    expect(mounts).toEqual(['portal-image-cache-v2:/app/.next/cache/images']);
+    expect(compose).toMatch(/^volumes:\n {2}portal-image-cache-v2:/m);
   });
 
-  it('creates the image cache directory as the server user before the volume covers it', () => {
+  it('hands the image cache directory, and nothing else, to the server user', () => {
     const dockerfile = readFileSync(path.join(process.cwd(), 'Dockerfile'), 'utf8');
     const runner = dockerfile.slice(dockerfile.indexOf('AS runner'));
 
-    expect(runner.indexOf('USER nextjs')).toBeLessThan(runner.indexOf('RUN mkdir -p .next/cache/images'));
+    expect(runner).not.toMatch(/--chown/);
+    expect(runner).toMatch(/RUN mkdir -p \.next\/cache\/images && chown nextjs:nodejs \.next\/cache\/images\n/);
+    expect(runner.indexOf('chown nextjs:nodejs .next/cache/images')).toBeLessThan(runner.indexOf('USER nextjs'));
   });
 });
