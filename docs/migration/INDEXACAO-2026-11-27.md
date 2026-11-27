@@ -36,10 +36,10 @@ observado, com a confiança).
    ~29/10 e, ainda hoje, os sitemaps levam de 3 a 30 s e um deles responde 500 (§2.2). O Google
    gasta a capacidade que sobra com o que é novo — e as novas estão indexadas.
 4. **Corrigido neste PR** (§4): sitemaps servidos da memória, com a última cópia boa quando o CMS
-   falha; `/page/N` e `/{editoria}/page/N` em cache, como já dizia o `revalidate`; e o
-   `robots.txt` deixa de oferecer as imagens originais `/media/{id}` ao rastreador, mantendo as
-   capas.
-5. **Decisivo e fora deste PR**: o **PR #35** (aberto desde 18/11, CI verde), que faz as leituras
+   falha; `/page/N` e `/{editoria}/page/N` em cache, como já dizia o `revalidate`.
+5. **`/media/{id}` fica como está** (§2.7): nem `noindex`, nem bloqueio no `robots.txt` por
+   enquanto — as duas coisas tirariam do Google Imagens imagens que o site ainda indica.
+6. **Decisivo e fora deste PR**: o **PR #35** (aberto desde 18/11, CI verde), que faz as leituras
    do Kal El acertarem o cache de dados do Next — hoje nenhuma acerta — e a lentidão do Kal El nas
    listas profundas (§5).
 
@@ -105,31 +105,41 @@ mesmas e `index, follow`; nenhum `hreflang`. **Leitura:** correto — o site tem
 
 ### 2.6 Imagens `/media/`
 
-| Observado                                                                                                                                                                                                  |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Original `/media/{id}`: 200, **5,3 s** com a Cloudflare em `MISS`                                                                                                                                          |
-| Capa `/media/{id}/16x9-v1.jpg`: 200, **5,5 s** em `MISS`; 0,1 s em `HIT`                                                                                                                                   |
-| Log às 17:18 UTC: `media.variant-timeout` (capa que passou dos 20 s da fila, resposta 504)                                                                                                                 |
-| Nenhuma página aponta para o original: o `<img>` usa `/_next/image?url=%2Fmedia%2F{id}…`; o endereço puro só aparece no payload RSC (`src` do next/image); `og:image` e JSON-LD usam os recortes `-v1.jpg` |
-| GSC (22/11): metade dos 1.000 exemplos de "rastreada, mas não indexada" são `/media/{id}` sem extensão; Googlebot Imagem = 63% das solicitações de 90 dias                                                 |
-| Busca de imagens (GSC, 30/10–25/11): 2 a 9 cliques por dia; as impressões caem de ~6 mil para ~1 mil por dia a partir de 14/11 (causa não verificada)                                                      |
+| Observado                                                                                                                                                                                                                          |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Original `/media/{id}`: 200, **5,3 s** com a Cloudflare em `MISS`                                                                                                                                                                  |
+| Capa `/media/{id}/16x9-v1.jpg`: 200, **5,5 s** em `MISS`; 0,1 s em `HIT`                                                                                                                                                           |
+| Log às 17:18 UTC: `media.variant-timeout` (capa que passou dos 20 s da fila, resposta 504)                                                                                                                                         |
+| O `<img>` usa `/_next/image?url=%2Fmedia%2F{id}…`; `og:image` e JSON-LD usam os recortes `-v1.jpg` quando a capa tem de 600 px a 40 MP — fora disso, **o original** (`packages/seo/src/metadata.ts`, `graph.ts`, `cover.ts`)       |
+| **Toda imagem antiga do WordPress** (`/wp-content/uploads/…`) responde **301 para o original `/media/{id}`** (`app/wp-content/uploads/[...path]/route.ts`); o próprio código registra que essas URLs ainda estão no Google Imagens |
+| O endereço puro também aparece no payload RSC das páginas (`src` do next/image)                                                                                                                                                    |
+| GSC (22/11): metade dos 1.000 exemplos de "rastreada, mas não indexada" são `/media/{id}` sem extensão; Googlebot Imagem = 63% das solicitações de 90 dias                                                                         |
+| Busca de imagens (GSC, 30/10–25/11): 2 a 9 cliques por dia; as impressões caem de ~6 mil para ~1 mil por dia a partir de 14/11 (causa não verificada)                                                                              |
 
 ### 2.7 `X-Robots-Tag: noindex` em `/media/{id}`?
 
-**Não.** Três motivos:
+**Não.** Quatro motivos:
 
 1. `noindex` não tira a URL do relatório Páginas: ela só troca de linha, de "rastreada, mas não
    indexada" para "excluída pela tag noindex" — as duas são "não indexadas".
-2. Para ler o `noindex`, o Google precisa buscar a URL. É o custo que se quer evitar: ~5 s e duas
-   leituras do Kal El por original, tirados do rastreamento que as matérias esperam. O Google diz
-   isso no guia de orçamento de rastreamento: para o que não deve ser rastreado, `robots.txt`, não
-   `noindex`.
-3. Nas capas (`…-v1.jpg`), `noindex` tiraria a imagem do Google Imagens e do Discover.
+2. Para ler o `noindex`, o Google precisa buscar a URL: o custo de rastreamento continua (~5 s e
+   duas leituras do Kal El por original em `MISS`). O guia de orçamento de rastreamento do Google
+   diz isso: para o que não deve ser rastreado, `robots.txt`, não `noindex`.
+3. `/media/{id}` é o destino dos 301 de **todas as imagens antigas do WordPress**, que ainda estão
+   no Google Imagens, e é a imagem do `og:image`/JSON-LD das capas pequenas demais para recortar.
+   Um `noindex` nelas as tiraria do Google Imagens.
+4. Imagem em "rastreada, mas não indexada" não é defeito: o relatório Páginas é de páginas; a
+   imagem é indexada (ou não) no índice de imagens, à parte.
 
-O que este PR faz em vez disso: `Disallow: /media/` com `Allow: /media/*/`. Pela regra da maior
-correspondência (Google e Bing), os recortes continuam liberados e o original puro, não. O
-`/_next/image` é outro caminho e não muda. Essas URLs vão migrar, com o tempo, para "bloqueada pelo
-robots.txt" — continuam no relatório, mas deixam de custar rastreamento.
+**Inferência (média):** boa parte desses exemplos vem dos 301 do `/wp-content/uploads/` — o Google
+segue os links antigos e chega ao original — e o resto, do payload RSC.
+
+**Bloquear no `robots.txt` também não, por enquanto.** Foi a primeira versão deste PR
+(`Disallow: /media/` com `Allow: /media/*/`, que pela maior correspondência libera os recortes) e
+saiu na revisão: bloquearia o destino dos 301 das imagens antigas e as capas sem recorte. Só faz
+sentido depois que o site deixar de indicar o original puro — os 301 e o fallback do `og:image`
+apontando para um caminho sob `/media/{id}/…` (um recorte "original" servido pela rota das
+variantes, por exemplo) — e com a busca de imagens medida antes. Fica em §6.
 
 ---
 
@@ -164,11 +174,11 @@ incidente.
 
 ## 4. O que este PR muda
 
-| Mudança                                                                                                                                                                                                                                                                                                                                                                                      | Arquivos                                                                    | Teste                                                                       |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Sitemaps-filho servidos da memória: frescos por 1 h (10 min o `articles-1`, 1 min se degradado); vencidos, servidos na hora e atualizados por trás; com o CMS fora, a última cópia boa; sem cópia, **503 + `Retry-After: 120`** em vez de 500; uma atualização por arquivo de cada vez; pausa de 1 min depois de uma falha; no máximo 32 arquivos; cabeçalho `x-sitemap-cache` para conferir | `lib/stale-cache.ts`, `lib/sitemap-cache.ts`, `app/sitemap/[kind]/route.ts` | `tests/unit/stale-cache.test.ts`, `tests/integration/sitemap-route.test.ts` |
-| `/page/N` e `/{editoria}/page/N` com ISR sob demanda (`generateStaticParams` vazio): passam de `ƒ` a `●`, e o `revalidate = 120` que já estava no arquivo passa a valer                                                                                                                                                                                                                      | `app/page/[n]/page.tsx`, `app/[categoria]/page/[n]/page.tsx`                | tabela de rotas do `pnpm build`; e2e de paginação existentes                |
-| `robots.txt`: `Disallow: /media/` + `Allow: /media/*/`                                                                                                                                                                                                                                                                                                                                       | `app/robots.ts`                                                             | `tests/security/deployment-guards.test.ts` (avalia a regra como o Google)   |
+| Mudança                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Arquivos                                                                      | Teste                                                                       |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Sitemaps-filho servidos da memória: frescos por 1 h (10 min o `articles-1`, 1 min se degradado); vencidos, servidos na hora e atualizados por trás — o `articles-1` nunca com mais de 1 h enquanto o CMS responde, os outros (matérias de 2 meses para trás) com até 24 h; com o CMS fora, a última cópia boa; **uma cópia inteira não é trocada por uma degradada, vazia ou "além do fim"**; sem cópia, **503 + `Retry-After: 120`** em vez de 500; uma atualização por arquivo de cada vez; pausa de 1 min depois de uma falha; no máximo 32 arquivos; cabeçalho `x-sitemap-cache` para conferir | `lib/stale-cache.ts`, `lib/sitemap-cache.ts`, `app/sitemap/[kind]/route.ts`   | `tests/unit/stale-cache.test.ts`, `tests/integration/sitemap-route.test.ts` |
+| O webhook de publicação (`/api/revalidate`) tira o `articles-1` da validade: o pedido seguinte recebe a cópia na hora e a renderização nova roda por trás dele. Não renderiza no próprio webhook porque o Next só aplica o expurgo do `revalidateTag` depois que o handler retorna. As tags de cache não chegam a esse cache                                                                                                                                                                                                                                                                       | `app/api/revalidate/route.ts` (uma linha, fora do trecho que o PR #35 altera) | `tests/integration/sitemap-route.test.ts`                                   |
+| `/page/N` e `/{editoria}/page/N` com ISR sob demanda (`generateStaticParams` vazio): passam de `ƒ` a `●`, e o `revalidate = 120` que já estava no arquivo passa a valer. `/{qualquer}/page/N` que não é editoria vira 404 antes de ler o CMS, como a página 1 já fazia                                                                                                                                                                                                                                                                                                                             | `app/page/[n]/page.tsx`, `app/[categoria]/page/[n]/page.tsx`                  | `tests/unit/listing-rendering.test.ts`; tabela de rotas do `pnpm build`     |
 
 **Por que não o ISR do Next para os sitemaps.** A entrada ISR de uma rota fica no mesmo LRU de
 256 MB das páginas (`next-cache-handler.mjs`): um arquivo de 800 KB lido pelo Googlebot algumas
@@ -176,9 +186,10 @@ vezes por dia sai do cache muito antes de ser pedido de novo. E o ISR guardaria 
 pelo `revalidate` inteiro (1 h), sem como encurtar.
 
 **Por que este PR não mexe no transporte nem no `DECISIONS.md`.** O PR #35 altera
-`kalel/transport.ts`, `kalel/repository.ts` (outros trechos), `DECISIONS.md` (acrescenta §7.33 no
-fim) e `RUNBOOK.md`. Este PR não toca esses arquivos, para os dois entrarem em qualquer ordem sem
-conflito. Depois do merge dos dois, vale uma linha no DECISIONS apontando para este relatório.
+`kalel/transport.ts`, `kalel/repository.ts`, `DECISIONS.md` (acrescenta §7.33 no fim), `RUNBOOK.md`
+e um trecho do `/api/revalidate`. Este PR não toca os quatro primeiros e, no webhook, acrescenta uma
+linha depois do laço de `revalidateTag`, fora do trecho do #35, para os dois entrarem em qualquer
+ordem. Depois do merge dos dois, vale uma linha no DECISIONS apontando para este relatório.
 
 ---
 
@@ -197,11 +208,14 @@ conflito. Depois do merge dos dois, vale uma linha no DECISIONS apontando para e
 
 ## 6. Propostas que dependem de decisão
 
-1. **Paginação com saltos** (por exemplo `… 10 20 50 …` ou arquivo por mês): encurta o caminho até
+1. **Tirar o original puro do rastreamento** (§2.7): primeiro os 301 do `/wp-content/uploads/` e o
+   fallback do `og:image`/JSON-LD passam a apontar para um caminho sob `/media/{id}/…`; depois,
+   medida a busca de imagens, `Disallow: /media/` com `Allow: /media/*/`.
+2. **Paginação com saltos** (por exemplo `… 10 20 50 …` ou arquivo por mês): encurta o caminho até
    o acervo. Mexe no desenho do kit (docs/03).
-2. **Editoria Games parada desde ~28/07**: a faixa de Games da home mostra matérias de julho. É
+3. **Editoria Games parada desde ~28/07**: a faixa de Games da home mostra matérias de julho. É
    sinal de site desatualizado para leitor e para o Google. Decisão editorial.
-3. **O acervo pode não ser todo indexado, e está tudo bem.** 33 mil "rastreadas, mas não
+4. **O acervo pode não ser todo indexado, e está tudo bem.** 33 mil "rastreadas, mas não
    indexadas" são decisão de qualidade do Google sobre o que ele já leu. Volume de abril de 2026
    (~7,2 mil matérias no mês, pelo `lastmod`) e o core update de maio pesam nisso. Nenhuma
    correção técnica muda essa parte; consolidar ou retirar o que é raso no acervo é decisão
@@ -213,10 +227,10 @@ conflito. Depois do merge dos dois, vale uma linha no DECISIONS apontando para e
 
 - **Por que o Kal El é lento** nas listas profundas: o código dele não está neste repositório; a
   causa proposta em §5 é hipótese.
-- **Como o Google descobre `/media/{id}`**: o endereço puro só aparece no payload RSC; que o Google
-  o tire de lá é inferência (alta), não registro do Google.
-- **Que URL de imagem o Google Imagens indexa**: o esperado é a do `<img>` (`/_next/image…`), que
-  continua liberada. A queda de impressões de imagem desde 14/11 é anterior a este PR e não foi
+- **Como o Google chega a `/media/{id}`**: pelos 301 do `/wp-content/uploads/` e pelo payload RSC
+  são inferências; a proporção entre os dois não foi medida (os exemplos do Search Console não dizem
+  a origem).
+- **A queda de impressões na busca de imagens desde 14/11** é anterior a este PR e não foi
   explicada.
 - **A amostra é pequena** (28 URLs): mostra a diferença entre novas e acervo, não a proporção exata.
 - **Efeito no Search Console**: só depois do deploy e de 2–4 semanas de rastreamento.
@@ -227,8 +241,8 @@ conflito. Depois do merge dos dois, vale uma linha no DECISIONS apontando para e
    `x-sitemap-cache: miss`, a segunda `fresh`, em menos de 1 s.
 2. `curl -sI https://www.maquinanerd.com.br/page/2`: `cache-control` com `s-maxage=120`, não
    `private`.
-3. `https://www.maquinanerd.com.br/robots.txt`: `Allow: /media/*/` e `Disallow: /media/`. No Search
-   Console, inspecionar ao vivo uma capa (`/media/{id}/16x9-v1.jpg`): rastreamento permitido.
+3. Publicar ou editar uma matéria e pedir `/sitemap/articles-1.xml` duas vezes: a primeira `x-sitemap-cache: stale` (a cópia), a segunda, segundos depois, `fresh`,
+   com a matéria no arquivo.
 4. Logs: `discovery.unavailable` e `sitemap.refresh-failed` devem ser raros; se `articles-2.xml`
    seguir em 503, o problema é o Kal El (§5).
 5. Em 2–4 semanas: no relatório Páginas, "detectada, mas não indexada" e "URL desconhecida" do
