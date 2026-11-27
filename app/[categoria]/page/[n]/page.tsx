@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { RESERVED_SEGMENTS, safeSlugParam } from '@mn/content';
+import { RESERVED_SEGMENTS, isEditoriaSlug, safeSlugParam } from '@mn/content';
 
 import { parsePage } from '../../../../lib/content';
 import { EditoriaPage, editoriaMetadata, loadEditoria } from '../../view';
@@ -25,14 +25,18 @@ export function generateStaticParams(): Params[] {
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const { categoria, n } = await params;
   const slug = safeSlugParam(categoria);
-  if (!slug || RESERVED_SEGMENTS.has(slug)) return { title: 'Editoria não encontrada', robots: { index: false } };
+  if (!slug || RESERVED_SEGMENTS.has(slug) || !isEditoriaSlug(slug)) {
+    return { title: 'Editoria não encontrada', robots: { index: false } };
+  }
   return editoriaMetadata(slug, parsePage(n));
 }
 
 export default async function Page({ params }: { params: Promise<Params> }) {
   const { categoria, n } = await params;
   const slug = safeSlugParam(categoria);
-  if (!slug || RESERVED_SEGMENTS.has(slug)) notFound();
+  // The same rule as page 1 (`../page.tsx`): only an editoria has pages. Anything else is a
+  // 404 before any CMS read — cached now, it would otherwise be a CMS round per junk path.
+  if (!slug || RESERVED_SEGMENTS.has(slug) || !isEditoriaSlug(slug)) notFound();
   const page = parsePage(n);
   // Page 1 is the listing itself, and `middleware.ts` sends it there: redirected from this
   // cached page, the answer would come back from the cache with no `Location`.
