@@ -350,7 +350,11 @@ try {
     Invoke-Finish $previous $readyUrl $hosts
     $previous.finished = $true
     Save-State $previous
-    if (-not $previous.semCinerie) { [void](Show-CinerieRemoval $previous $previous.cinerieNewPrefix) }
+    # Só depois que o Coolify passou para a chave nova: antes disso o portal ainda usa a antiga.
+    $currentCinerie = Get-EnvValue $envs 'CINERIE_SERVICE_TOKEN'
+    $onNewKey = $previous.cinerieNewPrefix -and $currentCinerie.Length -ge 4 -and $currentCinerie.Substring(0, 4) -ceq $previous.cinerieNewPrefix
+    if (-not $previous.semCinerie -and $onNewKey) { [void](Show-CinerieRemoval $previous $previous.cinerieNewPrefix) }
+    elseif (-not $previous.semCinerie) { Write-Host '    Cinerie: o Coolify ainda não tem a chave nova; não tire a antiga da lista do Easypanel.' }
     Write-Host 'Pronto. Falta o que está em docs/migration/RUNBOOK-INCIDENTE-2026-11.md, a partir do passo 4.'
     return
   }
@@ -425,7 +429,7 @@ try {
     Write-Host "    O token a revogar $($candidate.id) se chama `"$name`". Se o MN-Prime (ou outro) publica com ele, dê"
     Write-Host '    antes um token novo a esse consumidor (no MN-Prime: painel /sites > trocar token), senão ele para.'
     $confirm = Read-Host '    Digite o nome do token para revogá-lo mesmo assim (ou Enter para não revogar)'
-    if ($confirm -ceq $name) { $state.allowForeignIds = @(@($state.allowForeignIds) + $candidate.id) }
+    if ($confirm -and $confirm -ceq $name) { $state.allowForeignIds = @(@($state.allowForeignIds) + $candidate.id) }
   }
   Save-State $state
 
@@ -462,7 +466,7 @@ try {
     Write-Host "    conferido: o Coolify guardou os $($written.Count) valores"
   }
   catch {
-    throw "Falha ao gravar no Coolify ($($_.Exception.Message)). O portal no ar segue com os valores antigos, que ainda valem. Corrija (o token do Coolify escreve?) e rode com -Recomecar."
+    throw "Falha ao gravar no Coolify ($($_.Exception.Message)). O portal no ar segue com os valores antigos, que ainda valem. NÃO rode -SoFinalizar: corrija (o token do Coolify escreve?) e rode com -Recomecar."
   }
 
   Write-Host '6/8 Publicando o portal'
