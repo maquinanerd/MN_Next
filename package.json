@@ -31,6 +31,7 @@
     "test:kalel": "playwright test --config playwright.kalel.config.ts",
     "kalel:fake": "tsx tests/fake-kalel/main.ts",
     "kalel:provision": "tsx scripts/kalel-provision.ts",
+    "kalel:rotate": "tsx scripts/kalel-rotate.ts",
     "import:sandbox": "tsx tests/fake-wp/main.ts",
     "fixtures:media:reference": "node scripts/fixture-media-from-reference.mjs",
     "visual:compare": "node scripts/visual-compare.mjs"
